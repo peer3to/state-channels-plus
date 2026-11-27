@@ -10,7 +10,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 
 ## Tests
 
-- `a threshold-final block an audit verified above the view → the final proof at its height proves it on chain; the view-bounded construction still ends at the view's final point`: REQ-SP-8-9ZCCEJ.T2.P1, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P12
+- `a threshold-final block an audit verified above the view → it is kept as evidence, not block history; the exact final proof at its height comes from that evidence and proves it on chain; the view-bounded construction still ends at the view's final point`: REQ-SP-8-9ZCCEJ.T2.P1, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P12
 - `U22: backward construction finds the latest final point and appends the unfinalized tail to its milestone`: REQ-SP-8-9ZCCEJ.T2.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P13
 - `U23: a later final starting block whose run overlaps the join milestone stays a separate last milestone`: REQ-SP-8-9ZCCEJ.T2.P3, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P14
 - `D6: a hop whose JOIN is consumed and whose joiner exits within it, to the block after the exit → without the joiner's signature neither the SDK nor the walk proves it final; with it both do, and the SDK's set keeps that signature`: REQ-SP-3-SP1JG4.T3.P1, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P31

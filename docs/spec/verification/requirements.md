@@ -933,7 +933,7 @@ Specification cases tested: 29/32. Untested: T2.P11, T2.P13, T2.P16.
 Specification cases tested: 78/79. Untested: T3.P7.
 
 [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
-Specification cases tested: 44/45. Untested: T5.P13.
+Specification cases tested: 54/55. Untested: T5.P13.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 Specification cases tested: 7/8. Untested: T1.P1.

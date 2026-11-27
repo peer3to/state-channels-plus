@@ -465,11 +465,37 @@ remains subject to this finding; the gas/liveness evidence is outstanding.
 
 ### FIND-PROOF-PERSISTENCE-1-HYC9DS
 
-**Current defect:** Unexecuted retained support can contaminate installed history and produce
-unsupported replay accusations.
+**Current defect:** _Audit path resolved (2026-11-27); sync path open._ Unexecuted retained support
+can still contaminate installed history through sync persistence and produce unsupported replay
+accusations. An audit no longer writes it.
 
-**Disposition:** Open; high. Deferred by Luka to a follow-up PR; details and missing regressions
-below.
+**Disposition:** Audit path resolved by the card #397 evidence store (decided by Ljuba, 2026-11-25,
+evidence-store details 2026-11-27). Sync path open; high. Sync evidence moves to the same store in a
+later part of card #397. Details, the resolution and the remaining regressions below.
+
+**Resolution (audit path, 2026-11-27).** Block history holds only executed or proven blocks.
+"Executed" includes the blocks an audit replays from a dispute's last-milestone tail: they are
+judged from the block before them and stored by coordinate, first write wins, without moving the
+view. What the walk verifies but does not execute (the start, the hop snapshots, each hop's final
+block and its support, the posted finalized state and the latest point) is written to the proof
+evidence record `dispute:<disputeHash>` in `ProofEvidenceStorage`, not to block history and not as
+change points. Hash-keyed inbound and outbound runs stay in their stores. Readers of that material
+read held data first, else the evidence: reduce data, the final-dispute genesis inputs, the
+milestone snapshots of an omitted-data dispute, the tail replay base, the continue checks, the
+final-history conflict search, and the sync replay base's own state. A fork's evidence is dropped
+when the chain anchor leaves that fork. Evidence:
+[unexecuted support and readers](../verification/tests/test/unit/DisputeReplayPersistence.test.ts.md),
+[evidence lookups](../verification/tests/test/storage/ProofEvidenceStorage.test.ts.md) and
+[sync replay base](../verification/tests/test/unit/SpectateServiceReplayBase.test.ts.md).
+
+**Residual (audit path).** A side dispute's replayed tail is executed history and stays in block
+history until its fork is pruned. An honest later tail block at that height by the same author
+yields a correct double-sign proof. By another author, linked to this peer's stored previous block,
+conflict validation still treats the side block as proof of an invalid transition and stores a
+counter without a preflight (`ValidationService.ts` conflict check →
+`DisputeValidationStrategy.invalidStateTransitionDetected`); this case is code-traced, not
+executed. Evidence of a fork the chain anchor never reached is kept, and the anchor fork is
+tracked in memory only.
 
 **Open; high, with a potential honest-auditor slash. Engineer disposition (2026-10-06): defer the
 implementation and regression tests to a follow-up PR.** Luka requested that PR #519's SR1
@@ -558,8 +584,9 @@ against incremental replay and existing evidence retention before choosing the i
 [U63](../../../test/unit/DisputeReplayPersistence.test.ts#L323) repeats an identical failing tail;
 [U123](../../../test/unit/SyncReconstruction.test.ts#L573) tampers bytes under the same author's
 signature; [FR1](../../../test/unit/DisputeAuditTiers.test.ts#L47) tests conflicting final points.
-These do not cover the distinct authenticated, unexecuted-support cases above. Closing this
-finding requires the source fix, exact unit/E2E evidence, and updated specification and mappings.
+These do not cover the distinct authenticated, unexecuted-support cases above. The first
+regression above is covered by U135 (both orders) and U143; the others stay open. Closing the sync path requires the source fix, exact unit/E2E evidence, and
+updated specification and mappings.
 
 ## Atomic state updates across the VM and storage
 

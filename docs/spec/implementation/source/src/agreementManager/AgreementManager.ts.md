@@ -12,7 +12,7 @@
 - [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
-  Contradicts: `persistVerifiedProof` can retain unexecuted proof support that contaminates installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
+  Contradicts: sync's `stageVerifiedProof` can retain unexecuted proof support that contaminates installed history; an audit writes its verified material to proof evidence through `persistAuditEvidence` instead ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 - [`REQ-IX-4-BB35GC`](../../../../specification/disputes/README.md#req-ix-4-bb35gc)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
@@ -36,7 +36,7 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P9` — A compact spectator with later finality and overlapping join evidence rebuilds its latest proof and retains the latest final state without history below the join
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P10` — After persistence-only replay above the active view, the auditor constructs its own dispute ending at its frozen height and snapshot; the newer replayed head and full state remain stored without its signature
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P11` — The same disconnected peer reconnects and progresses live; its own constructed dispute uses its latest active snapshot and the new head carries its author or confirmation signature
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P12` — An audit-stored final block above the active view supports an explicit-height chain-valid final proof; default construction remains bounded by the active view
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P12` — An audit-verified final block above the active view, kept as proof evidence, supports an explicit-height chain-valid final proof; default construction remains bounded by the active view
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P13` — Backward search finds the latest final point and retains its unfinalized tail inside one chain-valid milestone
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P14` — A join hop whose supporting run overlaps a later final point keeps that point as a separate last milestone and the chain verifies both
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P15` — Two membership changes each retain minimum forward signer coverage; the latest fully signed head becomes a separate final milestone found backward

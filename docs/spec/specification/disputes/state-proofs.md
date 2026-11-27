@@ -533,6 +533,26 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-10-jmvhtb.t2.p7"></a>`REQ-SP-10-JMVHTB.T2.P7` — A pending auditor replays a tail that leaves its join unconsumed; latest full state becomes available while pending status, active height and force-join fields stay unchanged.
 
+<a id="req-sp-10-jmvhtb.t2.p8"></a>`REQ-SP-10-JMVHTB.T2.P8` — A dispute carrying a forged, validly signed block as unexecuted support above its tail is audited before the honest dispute whose tail replays the real block at that height; the forged block is neither history nor evidence, block history then holds the real block, and the honest dispute is valid with no counter.
+
+<a id="req-sp-10-jmvhtb.t2.p9"></a>`REQ-SP-10-JMVHTB.T2.P9` — The forged support is signed by the honest tail block's own author; the honest dispute is valid with no dispute counter and no double-sign proof, and block history holds the real block.
+
+<a id="req-sp-10-jmvhtb.t2.p10"></a>`REQ-SP-10-JMVHTB.T2.P10` — A side dispute's replayed tail is executed history: it stores the same author's re-signed copy at a height the view leaves free, then the honest dispute replays the real block there; the honest dispute is valid with no dispute counter, the copy's author gets a double-sign proof, and the honest latest state is held.
+
+<a id="req-sp-10-jmvhtb.t2.p11"></a>`REQ-SP-10-JMVHTB.T2.P11` — A threshold-final head an audit verified but never executed is kept as proof evidence: block history holds neither its block, snapshot nor state, and the evidence holds the block and the state.
+
+<a id="req-sp-10-jmvhtb.t2.p12"></a>`REQ-SP-10-JMVHTB.T2.P12` — The walk evidence of an omitted-data audit reads a milestone snapshot kept only as proof evidence.
+
+<a id="req-sp-10-jmvhtb.t2.p13"></a>`REQ-SP-10-JMVHTB.T2.P13` — The final-dispute genesis inputs read a latest snapshot and state kept only as proof evidence.
+
+<a id="req-sp-10-jmvhtb.t2.p14"></a>`REQ-SP-10-JMVHTB.T2.P14` — The tail replay base reads a finalized state kept only as proof evidence when the posted data lacks it; the audit is valid with no counter.
+
+<a id="req-sp-10-jmvhtb.t2.p15"></a>`REQ-SP-10-JMVHTB.T2.P15` — Reduce data for a window that reduces to a head kept only as proof evidence is found.
+
+<a id="req-sp-10-jmvhtb.t2.p16"></a>`REQ-SP-10-JMVHTB.T2.P16` — A sync requester that holds the served base's state only as proof evidence replays from that state, though the response carries other bytes for it; the sync succeeds and the responder is not blacklisted.
+
+<a id="req-sp-10-jmvhtb.t2.p17"></a>`REQ-SP-10-JMVHTB.T2.P17` — The same forged support is audited after the honest dispute; block history keeps the real block, and auditing the honest dispute again stays valid with no counter.
+
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 
 **Requirements / invariants:**
@@ -765,7 +785,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 **Required permutations:**
 
-<a id="req-sp-8-9zccej.t2.p1"></a>`REQ-SP-8-9ZCCEJ.T2.P1` — An audit-stored final block above the active view supports an explicit-height chain-valid final proof; default construction remains bounded by the active view.
+<a id="req-sp-8-9zccej.t2.p1"></a>`REQ-SP-8-9ZCCEJ.T2.P1` — An audit-verified final block above the active view is kept as proof evidence, not block history, and supports an explicit-height chain-valid final proof; default construction remains bounded by the active view.
 
 <a id="req-sp-8-9zccej.t2.p2"></a>`REQ-SP-8-9ZCCEJ.T2.P2` — Backward search finds the latest final point and retains its unfinalized tail inside one chain-valid milestone.
 
