@@ -25,6 +25,7 @@
 - [`REQ-PROOFSTORE-6-X7FT2K` (Readers use the stored proof)](../../../../specification/storage/proof-store.md#req-proofstore-6-x7ft2k)
 - [`INV-PROOFSTORE-2-4K6815` (The record may lag history but never lead it)](../../../../specification/storage/proof-store.md#inv-proofstore-2-4k6815)
 - [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../../../../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
+- [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../../../../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
 
 ## UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D
 
@@ -155,3 +156,12 @@ The final points a conflict counter rests on: the stored proof's own points, and
 
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P1` — an agreeing record's points at the stored proof's own heights are not returned; its point above them is
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P2` — a record with another snapshot at one of the stored proof's heights adds no point; an agreeing record still adds its point
+
+## UNIT-TEST-AGREEMENT-MANAGER-6-DWQN9W
+
+The final history of a received proof that a reverse-direction kill takes F from.
+
+- Setup: Three participants with an anchor and two final blocks; participant 2 reads the final history of a served proof that verified only from the anchor, whose final point at participant 2's final height is a crafted threshold-final block signed by all three
+- Oracle: The conflict and regression points are the served hop point above the anchor with the crafted snapshot's hash, its proof ends at exactly that snapshot, no other height is proved, and the stored proof and the fork's proof evidence are unchanged
+
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-6-DWQN9W.P1` — a served hop point above the anchor is the only point for both kills, proved exactly by its hop prefix; another height has no proof; nothing is stored

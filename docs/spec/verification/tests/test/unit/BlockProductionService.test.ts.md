@@ -5,7 +5,10 @@ Exercises: [BlockProductionService.ts](../../../../implementation/source/src/sta
 
 ## Overview
 
-The suite drives local authoring through a live math-channel signer. It covers writer and channel
+The suite drives local authoring through a live math-channel signer. The signing-stop case stages
+participant 2 through the real sync decline of a served final block that consumes a later joiner's
+JOIN at its final height; on its next writer turn its submission resolves without a throw and no
+peer's next height moves. It covers writer and channel
 gates, inbound-message selection, timestamp adjustment, block linkage, and two local submissions
 constructed for the same coordinate. The concurrency case holds the state mutex until both calls
 are queued, then proves that only one block commits. The rollback case makes the writer's state
@@ -38,6 +41,7 @@ Spectator spawns in this suite go through the shared `addSpectatorAuthoring` hel
 - `two same-peer submissions built for one height → only the winner authors`: INV-BLOCK-PIPE-1-1AB2ME.T1.P9, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P5
 - `a follower behind by the writer's parked block stamps a slot that was never its own → the candidate is dropped, nothing authored`: INV-BLOCK-PIPE-1-1AB2ME.T1.P10, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P13
 - `a reduction replaces the fork before the candidate takes the mutex → the candidate is dropped, nothing authored`: INV-BLOCK-PIPE-1-1AB2ME.T1.P11, UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P14
+- `the next writer on a fork where a synced proof showed its own history to be the side chain → nothing authored, no throw, no peer's height moves`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P21, REQ-SYNC-5-M7W6JX.T2.P5
 - `not my turn → throws instead of authoring`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P6
 - `the state machine refuses a pending inbound message → throws, turn and VM state unchanged, the same writer authors once the inbound is processable`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P15, UNIT-TEST-SNAPSHOT-ASSEMBLY-1-4G64J7.P11
 - `a post-commit step throws once after the block is stored → throws, the block stays stored and the VM keeps the stored state`: UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P19, INV-BLOCK-PIPE-1-1AB2ME.T1.P7

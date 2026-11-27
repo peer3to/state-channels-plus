@@ -135,6 +135,10 @@ Consequences an integrator must accept:
   [../protocol/cross-layer-messages.md](../settlement/cross-layer-messages.md)).
 - Honest-majority is NOT required; one honest participant with chain access (A6) and enough time
   (A4, dispute windows) suffices to enforce its rights.
+- Each honest participant is protected by its own signature and its place in the inbound queue, and
+  is online (or delegated, §7) during the dispute window and the kill period: an honest signer signs
+  one history only, and a history that skipped its consumed JOIN is killed only by a kill sent in
+  the kill period ([disputes.md](../disputes/disputes.md)).
 
 ## 7. Watchtower requirement for offline participants
 

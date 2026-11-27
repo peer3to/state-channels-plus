@@ -58,7 +58,8 @@ For each arriving confirmation:
 5. **Dead-fork gate** ([`REQ-BLOCK-PIPE-9-QA66GT`](block-processing.md#req-block-pipe-9-qa66gt)). A fork the node
    itself is disputing counts as disputed from the moment its own dispute starts
    ([`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)): the node authors and
-   signs nothing more on it. A block on a fork with an observed dispute is ignored and that fork's queued
+   signs nothing more on it; the same holds on a fork where a synchronization showed its own
+   history to be the side chain ([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)). A block on a fork with an observed dispute is ignored and that fork's queued
    work purged — dead-fork state is recovered through the dispute path, never gossip. If the node's
    _own_ current fork is disputed, fork recovery is scheduled (bounded: repeated junk must cost
    O(1) chain reads per window). Recovery runs detached from intake: intake may already hold the
@@ -387,7 +388,9 @@ a disputed fork costs O(1) chain reads per agreement window.
 
 **<a id="req-block-pipe-10-phake2"></a>`REQ-BLOCK-PIPE-10-PHAKE2` — Counter-signing policy.** After commit, a node signs the block iff it
 participates in the channel, is in the block's participant union, and does not have the author
-excluded. `For this protocol version:` the node also refuses to sign an on-chain-posted block when it is
+excluded, and it has not stopped signing on the block's fork: it disputes the fork
+([`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)), or a synchronization showed its own history there to be the side chain
+([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)). The same stop keeps it from authoring on that fork. `For this protocol version:` the node also refuses to sign an on-chain-posted block when it is
 itself the next author, preserving the extra time the post granted ([time.md](../protocol-model/time.md));
 whether that refusal is intended protocol behavior is an open engineer decision
 ([`OQ-24-A4XRTB` (`shouldSignBlock` refusal when next-to-write)](../../implementation/open-questions.md#oq-24-a4xrtb)).

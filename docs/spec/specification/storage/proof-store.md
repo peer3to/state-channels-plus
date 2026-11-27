@@ -184,7 +184,10 @@ no dispute can carry a larger history. Only audit evidence adds final points for
 the conflict check of later audit evidence; sync evidence serves snapshot and state lookups; a record that would
 exceed that bound is refused and the refusal is logged, while a record replacing one with the same
 final point is accepted. A fork's audit and sync records stay until the local mirror's chain anchor
-leaves that fork. A state is read from evidence only by its hash, and an empty state is never
+leaves that fork. The proof evidence also keeps the forks on which a synchronization showed the node's
+own history to be the side chain, so that the node signs nothing more there
+([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)). Such a stop holds only for its fork; no later
+record, refusal or other fork's drop lifts it, and it is removed with the fork's records. A state is read from evidence only by its hash, and an empty state is never
 returned. A dispute replay's executed tail is block history, not evidence: it is stored by
 coordinate without moving the head, and the first block stored at a coordinate is kept
 ([`REQ-SP-10-JMVHTB`](../disputes/state-proofs.md#req-sp-10-jmvhtb)).
@@ -446,13 +449,15 @@ A missing tail block makes construction fail.
 
 Store audit and sync records on several forks up to and past the sync bound; drop a fork; read
 states that a record does not hold. Keep a side chain from a synchronization under the chain's upload cap
-and under a cap its hops exceed.
+and under a cap its hops exceed. Stop signing on two forks, write and refuse records on one, drop the other
+or both.
 
 **Expected result:**
 
 Sync evidence is bounded per fork and refused at the bound; audit evidence is never refused or
 evicted; a dropped fork keeps nothing; an empty state is never returned; a side chain is kept
-only when its hops fit in a dispute upload.
+only when its hops fit in a dispute upload. A signing stop holds only on its fork, survives every later
+write and another fork's drop, and is removed with its fork.
 
 **Required permutations:**
 
@@ -467,6 +472,12 @@ only when its hops fit in a dispute upload.
 <a id="req-proofstore-7-b5pw2p.t1.p5"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P5` — A side chain kept out of a synchronization under the chain's upload cap is kept as sync evidence of its final point: its start, the conflicting hop and the final point with its state.
 
 <a id="req-proofstore-7-b5pw2p.t1.p6"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P6` — A side chain whose hops do not fit in a dispute upload is not kept as sync evidence.
+
+<a id="req-proofstore-7-b5pw2p.t1.p7"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P7` — A signing stop holds on its fork and on no other fork.
+
+<a id="req-proofstore-7-b5pw2p.t1.p8"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P8` — A signing stop survives a refused and an accepted record on its fork and the drop of another fork.
+
+<a id="req-proofstore-7-b5pw2p.t1.p9"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P9` — Dropping a fork removes its signing stop with its records and keeps another fork's stop.
 
 ## Future Work
 

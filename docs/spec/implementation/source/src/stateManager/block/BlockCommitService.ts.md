@@ -9,6 +9,7 @@
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
 - [`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](../../../../../specification/storage/proof-store.md#req-proofstore-2-dbn7sy)
+- [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../../../../../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
 
 ## UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S
 
@@ -26,3 +27,4 @@ Later cooperative inclusion
 - [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P7` — A successful dispute replay above the frozen view stores every replayed tail block without adding auditor signatures; active next height, status and force-join state stay unchanged
 - [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P8` — A pending auditor replays a tail whose resulting participant set seats it; replayed head is stored without its confirmation, but local status, active height and force-join fields stay unchanged
 - [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P9` — A pending auditor replays a tail that leaves its join unconsumed; latest full state becomes available while pending status, active height and force-join fields stay unchanged
+- [x] `UNIT-TEST-BLOCK-COMMIT-SERVICE-1-V6TP9S.P10` — a block on a fork where a synced proof showed the participant's own history to be the side chain is not signed; a peer without that stop signs it

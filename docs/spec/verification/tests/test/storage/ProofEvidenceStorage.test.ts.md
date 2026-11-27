@@ -15,7 +15,9 @@ audit records, use one hash as both a dispute hash and a finalized snapshot hash
 it, and mutate the value set and a value read. The lookup cases find every snapshot and held state of a record by a
 hash computed from the record itself, miss an unknown hash and a dropped fork's snapshot, never return a `0x` state
 (also for the hash of `0x`), and read a snapshot and state through the `Storage` facade that holds them only as
-evidence.
+evidence. The signing-stop cases stop signing on factory forks, write a refused and an accepted
+record on the stopped fork, drop another fork or the stopped fork, and read the `Storage` facade's
+combined stop with own dispute markers set and rolled back.
 
 ## Tests
 
@@ -39,3 +41,8 @@ evidence.
 - `finds the final and the latest state a record holds by their hashes`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P17
 - `never returns a state a record does not hold (0x), also for the hash of 0x`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P18, REQ-PROOFSTORE-7-B5PW2P.T1.P4
 - `storage reads a snapshot and a state kept only as proof evidence`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P19
+- `stops signing only on the fork it was stopped on`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P21, REQ-PROOFSTORE-7-B5PW2P.T1.P7
+- `never lifts a signing stop when the fork's evidence is written or another fork is dropped`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P22, REQ-PROOFSTORE-7-B5PW2P.T1.P8
+- `drops a fork's signing stop with its evidence and keeps another fork's stop`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P23, REQ-PROOFSTORE-7-B5PW2P.T1.P9
+- `storage stops signing on a fork this peer disputes or whose signing a synced proof stopped, and on no other fork`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P24
+- `storage signs again on a fork whose own dispute marker is rolled back, unless a synced proof stopped it there`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P25

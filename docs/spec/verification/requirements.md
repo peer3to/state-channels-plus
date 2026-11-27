@@ -774,7 +774,7 @@ Specification cases tested: 2/2.
 Specification cases tested: 1/1.
 
 [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
-Specification cases tested: 6/6.
+Specification cases tested: 9/9.
 
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.
@@ -996,7 +996,7 @@ Specification cases tested: 0/3.
 Specification cases tested: 22/22.
 
 [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
-Specification cases tested: 8/8.
+Specification cases tested: 14/15. Untested: T2.P7.
 
 [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../specification/protocol-model/time.md#req-time-1-fm4651)
 Specification cases tested: 0/12.

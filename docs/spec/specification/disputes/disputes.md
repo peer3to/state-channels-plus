@@ -80,7 +80,9 @@ the disputer. An honest disputer lists only the on-chain slashes (and the slashe
 proofs or same-transaction kills) of participants of its latest state.
 
 **Assumptions & dependencies.** Chain liveness and at least one honest, chain-connected
-participant or watchtower per [trust-model.md](../security/trust-model.md); correct
+participant or watchtower per [trust-model.md](../security/trust-model.md); each honest participant
+is protected by its own signature and its place in the inbound queue, and is online during the dispute
+window and the kill period to send the kill that defends its history; correct
 [chain-time tracking](../protocol-model/time.md) for all period arithmetic; the state-proof verification rules of
 [state-proofs.md](./state-proofs.md).
 

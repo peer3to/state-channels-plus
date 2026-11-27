@@ -12,6 +12,10 @@ the install state, the stored proof and the sync result's rejections and blackli
 auditor audits a dispute above its own final point, an advance of the old fork runs after a fork
 change, and a peer loses its stored block at its stored final point; each case reads the stored
 proof back through `getLocalFinalizedSnapshot` and its encoded record. Two cases install a factory-built stored proof and audit evidence records and read the final points a conflict counter rests on. A spectator whose own last hop changes no membership syncs from it and the case reads the hops of its stored proof; three participants finalize four blocks and the case reads a participant's hops. A participant's walk of a crafted side chain whose threshold-final block conflicts with its own final point passes from the anchor, and the real `persistSyncEvidence` runs under the chain's upload cap and under a zero cap; the case reads the returned key and the kept record.
+A received-history case serves participant 2 a crafted threshold-final block at its final height
+and reads `getReceivedFinalHistory` after the tier walk: the one hop point above the anchor, its
+hash checked against the crafted snapshot, a proof that ends at that snapshot, none at the height
+below, and the stored proof and proof evidence read back unchanged.
 
 ## Tests
 
@@ -31,3 +35,4 @@ proof back through `getLocalFinalizedSnapshot` and its encoded record. Two cases
 - `a reset at the genesis of a reduced fork → its stored proof is that genesis alone with its state, and the old fork's is gone`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P9, REQ-PROOFSTORE-5-ZH56D4.T1.P1
 - `an evidence point is not used at a height where our stored proof has a point`: UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P1, REQ-FP-7-4DD0D7.T9.P24
 - `an evidence record that conflicts with one of our own points is skipped`: UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P2, REQ-FP-7-4DD0D7.T9.P25
+- `the final history of a served proof that verified only from the anchor → its hop point above the anchor for both kills, proved exactly by its hop prefix; no other height is proved, and nothing is stored`: UNIT-TEST-AGREEMENT-MANAGER-6-DWQN9W.P1

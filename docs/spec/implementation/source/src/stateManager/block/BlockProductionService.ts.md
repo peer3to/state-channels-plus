@@ -7,6 +7,7 @@
 - [`INV-BLOCK-PIPE-1-1AB2ME` (Atomic ordered commit)](../../../../../specification/block-progression/block-processing.md#inv-block-pipe-1-1ab2me)
 - [`REQ-BLOCK-PIPE-6-XQ0RTT` (Total-order application)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-6-xq0rtt)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
+- [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../../../../../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 - [`REQ-SM-12-J6QD9B` (Every chain-accepted inbound message MUST be processed successfully)](../../../../../specification/protocol-model/state-machines.md#req-sm-12-j6qd9b)
   Missing: `playTransaction` carries the whole pending inbound run and never retries with fewer blocks after an out-of-gas failure; tracked by [`FIND-INBOUND-GAS-1-2BZ8DE`](../../../../../audit/open-findings.md#find-inbound-gas-1-2bz8de).
@@ -38,3 +39,4 @@ Local block authoring
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P18` — an aborted runtime: the app's next transaction rejects with RootDisposedError and no peer receives a block
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P19` — a post-commit step throws once after the block is stored: the candidate throws, the block stays stored, and the live VM state equals the stored state, not the pre-assembly state
 - [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P20` — a candidate parked on the state mutex when the runtime is disposed: no block leaves the runtime once the mutex frees and the nonce is unchanged
+- [x] `UNIT-TEST-BLOCK-PRODUCTION-1-5ED0EB.P21` — the next writer on a fork where a synced proof showed its own history to be the side chain authors nothing and does not throw; no peer's height moves
