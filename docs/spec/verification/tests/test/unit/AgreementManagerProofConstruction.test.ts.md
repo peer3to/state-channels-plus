@@ -40,7 +40,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `U98 (control): snapshot posting with every required block held → the update is sent and the chain adopts the last milestone's first block`: REQ-SP-8-9ZCCEJ.T2.P17, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P29
 - `U98: snapshot posting whose proof construction fails on its chain walk → the post rejects and the chain snapshot stays`: REQ-SP-8-9ZCCEJ.T2.P18, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P30
 - `FR1: an exact final proof keeps later virtual votes and rejects the unfinalized support height`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P59
-- `TO1: exact join finality retains the later union vote and disappears when that sole vote is removed`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P62
-- `TO1: exact exit finality retains the old and new union and needs its sole later confirmation`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63
+- `TO1: the exact final proof at a join height is the stored proof's prefix to its join hop: it verifies on chain at exactly that height without moving the view, and removing a stored block's sole later vote leaves it unchanged`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P62
+- `TO1: the exact final proof at an exit height is the stored proof's prefix to its exit hop: it verifies on chain at exactly that height without the leaver, and removing a stored block's sole later confirmation leaves it unchanged`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63
 - `TO1: an exact join point above the frozen view keeps later audit votes without advancing the view`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64
 - `TO1: an exact point after an earlier join builds both overlapping hops above the frozen view`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65

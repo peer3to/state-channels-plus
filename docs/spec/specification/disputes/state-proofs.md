@@ -1303,7 +1303,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t7.p2"></a>`REQ-SP-9-RNXP56.T7.P2` — Substituting block-one snapshot for the posted block-zero milestone snapshot makes audit reject with InvalidStateProof after one mirror walk and one chain walk.
 
-<a id="req-sp-9-rnxp56.t7.p3"></a>`REQ-SP-9-RNXP56.T7.P3` — A missing participant-change block required to establish the local final point makes audit throw before any mirror-anchor or chain walk and produce no counter.
+<a id="req-sp-9-rnxp56.t7.p3"></a>`REQ-SP-9-RNXP56.T7.P3` — A participant-change block missing from storage below the local final point does not stop the audit: its final point comes from the stored proof, the first tier accepts the proof without a mirror-anchor or chain walk, and no counter is produced.
 
 <a id="req-sp-9-rnxp56.t7.p4"></a>`REQ-SP-9-RNXP56.T7.P4` — After the local mirror cannot establish a consumed-inbound hop, a chain transport failure makes audit throw with no counter.
 

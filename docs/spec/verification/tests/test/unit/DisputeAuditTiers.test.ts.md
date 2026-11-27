@@ -13,12 +13,13 @@ Snapshot state-hash tampering uses the shared byzantine harness action.
 - `U26: the latest locally finalized state verifies the proof -> accepted there, no local-diamond or chain walk, true`: REQ-SP-9-RNXP56.T7.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P104
 - `U27: no locally finalized state -> the local diamond's walk accepts, no chain walk, true`: REQ-SP-9-RNXP56.T1.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P24
 - `U28: the local diamond misses the inbound run a hop consumes -> no local tier proves it, the chain's walk accepts, true`: REQ-SP-9-RNXP56.T1.P2, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P25
+- `an honest dispute that fails only from the auditor's final point (its local diamond misses the inbound run a hop consumes) -> no final-history counter is offered and no final proof is built: true, no proof`: REQ-FP-7-4DD0D7.T10.P53, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P158
 - `D4: an authentic block conflicts with the local final point -> the conflict counter is stored before any tier walk`: REQ-FP-7-4DD0D7.T2.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P34
 - `U28 (audit entry): the mirror holds no same-fork anchor (it walks from the genesis) and its walk fails -> the chain's anchor walk accepts, true`: REQ-SP-9-RNXP56.T1.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P26
 - `U29: every tier rejects the proof (the posted snapshot of block 0 is block 1's) -> invalid at the chain, false + DisputeInvalidStateProof`: REQ-SP-9-RNXP56.T7.P2, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P105
 - `U30: the local diamond's walk fails in its executor (no verdict) -> the audit throws it, no chain walk, no proof`: REQ-SP-9-RNXP56.T1.P4, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P27
 - `U30: the local diamond's walk reverts -> the audit throws it, no chain walk, no proof`: REQ-SP-9-RNXP56.T1.P5, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P28
-- `U30 (audit entry): storage lacks a required participant-change block of the local final point -> the audit throws, no walk runs, no proof`: REQ-SP-9-RNXP56.T7.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P106
+- `U30 (audit entry): storage lacks a participant-change block below the local final point -> the audit does not need it, its final point comes from the stored proof: the first tier accepts, no local-diamond or chain walk, true`: REQ-SP-9-RNXP56.T7.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P106
 - `U30: the chain's walk cannot reach the RPC node -> the audit throws it, no proof`: REQ-SP-9-RNXP56.T7.P4, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P107
 - `U31: an unproven earlier hop below the auditor's final point -> the auditor walks from its final point, never reads it, true`: REQ-SP-9-RNXP56.T7.P5, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P108
 - `U32: the same unproven hop above the auditor's trusted start (chain anchor still the genesis) -> false + DisputeInvalidStateProof whose evidence the chain accepts`: REQ-SP-9-RNXP56.T7.P6, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P109
@@ -46,5 +47,6 @@ Snapshot state-hash tampering uses the shared byzantine harness action.
 - `the same run with a fault after the chain anchor -> only the chain tier's replay accuses, at the fault's position`: REQ-SP-9-RNXP56.T1.P10, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P33
 - `FR1: a conflict at a virtually final point produces an on-chain-valid counter`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P65
 - `FR1: an audit retains virtual votes above a frozen view for a later final-conflict counter`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P66
+- `a dispute block that conflicts with audit evidence at a height that is no final point of that evidence (a later signature carrier of its hop) -> no conflict is offered`: REQ-FP-7-4DD0D7.T9.P23, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P159
 - `FR1: concurrent virtual-final audits keep the real proof first and counter the conflicting proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P67
 - `FR1: concurrent virtual-final audits keep the forged proof first and counter the conflicting proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P68
