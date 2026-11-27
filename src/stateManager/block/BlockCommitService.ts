@@ -121,6 +121,9 @@ export default class BlockCommitService {
                 block.height
             );
         }
+        // our own final point can move with this block
+        if (block.forkId === sm.forkId)
+            void sm.agreementManager.advanceStoredProof(block.forkId);
 
         // step 7 - gossip after local persistence, so echoed confirmations are
         // recognized as duplicates/signature updates instead of being replayed.

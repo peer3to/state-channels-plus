@@ -117,25 +117,23 @@ describe("Unit: AgreementManager verification tiers", function () {
         const lagging = 2;
         const { anchor } = await stageMirrorMissingTopUp(h, {
             laggingIndex: lagging,
-            anchorAfterTopUp: true
+            anchorAfterTopUp: true,
+            dropLaggingBlocksFromTopUp: true
         });
         // the anchor block alone, built by a peer whose mirror is current
         const view = await buildProofView(h, 0, { height: anchor!.height });
         expect(view.milestoneHeights).to.deep.equal([[anchor!.height]]);
-        expect(
-            await localFinalizedView(h, lagging),
-            "the lagging peer cannot prove a final point"
-        ).to.equal(null);
 
         const tiers = await walkAllTiersView(h, lagging, view.stateProof);
         const verified = await verifyProofView(h, lagging, view.stateProof);
 
-        expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-            "localDiamond",
-            "chain"
+        // the lagging peer's own final point lies below the top-up
+        expect(tiers.map((walk) => [walk.tier, walk.valid])).to.deep.equal([
+            ["localFinalized", false],
+            ["localDiamond", false],
+            ["chain", true]
         ]);
-        expect(tiers[0].start).to.equal(null);
-        expect(tiers[0].valid).to.equal(false);
+        expect(tiers[1].start).to.equal(null);
         expect(verified.walk!.tier).to.equal("chain");
         expect(verified.walk!.valid).to.equal(true);
         expect(verified.walk!.start!.hash).to.equal(anchor!.hash);
@@ -146,7 +144,8 @@ describe("Unit: AgreementManager verification tiers", function () {
         const lagging = 2;
         const { anchor } = await stageMirrorMissingTopUp(h, {
             laggingIndex: lagging,
-            anchorBeforeTopUp: true
+            anchorBeforeTopUp: true,
+            dropLaggingBlocksFromTopUp: true
         });
         const view = await buildProofView(h, 0);
         expect(
@@ -192,10 +191,11 @@ describe("Unit: AgreementManager verification tiers", function () {
         expect(verified.walk!.valid).to.equal(false);
     });
 
-    it("U30: the local finalized tier throws (storage lacks a required participant-change block) → verification throws, no later tier runs", async function () {
+    it("U30: storage lacks a participant-change block below the stored final point → the local finalized tier still walks the proof and accepts it, no later tier runs", async function () {
         const h = TestSession.getHarness();
         const { forkId, joinHeight, observerIndex } =
             await stageJoinHopWithLaterFinalPoint(h, { postAnchor: true });
+        const localFinalized = await localFinalizedView(h, observerIndex);
         const view = await buildProofView(h, observerIndex);
         await h
             .control(h.getPeer(observerIndex))
@@ -214,10 +214,12 @@ describe("Unit: AgreementManager verification tiers", function () {
         const observation = await observed.observation();
         await observed.restore();
 
-        expect(verified.walk).to.equal(null);
-        expect(verified.thrown).to.match(
-            /missing the participant-change block/
-        );
+        // premise - the stored final point is above the pruned join block
+        expect(localFinalized!.height).to.be.greaterThan(joinHeight);
+        expect(verified.thrown).to.equal(null);
+        expect(verified.walk!.tier).to.equal("localFinalized");
+        expect(verified.walk!.valid).to.equal(true);
+        expect(verified.walk!.start!.hash).to.equal(localFinalized!.hash);
         expect(observation.local.reads).to.equal(0);
         expect(observation.chain.reads).to.equal(0);
     });
@@ -257,7 +259,8 @@ describe("Unit: AgreementManager verification tiers", function () {
         const lagging = 2;
         await stageMirrorMissingTopUp(h, {
             laggingIndex: lagging,
-            anchorBeforeTopUp: true
+            anchorBeforeTopUp: true,
+            dropLaggingBlocksFromTopUp: true
         });
         const view = await buildProofView(h, 0);
         const observed = await h.mirror.observe(lagging, "verifyMilestones");

@@ -540,18 +540,20 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(outcome.statesStored).to.deep.equal([false]);
         });
 
-        it("U83: two occurrences of one block carry different signatures the threshold needs → stored merged, the tail replays, the proof rebuilt through that block proves it final on its own merged signatures and verifies", async function () {
+        it("U83: two occurrences of one block carry different signatures the threshold needs → stored merged, the tail replays, the proof rebuilt through the tail keeps the received hops as verified, proves the merged block final and verifies", async function () {
             const h = TestSession.getHarness();
             const { forkId, payload, first, support, tail } =
                 await stageMergedSignaturePayload(h);
-            // rebuilt through the merged block: neither occurrence alone
-            // makes it a one-block milestone
+            const supportSnapshotHash = StateSnapshot.from(
+                payload.milestoneSnapshots[1]
+            ).hash;
+            // the stored proof keeps the hops the sync verified: one valid
+            // path is enough, it is not rebuilt from the merged block
             const outcome = await applyOnFreshRequester(h, forkId, [payload], {
                 inspect: {
                     heights: [first.height, support.height, tail.height]
                 },
-                reconstruct: true,
-                reconstructHeight: support.height
+                reconstruct: true
             });
             expect(outcome.outcomes).to.deep.equal([
                 { accepted: true, threw: "", head: tail.height }
@@ -563,10 +565,12 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             expect(outcome.blocks[2]?.hash).to.equal(tail.hash);
             expect(outcome.rebuilt).to.deep.include({
                 chainValid: true,
-                latestProofHeight: support.height
+                latestProofHeight: tail.height,
+                finalizedSnapshotHash: supportSnapshotHash
             });
             expect(outcome.rebuilt!.milestones).to.deep.equal([
-                [support.height]
+                [first.height, support.height],
+                [support.height, tail.height]
             ]);
         });
 

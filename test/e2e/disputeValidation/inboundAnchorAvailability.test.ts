@@ -27,7 +27,7 @@ describe("E2E: dispute validation / inbound anchor availability", function () {
         expect(run.disputeFraudProofCount).to.equal(1);
     });
 
-    it("a non-posted dispute with no local pinned snapshot → the audit throws, no false inbound-anchor fraud proof", async function () {
+    it("a non-posted dispute whose snapshot the auditor drops after its stored proof advanced → the audit reads its final point from the stored proof, judges the dispute valid, no false inbound-anchor fraud proof", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);
         await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
@@ -50,13 +50,10 @@ describe("E2E: dispute validation / inbound anchor availability", function () {
 
         const run = await h.dispute.auditDispute(1, dispute);
 
-        // the auditor signed that state, so its snapshot is required evidence:
-        // building its own latest finalized point fails before any walk, and
-        // that is fatal, never an abstention or an accusation
-        expect(run.outcome).to.equal("threw");
-        expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
-            "Milestone built but corresponding snapshot not found"
-        );
+        // the stored proof is never checked against storage: it still holds
+        // the auditor's own final point, so the dropped snapshot is no
+        // missing evidence and the honest dispute is no accusation
+        expect(run).to.include({ outcome: "returned", isValid: true });
         expect(run.storedProof).to.equal(undefined);
         expect(run.disputeFraudProofCount).to.equal(0);
     });

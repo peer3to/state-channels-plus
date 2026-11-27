@@ -1,5 +1,6 @@
 import { Status } from "@/types";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
+import { storedProofView } from "@test/fixtures/StoredProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -80,6 +81,13 @@ describe("E2E: Join/Leave Sequence", function () {
         await h.assert.sync.peersInSyncWait({
             peerIndices: [1, 3].concat(spectatorIndices)
         });
+        // each synced spectator keeps the stored proof its sync installed
+        for (const spectatorIndex of spectatorIndices) {
+            const stored = await storedProofView(h, spectatorIndex);
+            expect(stored, `spectator ${spectatorIndex}'s stored proof`).to.not
+                .be.null;
+            expect(stored!.isStateHeld).to.equal(true);
+        }
 
         // stays 2, does not count spectators
         await h.assert.sync.participantCount({ expectedCount: 2 });
@@ -121,5 +129,15 @@ describe("E2E: Join/Leave Sequence", function () {
             expectedForkId: newForkId,
             honestPeerIndices
         });
+        // the honest participant's stored proof moved to the new fork
+        for (const honestIndex of honestPeerIndices) {
+            expect(
+                await storedProofView(h, honestIndex, newForkId),
+                "the new fork's stored proof"
+            ).to.not.be.null;
+            expect(
+                await storedProofView(h, honestIndex, preDisputeForkId)
+            ).to.equal(null);
+        }
     });
 });

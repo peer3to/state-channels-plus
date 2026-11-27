@@ -139,6 +139,10 @@ export class EventHandler {
         this.stateManager.membershipService.publishOnChainSnapshot(
             stateSnapshot
         );
+        // the anchor moved: the stored proof of its fork is rooted there. Not
+        // awaited: the re-root waits for queued proof writes, which can wait
+        // for event recovery.
+        void this.stateManager.agreementManager.reRootStoredProof(mirrored);
         await this.processStateSnapshotUpdated(channelId, stateSnapshot);
     }
 

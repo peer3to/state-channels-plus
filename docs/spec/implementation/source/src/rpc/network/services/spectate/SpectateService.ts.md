@@ -106,7 +106,6 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P80` — A forged participant-change prefix inside an anchor-containing run is clipped; its block/snapshot/change point is absent while retained suffix syncs and reconstructs from the anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P81` — A later support block retains the signature needed for virtual finality, gap history is absent, and reconstruction ending at that support block uses the two-block run and verifies
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P82` — Verified support evidence outside replay is stored as a block with its signatures but does not cause its resulting snapshot or full state to be stored
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P83` — Repeated occurrences of the same block contribute distinct signatures that merge in storage; the tail applies and reconstruction ending at the merged block proves it final as a one-block milestone
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P84` — A threshold hop above the anchor syncs without contiguous gap history; those gap heights remain absent and reconstruction verifies from the anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P85` — After compact sync, two later final blocks advance the spectator reconstruction to the new head while stored original support evidence remains unchanged
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P86` — After compact sync and progress, a new chain anchor becomes the reconstruction start; rebuilt proof needs no earlier evidence although previously stored support blocks remain
@@ -155,6 +154,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126` — block 0's snapshot on chain, height 0 but not a genesis, unaltered payload: accepted with no rejection and the responder not blacklisted
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P130` — a fresh requester whose RPC node lags one block behind the newer exit snapshot its local diamond already applied from the chain's log: the sync waits for the responder's `chainBlock` and ends with no verdict, no rejection, the responder not blacklisted, and the local diamond keeps the newer anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P131` — the same lagging node under the opened-status refresh (`StateManager.refreshOpenedStatusFromChain`): its pinned `isChannelOpen` read at the lagged head loses the event ordering and the local anchor keeps the newer exit snapshot
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P132` — Repeated occurrences of the same block contribute distinct signatures that merge in storage; the tail applies and reconstruction through the tail keeps the received hops as verified and proves the merged block final
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P133` — An install that aborts because the stored proof changed after the staging returns not synced with no rejection, and the responder is not blacklisted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

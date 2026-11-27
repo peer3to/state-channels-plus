@@ -4308,6 +4308,20 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
+     * Test-harness rebuild of this peer's stored proof of `forkId` after a
+     * test edited its block history: the queued writes settle, the stored
+     * proof is dropped, and the real advance builds it again over the edited
+     * history from the local diamond's anchor. The stored proof is never
+     * checked against storage, so an edit alone does not move it.
+     */
+    public async rebuildStoredProof(forkId: ForkId): Promise<void> {
+        const agreementManager = this.sm.agreementManager;
+        await agreementManager.advanceStoredProof(forkId);
+        this.sm.storage.storedProofs.delete(forkId);
+        await agreementManager.advanceStoredProof(forkId);
+    }
+
+    /**
      * Test-harness removal of one signer's confirmation signature from this
      * peer's stored block of `forkId` at `height` (the author's signature
      * cannot be removed). The block is stored again without it; the view does

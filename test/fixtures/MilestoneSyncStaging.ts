@@ -35,6 +35,28 @@ export function proofHeights(payload: SyncPayload): number[][] {
     );
 }
 
+/**
+ * The block hash at `height` in a served payload's proof and its signers
+ * (author and confirmations, sorted) over every occurrence of that block.
+ */
+export function servedBlockEvidence(
+    payload: SyncPayload,
+    height: number
+): { hash: string; signers: string[] } | null {
+    let hash: string | null = null;
+    const signers = new Set<string>();
+    for (const milestone of payload.stateProof.milestones)
+        for (const confirmation of milestone.blockConfirmations) {
+            const block = Block.fromBlockConfirmation(confirmation);
+            if (block.height !== height) continue;
+            hash = String(block.hash);
+            signers.add(String(block.author));
+            for (const signer of block.confirmationSignerAddresses)
+                signers.add(String(signer));
+        }
+    return hash === null ? null : { hash, signers: [...signers].sort() };
+}
+
 /** The first block height of each milestone of a proof projection. */
 export function milestoneStarts(proof: StateProofVerification): number[] {
     return proof.milestoneConfirmationHeights.map((heights) => heights[0]);
@@ -366,7 +388,8 @@ export async function keepOnlyAuthorSignatures(
  * peer 0 keeps only author signatures from the change block to its head. The
  * change hop is then proven by the authors of the blocks after it, and the
  * backward search proves a later final point whose support run overlaps the
- * change run. The participants stop running writer-timeout checks, so the
+ * change run. Peer 0 then rebuilds its stored proof over the stripped
+ * blocks. The participants stop running writer-timeout checks, so the
  * idle channel can be inspected. Returns peer 0's reconstructed proof.
  */
 export async function stageOverlappingSupport(
@@ -389,6 +412,8 @@ export async function stageOverlappingSupport(
             (_, offset) => changeHeight + offset
         )
     );
+    // the stored proof was advanced over the fully signed blocks
+    await h.control(h.getPeer(0)).stub.rebuildStoredProof(forkId).request();
     const proof = await reconstructedProof(h, 0, forkId);
     const runs = proof.milestoneConfirmationHeights;
     const changeRun = runs.at(-2);

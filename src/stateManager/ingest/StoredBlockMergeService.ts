@@ -109,6 +109,9 @@ export default class StoredBlockMergeService {
                 p2pEventHooks: sm.p2pEventHooks,
                 logger: this.logger
             });
+            // late signatures can move our own final point
+            if (persisted.forkId === sm.forkId)
+                void sm.agreementManager.advanceStoredProof(persisted.forkId);
         }
 
         return validationResult;

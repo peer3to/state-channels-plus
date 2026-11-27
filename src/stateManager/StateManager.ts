@@ -200,6 +200,7 @@ class StateManager<
             this.eventSyncService,
             this.logger,
             () => this.channelId,
+            () => this.forkId,
             this.diamondStateMachine.localDiamondContract,
             this.stateChannelManagerContract
         );

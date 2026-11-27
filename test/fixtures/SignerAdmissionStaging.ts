@@ -57,7 +57,8 @@ export async function signStoredBlockAs(
 /**
  * `stageJoinThenLeave` (with its `exitPost` option), then peer 0 holds no
  * final point above the genesis: it lost the joiner's signature on the join
- * block `j` and the blocks `j + 1` and `k`. Its one hop from the genesis
+ * block `j` and the blocks `j + 1` and `k`, and rebuilt its stored proof
+ * over the rest. Its one hop from the genesis
  * spans the join and the exit, and the joiner is in neither the genesis nor
  * the post-exit snapshot.
  */
@@ -77,6 +78,7 @@ export async function stageJoinAndExitInOneHop(
         .request();
     await dropStoredBlock(h, 0, joinHeight + 1);
     await dropStoredBlock(h, 0, leaveHeight);
+    await h.control(h.getPeer(0)).stub.rebuildStoredProof(forkId).request();
     expect(
         await localFinalizedView(h, 0),
         "peer 0 proves no final point above the genesis"
@@ -103,6 +105,8 @@ export async function stageDepartureHopNotFinal(
         )
         .request();
     await dropStoredBlock(h, 0, leaveHeight + 1);
+    // the stored proof is built again over the edited history
+    await h.control(h.getPeer(0)).stub.rebuildStoredProof(forkId).request();
     expect(
         (await localFinalizedView(h, 0))?.height,
         "peer 0's final point is the join block"
@@ -224,26 +228,35 @@ export async function signerAdmissionView(
 
 /**
  * A never-member key signs peer `peerIndex`'s stored block at its local
- * final point of `forkId`, and `getSignerAdmission` judges that signature
- * once per `upperInboundHashes` entry, in order. Each judgment's hop end is
- * the block's own snapshot with that upper inbound hash: a run the peer never
- * stored and the chain never held, so the recovery of the hop from the fork
- * genesis fails. The block is at the final point, so the peer's own hop is
- * not read. How many judgments found the signer view-dependent, and the
- * chain log queries they made.
+ * final point of `forkId` (or at `options.height`), and `getSignerAdmission`
+ * judges that signature once per `upperInboundHashes` entry, in order. Each
+ * judgment's hop end is the block's own snapshot with that upper inbound
+ * hash: a run the peer never stored and the chain never held, so the
+ * recovery of the hop from the fork genesis fails. The block is at the final
+ * point, so the peer's own hop is not read; `options.height` must be at or
+ * below it (block 0 is on every fork, including one without a stored proof).
+ * How many judgments found the signer view-dependent, and the chain log
+ * queries they made.
  */
 export async function judgeGenesisHopMisses(
     h: MathPeerTestHarness,
     peerIndex: number,
     forkId: ForkId,
-    upperInboundHashes: string[]
+    upperInboundHashes: string[],
+    options?: { height: BlockHeight }
 ): Promise<{ viewDependent: number; chainLogQueries: number }> {
     const peer = h.getPeer(peerIndex);
-    const finalPoint = await localFinalizedView(h, peerIndex, forkId);
-    expect(finalPoint, "a local final point on the fork").to.not.equal(null);
+    let height = options?.height;
+    if (height === undefined) {
+        const finalPoint = await localFinalizedView(h, peerIndex, forkId);
+        expect(finalPoint, "a local final point on the fork").to.not.equal(
+            null
+        );
+        height = finalPoint!.height;
+    }
     const block = await h
         .control(peer)
-        .query.getBlockByHeight(forkId, finalPoint!.height)
+        .query.getBlockByHeight(forkId, height)
         .request();
     expect(block, "the block at the final point").to.not.equal(null);
     const signature = await randomWallet().signMessage(
@@ -284,7 +297,7 @@ export async function judgeGenesisHopMisses(
         },
         {
             forkId,
-            height: finalPoint!.height,
+            height,
             signature,
             upperInboundHashes
         }

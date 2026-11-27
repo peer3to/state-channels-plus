@@ -927,13 +927,13 @@ Specification cases tested: 0/12.
 Specification cases tested: 34/48. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
-Specification cases tested: 32/32.
+Specification cases tested: 29/32. Untested: T2.P11, T2.P13, T2.P16.
 
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
-Specification cases tested: 79/79.
+Specification cases tested: 78/79. Untested: T3.P7.
 
 [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
-Specification cases tested: 45/45.
+Specification cases tested: 44/45. Untested: T5.P13.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 Specification cases tested: 7/8. Untested: T1.P1.

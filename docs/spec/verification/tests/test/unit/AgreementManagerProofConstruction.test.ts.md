@@ -27,15 +27,16 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `U102: the ancestor fork's genesis data supplied for the successor fork → no tier establishes the successor genesis`: REQ-SP-4-NCSEX4.T3.P3, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P35
 - `U102: the successor genesis data with a substituted origin fork → no tier establishes the successor genesis`: REQ-SP-4-NCSEX4.T3.P4, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P36
 - `U97: a pruned required anchor-run block → construction throws; after the genuine blocks are restored a new attempt builds the proof`: REQ-SP-8-9ZCCEJ.T2.P10, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P22
-- `U97: a pruned participant-change block above the anchor → construction throws instead of skipping the hop`: REQ-SP-8-9ZCCEJ.T2.P11, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P23
+- `U97: a pruned participant-change block above the anchor, below the stored final point → construction still builds the stored hops`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67
+- `U97: a dropped tail block above the stored final point → construction throws with the missing-block error`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P68
 - `U97: the join hop's confirmation by a required signer is lost above the anchor → construction proves the block before the hop final and carries the hop in the unfinalized tail`: REQ-SP-8-9ZCCEJ.T2.P12, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P24
-- `U97: the pruned snapshot of a join block above the anchor → construction throws instead of skipping the hop`: REQ-SP-8-9ZCCEJ.T2.P13, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P25
+- `U97: the pruned snapshot of a join block above the anchor, below the stored final point → construction still builds the stored hops`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P69
 - `U117: history pruned below the observed anchor, a join hop and virtual-voting evidence above it → the latest proof, the anchor proof and the replay state all remain`: REQ-SP-10-JMVHTB.T1.P1, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P7
 - `U117: a spectator synced at the anchor as its latest finalized state → the anchor block, snapshot and full state are stored and its anchor proof verifies`: REQ-SP-10-JMVHTB.T1.P2, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P8
 - `U117: a spectator synced from a proof with a join hop and virtual-voting evidence above the anchor holds no history below the join → its latest proof rebuilds from the anchor, verifies, and its replay state is held`: REQ-SP-10-JMVHTB.T1.P3, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P9
 - `U98: dispute construction over a pruned required block → dispute() rejects and no dispute reaches the chain`: REQ-SP-8-9ZCCEJ.T2.P14, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P26
 - `U98: sync serving over a pruned required block → generateSyncPayload rejects instead of serving a shorter proof`: REQ-SP-8-9ZCCEJ.T2.P15, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P27
-- `U98: snapshot posting over a pruned participant-change block above the anchor → the post rejects with the missing-block error, no transaction is sent and the chain snapshot stays`: REQ-SP-8-9ZCCEJ.T2.P16, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P28
+- `U98: snapshot posting over a pruned participant-change block above the anchor, below the stored final point → the update is still sent and the chain adopts the stored final point`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P70
 - `U98 (control): snapshot posting with every required block held → the update is sent and the chain adopts the last milestone's first block`: REQ-SP-8-9ZCCEJ.T2.P17, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P29
 - `U98: snapshot posting whose proof construction fails on its chain walk → the post rejects and the chain snapshot stays`: REQ-SP-8-9ZCCEJ.T2.P18, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P30
 - `FR1: an exact final proof keeps later virtual votes and rejects the unfinalized support height`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P59

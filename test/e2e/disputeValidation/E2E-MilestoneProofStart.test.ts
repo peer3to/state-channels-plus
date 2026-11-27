@@ -737,7 +737,7 @@ describe("E2E: dispute validation / milestone proof start", function () {
                     expect(dispute.postedAuditingData).to.equal(false);
                     // the disputer signed the head, but claims the block below it
                     dispute.input.stateProof = older.stateProof;
-                    expectFinalHeadProof(dispute, latestHeight - 1);
+                    expectAnchorRunProof(dispute, anchorHeight, 2);
                     dispute.input.latestStateSnapshotHash = StateSnapshot.from(
                         older.auditingData.latestStateSnapshot
                     ).hash;
@@ -782,7 +782,7 @@ describe("E2E: dispute validation / milestone proof start", function () {
                     expect(auditingData).to.not.equal(undefined);
                     // the disputer signed the head, but claims the block below it
                     dispute.input.stateProof = older.stateProof;
-                    expectFinalHeadProof(dispute, latestHeight - 1);
+                    expectAnchorRunProof(dispute, anchorHeight, 2);
                     Object.assign(auditingData!, older.auditingData);
                     dispute.input.latestStateSnapshotHash = StateSnapshot.from(
                         older.auditingData.latestStateSnapshot

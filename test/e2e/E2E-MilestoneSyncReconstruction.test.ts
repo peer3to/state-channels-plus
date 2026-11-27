@@ -17,6 +17,7 @@ import {
     reconstructedProof,
     reconstructionFromChainAnchor,
     restartPeerRuntime,
+    servedBlockEvidence,
     servedPayload,
     stageLaggingConstructionMirror,
     stageOverlappingSupport,
@@ -978,6 +979,8 @@ describe("E2E: Milestone sync and reconstruction", function () {
         const responder = h.getPeer(0);
         // The head's finality now comes from the authors of three blocks.
         await keepOnlyAuthorSignatures(h, 0, forkId, [tip - 2, tip - 1, tip]);
+        // the stored proof was advanced over the fully signed blocks
+        await h.control(responder).stub.rebuildStoredProof(forkId).request();
         const served = await reconstructedProof(h, 0, forkId);
         const runs = served.milestoneConfirmationHeights;
         expect(runs.at(-1)).to.deep.equal([tip - 2, tip - 1, tip]);
@@ -1025,6 +1028,7 @@ describe("E2E: Milestone sync and reconstruction", function () {
             .at(-2)!
             .filter((height) => runs.at(-1)!.includes(height));
         expect(shared.length).to.be.greaterThan(0);
+        const payload = await servedPayload(h, responder, forkId);
 
         expect(
             await syncFromResponder(h, observer, responder, forkId, tip)
@@ -1034,7 +1038,8 @@ describe("E2E: Milestone sync and reconstruction", function () {
             blacklisted: false,
             latestHeight: tip
         });
-        // one stored block per shared height, with the responder's evidence
+        // one stored block per shared height, with the served evidence (the
+        // responder's stored proof, not its later-merged signatures)
         const evidence = async (peerIndex: number, height: number) => {
             const bundle = await h
                 .control(h.getPeer(peerIndex))
@@ -1052,7 +1057,7 @@ describe("E2E: Milestone sync and reconstruction", function () {
         };
         for (const height of shared)
             expect(await evidence(observer.index, height)).to.deep.equal(
-                await evidence(responder.index, height)
+                servedBlockEvidence(payload, height)
             );
         // compact: nothing outside the proof runs
         const stored = new Set(runs.flat());

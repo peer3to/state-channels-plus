@@ -895,7 +895,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 return this.rejectSync(peerAddress, "balance invariant failed");
 
             // 4) Persist the verified material; existing data is kept
-            const { shouldAbort } = await this.persistSyncPayload(
+            const { shouldAbort, isStale } = await this.persistSyncPayload(
                 {
                     ...syncPayload,
                     disputeWindows: linkedDisputeWindows,
@@ -909,6 +909,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     selfReducedForkIds: reducedByThisSync
                 }
             );
+            // a stored proof written meanwhile is no fault of the responder:
+            // no verdict, the sync retry asks again
+            if (isStale) {
+                this.logger.warn(
+                    "applySyncResponse - the stored proof changed during the install, no verdict",
+                    { peerAddress }
+                );
+                return { synced: false };
+            }
             if (shouldAbort)
                 return this.rejectSync(
                     peerAddress,
@@ -1194,6 +1203,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         const stateHash =
             latestFinalizedSnapshot.snapshotData.stateMachineStateHash;
         const latestFinalizedEncodedState =
+            built?.encodedFinalizedState ??
             stateManager.storage.stateMachineStates.getStateMachineState(
                 stateHash
             ) ??
@@ -1368,13 +1378,15 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * runs, the proof material the walk verified (final history advances the
      * view), then installs the replay base unless this peer's height on the
      * base's fork is already at or above it. Existing data is never
-     * overwritten. The history is stored in the same synchronous step that installs the base,
-     * so no task sees it before the fork swap.
+     * overwritten. The history and the stored proof are stored in the same
+     * synchronous step that installs the base, so no task sees them before
+     * the fork swap. `isStale`: the install aborted because the stored proof
+     * changed after it was staged (no fault of the responder).
      */
     public async persistSyncPayload(
         syncPayload: SyncPayload,
         verified: VerifiedSync
-    ): Promise<{ shouldAbort: boolean }> {
+    ): Promise<{ shouldAbort: boolean; isStale: boolean }> {
         const stateManager = this.p2pManager.stateManager;
         const { walk, evidence, base } = verified;
         return await stateManager.withMutex(
@@ -1390,8 +1402,28 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         walk,
                         { replayFromIndex: base.fromIndex, advanceView: true }
                     );
-                if (!persistProof) return { shouldAbort: true };
+                if (!persistProof) return { shouldAbort: true, isStale: false };
+                // the stored proof the walk proves, written with the history
+                const storedProof =
+                    await stateManager.agreementManager.stageSyncedStoredProof(
+                        syncPayload.stateProof,
+                        evidence,
+                        walk,
+                        StateSnapshot.from(
+                            syncPayload.latestForkGenesisSnapshot
+                        ),
+                        base.snapshot.hash === walk.finalizedSnapshot.hash
+                            ? base.state
+                            : undefined
+                    );
+                let isStale = false;
                 const persistHistory = () => {
+                    // the stored proof changed since it was staged: abort
+                    // rather than install without it
+                    if (storedProof.isStale()) {
+                        isStale = true;
+                        return false;
+                    }
                     if (!persistProof()) return false;
                     for (const dw of syncPayload.disputeWindows) {
                         // no reduction checks a confirmation's signatures, so the
@@ -1434,6 +1466,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     for (const omb of syncPayload.outboundMessageBlocksOfTheLatestFork)
                         storage.outboundMessages.store(omb);
                     if (base.block) storage.blocks.storeBlock(base.block);
+                    storedProof.write();
                     return true;
                 };
 
@@ -1447,12 +1480,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     stateManager.forkId === forkId &&
                     localLatestHeight >= baseHeight;
                 if (holdsBase) {
-                    if (!persistHistory()) return { shouldAbort: true };
+                    if (!persistHistory())
+                        return { shouldAbort: true, isStale };
                     this.logger.info(
                         "Sync keeps the local state: it already holds the installed point or a later one",
                         { forkId, baseHeight, localLatestHeight }
                     );
-                    return { shouldAbort: false };
+                    return { shouldAbort: false, isStale: false };
                 }
                 // a conflict found after the VM write restores the VM
                 const installed =
@@ -1463,7 +1497,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         persistHistory
                     );
                 this.logger.debug(`Finished persisting sync payload`);
-                return { shouldAbort: !installed };
+                return { shouldAbort: !installed, isStale };
             },
             { taskName: "persistSyncPayload" }
         );

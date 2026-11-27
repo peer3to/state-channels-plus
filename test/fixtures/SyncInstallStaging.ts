@@ -19,7 +19,7 @@ import { ethers } from "ethers";
 type Peer = ReturnType<MathPeerTestHarness["getPeer"]>;
 
 /** What an install changes on `peer`: VM, latest state, head, fork, status. */
-async function installState(
+export async function installState(
     h: MathPeerTestHarness,
     peer: Peer,
     forkId: ForkId
@@ -37,7 +37,7 @@ async function installState(
 }
 
 /** The served finalized block at `height`, re-signed by `signer` with another snapshot hash. */
-async function conflictingBlock(
+export async function conflictingBlock(
     payload: SyncPayload,
     height: number,
     signer: ethers.Signer
@@ -77,47 +77,68 @@ export async function assertConflictBeforeSyncCommit(
     expect(before.latestHeight).to.equal(baseHeight - 1);
     const block = await conflictingBlock(payload, baseHeight, spectator.signer);
     const control = h.control(spectator);
-    await control.stub.holdSyncInstall().request();
-    try {
-        const sync = syncFromResponder(h, spectator, responder, forkId, tip);
-        await waitFor(
-            async () =>
-                (await control.stub.getSyncInstallEntered().request()) === 1
-        );
-        if (conflict)
-            expect(
-                await control.spectate
-                    .storeBlockJustPersist(
-                        Codec.encode(
-                            block.signedBlock,
-                            Type.SignedBlock
-                        ) as string
-                    )
-                    .request()
-            ).to.equal(block.hash);
-        await control.stub.releaseSyncInstall().request();
-        if (!conflict) {
-            expect(await sync).to.deep.equal({
-                synced: true,
-                rejections: [],
-                blacklisted: false,
-                latestHeight: tip
-            });
-            return;
+    const sync = await syncWithHeldInstall(
+        h,
+        { requester: spectator, responder, forkId, tip },
+        async () => {
+            if (conflict)
+                expect(
+                    await control.spectate
+                        .storeBlockJustPersist(
+                            Codec.encode(
+                                block.signedBlock,
+                                Type.SignedBlock
+                            ) as string
+                        )
+                        .request()
+                ).to.equal(block.hash);
         }
-        expect(await sync).to.deep.equal({
-            synced: false,
-            rejections: ["payload persistence aborted"],
-            blacklisted: true,
-            latestHeight: baseHeight - 1
+    );
+    if (!conflict) {
+        expect(sync).to.deep.equal({
+            synced: true,
+            rejections: [],
+            blacklisted: false,
+            latestHeight: tip
         });
-    } finally {
-        await control.stub.releaseSyncInstall().request();
+        return;
     }
+    expect(sync).to.deep.equal({
+        synced: false,
+        rejections: ["payload persistence aborted"],
+        blacklisted: true,
+        latestHeight: baseHeight - 1
+    });
     expect(await installState(h, spectator, forkId)).to.deep.equal(before);
     expect(
         await control.query.getBlockHashAt(forkId, baseHeight).request()
     ).to.equal(block.hash);
+}
+
+/**
+ * `requester` syncs from `responder` to `tip`; its install is held at its
+ * entry, before the VM write, while `duringHold` runs, then released. The
+ * sync's outcome.
+ */
+export async function syncWithHeldInstall(
+    h: MathPeerTestHarness,
+    sync: { requester: Peer; responder: Peer; forkId: ForkId; tip: number },
+    duringHold: () => Promise<void>
+) {
+    const { requester, responder, forkId, tip } = sync;
+    const stub = h.control(requester).stub;
+    await stub.holdSyncInstall().request();
+    try {
+        const synced = syncFromResponder(h, requester, responder, forkId, tip);
+        await waitFor(
+            async () => (await stub.getSyncInstallEntered().request()) === 1
+        );
+        await duringHold();
+        await stub.releaseSyncInstall().request();
+        return await synced;
+    } finally {
+        await stub.releaseSyncInstall().request();
+    }
 }
 
 /**

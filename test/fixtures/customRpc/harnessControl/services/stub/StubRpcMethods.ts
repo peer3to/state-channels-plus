@@ -2502,6 +2502,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
+     * Drop this peer's stored proof of `forkId` and build it again over its
+     * block history (after a test edited that history).
+     */
+    public async rebuildStoredProof(forkId: ForkId): Promise<boolean> {
+        await this.service.rebuildStoredProof(forkId);
+        return true;
+    }
+
+    /**
      * Remove `signer`'s confirmation signature from this peer's stored block
      * at `height` (test-harness staging of missing signature evidence).
      */

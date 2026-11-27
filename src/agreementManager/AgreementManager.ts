@@ -2,6 +2,7 @@ import { Block, StateSnapshot, StateProof } from "@/models";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage, { SortOrder } from "@/storage";
 import { ReduceData } from "@/types";
+import type { StoredProof, StoredProofHop } from "@/types/disputes";
 import {
     Address,
     BlockHeight,
@@ -11,7 +12,8 @@ import {
     Hash,
     Signature
 } from "@/types/types";
-import { Codec, difference, Logger, Type } from "@/utils";
+import { Codec, difference, hash, Logger, Type } from "@/utils";
+import { errorMessage } from "@/utils/errorMessage";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
@@ -61,6 +63,8 @@ export type BuiltStateProof = {
     evidence: StateProofEvidence;
     /** the walk's final point: the anchor or the last threshold-proven snapshot */
     finalizedSnapshot: StateSnapshot;
+    /** the state at `finalizedSnapshot` when it is the stored proof's final point */
+    encodedFinalizedState?: Bytes;
 };
 
 /**
@@ -128,15 +132,18 @@ export type ProofTierWalk = {
  * storage for the other agreement reads.
  */
 class AgreementManager {
-    // concurrent audits of one fork share one computation of the local final point
-    private localFinalizedInFlight = new Map<
-        string,
-        Promise<StateSnapshot | undefined>
-    >();
+    // every async write of the stored proof runs here in order; readers
+    // wait for the writes queued before them
+    private storedProofWrites: Promise<void> = Promise.resolve();
+    // the queued advance that has not started yet: a later request joins it
+    private queuedAdvance?: { forkId: ForkId; done: Promise<void> };
     // the upper inbound hashes of hops from `forkId`'s genesis whose run event
     // recovery could not supply: a later signer on such a hop is stripped
     // without another chain log scan. Reset on another fork.
-    private genesisHopMisses?: { forkId: ForkId; upperInboundHashes: Set<Hash> };
+    private genesisHopMisses?: {
+        forkId: ForkId;
+        upperInboundHashes: Set<Hash>;
+    };
 
     constructor(
         private storage: Storage,
@@ -144,6 +151,8 @@ class AgreementManager {
         private logger: Logger,
         /** the channel is set after construction, so it is read on use */
         private readonly getChannelId: () => ChannelId,
+        /** the fork this node executes: only its stored proof advances */
+        private readonly getActiveForkId: () => ForkId,
         private readonly localDiamondContract: LocalDiamondContract,
         private readonly stateChannelManagerContract: StateChannelManagerInterface
     ) {
@@ -182,15 +191,15 @@ class AgreementManager {
     }
 
     /**
-     * The proof of `forkId` through `blockHeight` from the local diamond's
-     * anchor (the fork genesis when it has none on this fork): one milestone
-     * per finalized participant change, the last milestone found backward
-     * from `blockHeight`, then the unfinalized tail. Without a later final
-     * point the tail extends the previous milestone, or starts at the anchor
-     * block (block 0 at the genesis). `blockHeight` -1 is the empty proof
-     * (the genesis). `finalizedOnly` drops the tail (a snapshot update proves
-     * the final point only). Missing or unlinked required material throws:
-     * an incomplete proof is never returned.
+     * The proof of `forkId` through `blockHeight` from the stored proof: its
+     * hops in order while they fit below `blockHeight`, then the unfinalized
+     * tail from executed block history. The tail extends the last hop, or
+     * starts at the local diamond's anchor block (block 0 at the genesis).
+     * Hops wholly below that anchor are left out: the walk skips them.
+     * `blockHeight` -1 is the empty proof (the genesis). `finalizedOnly`
+     * drops the tail (a snapshot update proves the final point only).
+     * Missing or unlinked tail blocks throw: an incomplete proof is never
+     * returned.
      */
     public async buildStateProof(
         forkId: ForkId,
@@ -203,15 +212,14 @@ class AgreementManager {
             options
         );
         if (built) return built;
-        const startHeight = this.getStartHeight(
-            await this.getConstructionStart(forkId)
-        );
-        throw new Error(
-            `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor at height ${startHeight}`
-        );
+        if (!this.storage.storedProofs.get(forkId))
+            throw new Error(
+                `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: no stored proof`
+            );
+        throw await this.belowAnchorError(forkId, blockHeight);
     }
 
-    /** `buildStateProof`, but undefined when `blockHeight` is below the anchor: this view is behind the chain. */
+    /** `buildStateProof`, but undefined when `blockHeight` is below the anchor (this view is behind the chain) or no proof is stored. */
     public async tryBuildStateProof(
         forkId: ForkId,
         blockHeight: BlockHeight,
@@ -219,17 +227,28 @@ class AgreementManager {
     ): Promise<BuiltStateProof | undefined> {
         const start = await this.getConstructionStart(forkId);
         const startHeight = this.getStartHeight(start);
-        if (blockHeight !== -1 && blockHeight < startHeight) return undefined;
-        const milestones =
-            blockHeight === -1
-                ? []
-                : await this.buildThresholdMilestones(
-                      forkId,
-                      blockHeight,
-                      start
-                  );
-        if (blockHeight !== -1 && !options?.finalizedOnly) {
-            const last = milestones.at(-1);
+        if (blockHeight === -1)
+            return this.completeStateProof(forkId, blockHeight, start, []);
+        if (blockHeight < startHeight) return undefined;
+        const stored = await this.readStoredProof(forkId);
+        if (!stored) return undefined;
+        const hops: StoredProofHop[] = [];
+        for (const hop of stored.hops) {
+            const lastHeight = this.getLastBlockFromMilestone(
+                hop.milestone
+            )!.height;
+            if (lastHeight > blockHeight) break;
+            if (start.canUseOnChainSnapshot && lastHeight < startHeight)
+                continue;
+            hops.push({
+                milestone: {
+                    blockConfirmations: [...hop.milestone.blockConfirmations]
+                },
+                snapshot: hop.snapshot
+            });
+        }
+        if (!options?.finalizedOnly) {
+            const last = hops.at(-1)?.milestone;
             const lastBlock = last && this.getLastBlockFromMilestone(last)!;
             const tail = this.collectLinkedRun(
                 forkId,
@@ -239,37 +258,170 @@ class AgreementManager {
             ).map((block) => block.blockConfirmationStruct);
             if (last)
                 last.blockConfirmations = [...last.blockConfirmations, ...tail];
-            else milestones.push({ blockConfirmations: tail });
+            else {
+                const milestone = { blockConfirmations: tail };
+                hops.push({
+                    milestone,
+                    snapshot: this.getRequiredMilestoneSnapshot(
+                        forkId,
+                        milestone,
+                        start
+                    )
+                });
+            }
         }
-        return this.completeStateProof(forkId, blockHeight, start, milestones);
+        const built = await this.completeStateProof(
+            forkId,
+            blockHeight,
+            start,
+            hops
+        );
+        const storedFinal = StateSnapshot.from(stored.finalizedSnapshot);
+        return built.finalizedSnapshot.hash === storedFinal.hash
+            ? { ...built, encodedFinalizedState: stored.encodedFinalizedState }
+            : built;
+    }
+
+    /**
+     * Brings the stored proof of `forkId` up to this node's own final point
+     * over its executed block history. Without a stored proof it starts one
+     * at the local diamond's anchor (the fork genesis without one) when that
+     * state is held. Each new final point replaces the last hop when that hop
+     * changes no membership (its union is its start's and its end's
+     * participants), else it is appended. The result is written only when it
+     * verifies from its anchor and nothing else wrote the stored proof
+     * meanwhile. Called for the active fork only; never by the dispute audit.
+     */
+    public advanceStoredProof(forkId: ForkId): Promise<void> {
+        if (this.queuedAdvance?.forkId === forkId)
+            return this.queuedAdvance.done;
+        const done = this.enqueueStoredProofWrite(async () => {
+            if (this.queuedAdvance?.done === done)
+                this.queuedAdvance = undefined;
+            await this.tryAdvanceStoredProof(forkId);
+        });
+        this.queuedAdvance = { forkId, done };
+        return done;
+    }
+
+    /**
+     * Re-roots the stored proof at a newer anchor of its fork: hops at or
+     * below `anchor` are dropped and the rest is kept when it verifies from
+     * `anchor`. Otherwise the stored proof restarts at `anchor` (its state
+     * held) and advances over block history. Without the state at `anchor`
+     * and nothing above it the stored proof is kept.
+     */
+    public reRootStoredProof(anchor: StateSnapshot): Promise<void> {
+        return this.enqueueStoredProofWrite(() =>
+            this.tryReRootStoredProof(anchor)
+        );
+    }
+
+    /**
+     * The stored proof of a fork whose genesis is installed: the genesis
+     * alone with its state. Called in the install's synchronous step; a
+     * stored proof already held for that fork is kept.
+     */
+    public resetStoredProof(genesis: StateSnapshot, encodedState: Bytes): void {
+        if (this.storage.storedProofs.get(genesis.forkID)) return;
+        this.storage.storedProofs.set(
+            genesis.forkID,
+            this.startStoredProof(genesis, encodedState)
+        );
+    }
+
+    /**
+     * The stored proof a verified sync proof gives, for `write` to store in
+     * the install's synchronous step. From this node's own final point it is
+     * the stored hops plus the received hops above it; from an anchor (or
+     * the genesis) the received hops alone. `write` stores only a later
+     * final point than the one then stored. `isStale` is true when a proof
+     * that extends the stored one finds the stored proof changed since: the
+     * install then aborts, so it never commits without its proof. Nothing
+     * is staged without the state at the walk's final point
+     * (`encodedFinalizedState`). `genesis` is the proof's fork genesis,
+     * which the install may store.
+     */
+    public async stageSyncedStoredProof(
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        walk: ProofTierWalk,
+        genesis: StateSnapshot,
+        encodedFinalizedState: Bytes | undefined
+    ) {
+        const skip = { isStale: () => false, write: () => {} };
+        const finalized = walk.finalizedSnapshot;
+        if (
+            !encodedFinalizedState ||
+            hash(encodedFinalizedState) !== finalized.stateMachineStateHash
+        )
+            return skip;
+        await this.storedProofWrites;
+        const forkId = finalized.forkID;
+        const read = this.storage.storedProofs.get(forkId);
+        const extendsStored = walk.tier === ProofTier.LocalFinalized;
+        if (
+            extendsStored &&
+            (!read ||
+                walk.localFinalized?.hash !==
+                    StateSnapshot.from(read.finalizedSnapshot).hash)
+        )
+            return skip;
+        const start = extendsStored
+            ? StateSnapshot.from(read!.finalizedSnapshot)
+            : (walk.start ?? genesis);
+        const received = await this.getReceivedHops(
+            stateProof,
+            evidence,
+            walk,
+            start
+        );
+        if (!received) return skip;
+        const candidate: StoredProof = {
+            anchorSnapshot: extendsStored
+                ? read!.anchorSnapshot
+                : start.toStruct(),
+            hops: extendsStored ? [...read!.hops, ...received] : received,
+            finalizedSnapshot: finalized.toStruct(),
+            encodedFinalizedState
+        };
+        const isKept = (current: StoredProof | undefined) =>
+            !!current && !this.isLaterFinalPoint(finalized, current);
+        return {
+            isStale: () => {
+                const current = this.storage.storedProofs.get(forkId);
+                return (
+                    !isKept(current) &&
+                    extendsStored &&
+                    !this.isSameStoredProof(current, read)
+                );
+            },
+            write: () => {
+                if (isKept(this.storage.storedProofs.get(forkId))) return;
+                this.storage.storedProofs.set(forkId, candidate);
+            }
+        };
     }
 
     private async completeStateProof(
         forkId: ForkId,
         blockHeight: BlockHeight,
         start: ProofStart,
-        milestones: MilestoneProofStruct[]
+        hops: StoredProofHop[]
     ): Promise<BuiltStateProof> {
+        const milestones = hops.map(({ milestone }) => milestone);
         const stateProof: StateProofStruct = { milestones };
         const evidence: StateProofEvidence = {
             genesisStateSnapshotData:
                 this.getGenesisSnapshot(forkId).snapshotData,
-            milestoneSnapshots: milestones.map((milestone) =>
-                this.getRequiredMilestoneSnapshot(forkId, milestone, start)
-            )
+            milestoneSnapshots: hops.map(({ snapshot }) => snapshot)
         };
-        const localWalk =
-            await this.localDiamondContract.verifyMilestonesFromTrustedStart.staticCall(
-                this.toWalkInput(forkId, stateProof, evidence),
-                start.snapshot.toStruct()
-            );
-        // a lagging mirror can leave a hop unproven locally (plan: being
-        // behind must not make the proof invalid): the chain's walk decides
-        const walk = localWalk.valid
-            ? localWalk
-            : await this.stateChannelManagerContract.verifyMilestones.staticCall(
-                  this.toWalkInput(forkId, stateProof, evidence)
-              );
+        const walk = await this.walkFromStart(
+            forkId,
+            stateProof,
+            evidence,
+            start.snapshot
+        );
         if (!walk.valid)
             throw new Error(
                 `Built state proof of fork ${forkId} at height ${blockHeight} does not verify from its anchor`
@@ -300,7 +452,8 @@ class AgreementManager {
      * This peer's proof of its latest final state on `forkId` through
      * `blockHeight` (default: its view's latest block) as a walk input, with
      * that final point: the counters that rest on this peer's own final state
-     * submit it.
+     * submit it. It is built over executed block history, not read from the
+     * stored proof: the dispute audit's final point can lie above it.
      */
     public async buildFinalProof(
         forkId: ForkId,
@@ -311,17 +464,14 @@ class AgreementManager {
         finalProof: ProofWalkInputStruct;
         finalizedSnapshot: StateSnapshot;
     }> {
-        const built = await this.buildStateProof(forkId, blockHeight, {
-            finalizedOnly: true
-        });
+        const built = await this.tryBuildHistoryFinalProof(forkId, blockHeight);
+        if (!built) throw await this.belowAnchorError(forkId, blockHeight);
         return this.toFinalProof(forkId, built);
     }
 
     /** `buildFinalProof`, but undefined when `blockHeight` is below the anchor. */
     public async tryBuildFinalProof(forkId: ForkId, blockHeight: BlockHeight) {
-        const built = await this.tryBuildStateProof(forkId, blockHeight, {
-            finalizedOnly: true
-        });
+        const built = await this.tryBuildHistoryFinalProof(forkId, blockHeight);
         return built && this.toFinalProof(forkId, built);
     }
 
@@ -339,7 +489,8 @@ class AgreementManager {
         const milestones = await this.buildThresholdMilestones(
             forkId,
             finalHeight,
-            start,
+            start.snapshot,
+            this.getStartHeight(start, 1),
             true
         );
         const last = milestones.at(-1);
@@ -352,7 +503,14 @@ class AgreementManager {
             forkId,
             finalHeight,
             start,
-            milestones
+            milestones.map((milestone) => ({
+                milestone,
+                snapshot: this.getRequiredMilestoneSnapshot(
+                    forkId,
+                    milestone,
+                    start
+                )
+            }))
         );
         if (built.finalizedSnapshot.blockHeight !== finalHeight)
             return undefined;
@@ -734,6 +892,397 @@ class AgreementManager {
 
     // PRIVATE
 
+    /** The stored proof of `forkId` once the writes queued before this read are done. */
+    private async readStoredProof(
+        forkId: ForkId
+    ): Promise<StoredProof | undefined> {
+        await this.storedProofWrites;
+        return this.storage.storedProofs.get(forkId);
+    }
+
+    /** Queues `write` after every queued stored-proof write; a failed write is logged and the stored proof kept. */
+    private enqueueStoredProofWrite(write: () => Promise<void>): Promise<void> {
+        const next = this.storedProofWrites.then(write).catch((error) =>
+            this.logger.warn("Stored proof update failed; it is kept", {
+                error: errorMessage(error)
+            })
+        );
+        this.storedProofWrites = next;
+        return next;
+    }
+
+    private async tryAdvanceStoredProof(forkId: ForkId): Promise<void> {
+        if (forkId !== this.getActiveForkId()) return;
+        const read = this.storage.storedProofs.get(forkId);
+        const stored =
+            read ??
+            this.tryStartStoredProof(
+                (await this.getConstructionStart(forkId)).snapshot
+            );
+        if (!stored) return;
+        const finalized = StateSnapshot.from(stored.finalizedSnapshot);
+        const fromHeight = finalized.isGenesis ? 0 : finalized.blockHeight + 1;
+        const latestHeight = this.storage.blocks.getLatestBlockHeight(forkId);
+        const milestones =
+            latestHeight < fromHeight
+                ? []
+                : await this.buildThresholdMilestones(
+                      forkId,
+                      latestHeight,
+                      finalized,
+                      fromHeight
+                  );
+        // appending every final point is the fallback when a replacement
+        // does not verify, so one bad fold never stalls the advance
+        const advanced =
+            milestones.length === 0
+                ? stored
+                : ((await this.foldFinalPoints(
+                      forkId,
+                      stored,
+                      milestones,
+                      true
+                  )) ??
+                  (await this.foldFinalPoints(
+                      forkId,
+                      stored,
+                      milestones,
+                      false
+                  )));
+        if (!advanced || (read && advanced === read)) return;
+        // the fork changed meanwhile: writing would drop the new fork's proof
+        if (forkId !== this.getActiveForkId()) return;
+        // a sync install or a reset wrote meanwhile: its proof is kept
+        if (
+            !this.isSameStoredProof(this.storage.storedProofs.get(forkId), read)
+        )
+            return;
+        this.storage.storedProofs.set(forkId, advanced);
+        this.logger.debug("Stored proof advanced", {
+            forkId,
+            finalized: LoggerUtils.getSnapshotMetadata(
+                StateSnapshot.from(advanced.finalizedSnapshot)
+            ),
+            hopCount: advanced.hops.length
+        });
+    }
+
+    /**
+     * `stored` with each final point of `milestones` (in order, each proven
+     * from the one before): with `replacesNonChange` it replaces the last hop
+     * when that hop changes no membership, else it is appended. Undefined
+     * when the result does not verify from the anchor or the state at its
+     * final point is not held.
+     */
+    private async foldFinalPoints(
+        forkId: ForkId,
+        stored: StoredProof,
+        milestones: MilestoneProofStruct[],
+        replacesNonChange: boolean
+    ): Promise<StoredProof | undefined> {
+        const hops = [...stored.hops];
+        for (const milestone of milestones) {
+            const hop = {
+                milestone,
+                snapshot: this.getSnapshotFromMilestone(milestone)!.toStruct()
+            };
+            const last = hops.at(-1);
+            const lastStart = hops.at(-2)?.snapshot ?? stored.anchorSnapshot;
+            const replacesLast =
+                replacesNonChange &&
+                !!last &&
+                !(await this.isMembershipChange(
+                    StateSnapshot.from(lastStart),
+                    StateSnapshot.from(last.snapshot)
+                ));
+            if (replacesLast) hops[hops.length - 1] = hop;
+            else hops.push(hop);
+        }
+        const finalized = StateSnapshot.from(hops.at(-1)!.snapshot);
+        const encodedFinalizedState =
+            this.storage.stateMachineStates.getStateMachineState(
+                finalized.stateMachineStateHash
+            );
+        // trusted only when the walk itself proves it from the anchor
+        const walk = await this.walkFromStart(
+            forkId,
+            { milestones: hops.map(({ milestone }) => milestone) },
+            {
+                genesisStateSnapshotData:
+                    this.getGenesisSnapshot(forkId).snapshotData,
+                milestoneSnapshots: hops.map(({ snapshot }) => snapshot)
+            },
+            StateSnapshot.from(stored.anchorSnapshot)
+        );
+        const isProven =
+            walk.valid &&
+            StateSnapshot.from(walk.finalizedSnapshot).hash === finalized.hash;
+        if (!isProven || !encodedFinalizedState) {
+            this.logger.warn("Stored proof not advanced", {
+                forkId,
+                finalized: LoggerUtils.getSnapshotMetadata(finalized),
+                replacesNonChange,
+                isProven,
+                isStateHeld: encodedFinalizedState !== undefined
+            });
+            return undefined;
+        }
+        return {
+            anchorSnapshot: stored.anchorSnapshot,
+            hops,
+            finalizedSnapshot: finalized.toStruct(),
+            encodedFinalizedState
+        };
+    }
+
+    private async tryReRootStoredProof(anchor: StateSnapshot): Promise<void> {
+        const forkId = anchor.forkID;
+        const read = this.storage.storedProofs.get(forkId);
+        if (!read || !this.isLaterAnchor(anchor, read)) return;
+        const hops = read.hops.filter(
+            ({ snapshot }) => Number(snapshot.blockHeight) > anchor.blockHeight
+        );
+        let reRooted: StoredProof | undefined;
+        let isRestart = false;
+        if (hops.length > 0) {
+            const walk = await this.walkFromStart(
+                forkId,
+                { milestones: hops.map(({ milestone }) => milestone) },
+                {
+                    genesisStateSnapshotData:
+                        this.getGenesisSnapshot(forkId).snapshotData,
+                    milestoneSnapshots: hops.map(({ snapshot }) => snapshot)
+                },
+                anchor
+            );
+            if (
+                walk.valid &&
+                StateSnapshot.from(walk.finalizedSnapshot).hash ===
+                    StateSnapshot.from(read.finalizedSnapshot).hash
+            )
+                reRooted = { ...read, anchorSnapshot: anchor.toStruct(), hops };
+        }
+        if (!reRooted) {
+            reRooted = this.tryStartStoredProof(anchor);
+            isRestart = true;
+        }
+        if (!reRooted) {
+            this.logger.debug(
+                "Stored proof kept: the state at the new anchor is not held",
+                { anchor: LoggerUtils.getSnapshotMetadata(anchor) }
+            );
+            return;
+        }
+        if (
+            !this.isSameStoredProof(this.storage.storedProofs.get(forkId), read)
+        )
+            return;
+        this.storage.storedProofs.set(forkId, reRooted);
+        // a restart at the anchor proves the later final points again
+        if (isRestart) await this.tryAdvanceStoredProof(forkId);
+    }
+
+    /** A stored proof of `start` alone, with its state; undefined when that state is not held. */
+    private tryStartStoredProof(start: StateSnapshot): StoredProof | undefined {
+        const encodedState =
+            this.storage.stateMachineStates.getStateMachineState(
+                start.stateMachineStateHash
+            );
+        return encodedState === undefined
+            ? undefined
+            : this.startStoredProof(start, encodedState);
+    }
+
+    private startStoredProof(
+        start: StateSnapshot,
+        encodedState: Bytes
+    ): StoredProof {
+        return {
+            anchorSnapshot: start.toStruct(),
+            hops: [],
+            finalizedSnapshot: start.toStruct(),
+            encodedFinalizedState: encodedState
+        };
+    }
+
+    /**
+     * The hops a verified proof proves above `start`, each milestone with
+     * its snapshot. The last one keeps only its signature run: its tail is
+     * executed history, not part of the stored proof. Undefined when that
+     * run cannot be cut (its consumed inbound run is not held).
+     */
+    private async getReceivedHops(
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        walk: ProofTierWalk,
+        start: StateSnapshot
+    ): Promise<StoredProofHop[] | undefined> {
+        const lastIndex = stateProof.milestones.length - 1;
+        const hops: StoredProofHop[] = [];
+        stateProof.milestones.forEach((milestone, i) => {
+            // the unfinalized run from genesis block zero proves no hop
+            if (i === lastIndex && walk.replayBlockIndex === 0) return;
+            const first = Block.tryFromBlockConfirmation(
+                milestone.blockConfirmations[0]
+            );
+            if (
+                !first ||
+                (!start.isGenesis && first.height <= start.blockHeight)
+            )
+                return;
+            hops.push({ milestone, snapshot: evidence.milestoneSnapshots[i] });
+        });
+        const last = hops.at(-1);
+        if (!last) return hops;
+        const previous = hops.at(-2)?.snapshot;
+        const signers = await this.getHopSigners(
+            previous ? StateSnapshot.from(previous) : start,
+            StateSnapshot.from(last.snapshot)
+        );
+        if (!signers) return undefined;
+        const signatureRun = this.filterBlocksForMilestoneThreshold(
+            last.milestone.blockConfirmations.map((confirmation) =>
+                Block.fromBlockConfirmation(confirmation)
+            ),
+            signers
+        );
+        hops[hops.length - 1] = {
+            milestone: {
+                blockConfirmations: signatureRun.map(
+                    (block) => block.blockConfirmationStruct
+                )
+            },
+            snapshot: last.snapshot
+        };
+        return hops;
+    }
+
+    /** The walk of `stateProof` from the trusted `start` on the local diamond, else the chain's walk. */
+    private async walkFromStart(
+        forkId: ForkId,
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        start: StateSnapshot
+    ): Promise<ProofWalkResultStructOutput> {
+        const localWalk =
+            await this.localDiamondContract.verifyMilestonesFromTrustedStart.staticCall(
+                this.toWalkInput(forkId, stateProof, evidence),
+                start.toStruct()
+            );
+        // a lagging mirror can leave a hop unproven locally (plan: being
+        // behind must not make the proof invalid): the chain's walk decides
+        return localWalk.valid
+            ? localWalk
+            : this.stateChannelManagerContract.verifyMilestones.staticCall(
+                  this.toWalkInput(forkId, stateProof, evidence)
+              );
+    }
+
+    /**
+     * The final proof of `forkId` through `blockHeight` over executed block
+     * history from the local diamond's anchor: one milestone per finalized
+     * participant change, then the last one found backward from
+     * `blockHeight`. `blockHeight` -1 is the empty proof (the genesis).
+     * Undefined below the anchor; missing required material throws.
+     */
+    private async tryBuildHistoryFinalProof(
+        forkId: ForkId,
+        blockHeight: BlockHeight
+    ): Promise<BuiltStateProof | undefined> {
+        const start = await this.getConstructionStart(forkId);
+        if (blockHeight !== -1 && blockHeight < this.getStartHeight(start))
+            return undefined;
+        const milestones =
+            blockHeight === -1
+                ? []
+                : await this.buildThresholdMilestones(
+                      forkId,
+                      blockHeight,
+                      start.snapshot,
+                      this.getStartHeight(start, 1)
+                  );
+        return this.completeStateProof(
+            forkId,
+            blockHeight,
+            start,
+            milestones.map((milestone) => ({
+                milestone,
+                snapshot: this.getRequiredMilestoneSnapshot(
+                    forkId,
+                    milestone,
+                    start
+                )
+            }))
+        );
+    }
+
+    private async belowAnchorError(
+        forkId: ForkId,
+        blockHeight: BlockHeight
+    ): Promise<Error> {
+        const startHeight = this.getStartHeight(
+            await this.getConstructionStart(forkId)
+        );
+        return new Error(
+            `Cannot build a state proof for fork ${forkId} at height ${blockHeight}: below its anchor at height ${startHeight}`
+        );
+    }
+
+    /** Whether the hop from `start` to `end` changes membership: its union is not both ends' participants. */
+    private async isMembershipChange(
+        start: StateSnapshot,
+        end: StateSnapshot
+    ): Promise<boolean> {
+        const union = await this.getHopSigners(start, end);
+        const startCount = start.snapshotData.participants.length;
+        return (
+            !union ||
+            union.size !== startCount ||
+            end.snapshotData.participants.length !== startCount
+        );
+    }
+
+    /** Whether `finalized` is later than `stored`'s final point. */
+    private isLaterFinalPoint(
+        finalized: StateSnapshot,
+        stored: StoredProof
+    ): boolean {
+        return this.isLaterSnapshot(
+            finalized,
+            StateSnapshot.from(stored.finalizedSnapshot)
+        );
+    }
+
+    /** Whether `anchor` is later than `stored`'s anchor. */
+    private isLaterAnchor(anchor: StateSnapshot, stored: StoredProof): boolean {
+        return this.isLaterSnapshot(
+            anchor,
+            StateSnapshot.from(stored.anchorSnapshot)
+        );
+    }
+
+    /** Whether `snapshot` follows `other` on one fork: the genesis precedes block 0's snapshot. */
+    private isLaterSnapshot(
+        snapshot: StateSnapshot,
+        other: StateSnapshot
+    ): boolean {
+        if (snapshot.hash === other.hash) return false;
+        if (other.isGenesis) return true;
+        return !snapshot.isGenesis && snapshot.blockHeight > other.blockHeight;
+    }
+
+    /** Whether two reads of the stored proof hold the same proof (the store hands out copies). */
+    private isSameStoredProof(
+        current: StoredProof | undefined,
+        read: StoredProof | undefined
+    ): boolean {
+        if (!current || !read) return current === read;
+        return (
+            Codec.encode(current, Type.StoredProof) ===
+            Codec.encode(read, Type.StoredProof)
+        );
+    }
+
     private get channelId(): ChannelId {
         return this.getChannelId();
     }
@@ -828,24 +1377,17 @@ class AgreementManager {
     }
 
     /**
-     * The latest locally finalized state: the snapshot of the first block of
-     * the last threshold milestone this peer can build from its local diamond
-     * anchor over its stored blocks. None when nothing above the anchor is
-     * provably final.
+     * The latest locally finalized state: the stored proof's final point.
+     * None when the stored proof holds no hop (its final point is its
+     * anchor) or none is stored for `forkId`.
      */
-    public getLocalFinalizedSnapshot(
+    public async getLocalFinalizedSnapshot(
         forkId: ForkId
     ): Promise<StateSnapshot | undefined> {
-        const latestHeight = this.storage.blocks.getLatestBlockHeight(forkId);
-        const key = `${forkId}:${latestHeight}`;
-        let pending = this.localFinalizedInFlight.get(key);
-        if (!pending) {
-            pending = this.computeLocalFinalizedSnapshot(forkId, latestHeight);
-            this.localFinalizedInFlight.set(key, pending);
-            const forget = () => this.localFinalizedInFlight.delete(key);
-            pending.then(forget, forget);
-        }
-        return pending;
+        const stored = await this.readStoredProof(forkId);
+        return stored && stored.hops.length > 0
+            ? StateSnapshot.from(stored.finalizedSnapshot)
+            : undefined;
     }
 
     /**
@@ -961,39 +1503,11 @@ class AgreementManager {
             misses.delete(misses.values().next().value!);
     }
 
-    private async computeLocalFinalizedSnapshot(
-        forkId: ForkId,
-        latestHeight: BlockHeight
-    ): Promise<StateSnapshot | undefined> {
-        if (latestHeight < 0) return undefined;
-        const start = await this.getConstructionStart(forkId);
-        if (latestHeight < this.getStartHeight(start)) return undefined;
-        const milestones = await this.buildThresholdMilestones(
-            forkId,
-            latestHeight,
-            start
-        );
-        if (milestones.length === 0) return undefined;
-        // trusted only when the walk itself proves it from the anchor
-        const evidence: StateProofEvidence = {
-            genesisStateSnapshotData:
-                this.getGenesisSnapshot(forkId).snapshotData,
-            milestoneSnapshots: milestones.map((milestone) =>
-                this.getRequiredMilestoneSnapshot(forkId, milestone, start)
-            )
-        };
-        const walk =
-            await this.localDiamondContract.verifyMilestonesFromTrustedStart.staticCall(
-                this.toWalkInput(forkId, { milestones }, evidence),
-                start.snapshot.toStruct()
-            );
-        return walk.valid
-            ? StateSnapshot.from(walk.finalizedSnapshot)
-            : undefined;
-    }
-
-    private getStartHeight(start: ProofStart): BlockHeight {
-        return start.canUseOnChainSnapshot ? start.snapshot.blockHeight : 0;
+    /** The start's block height (0 at the genesis); `offset` above it when it is an anchor. */
+    private getStartHeight(start: ProofStart, offset = 0): BlockHeight {
+        return start.canUseOnChainSnapshot
+            ? start.snapshot.blockHeight + offset
+            : 0;
     }
 
     private getGenesisSnapshot(forkId: ForkId): StateSnapshot {
@@ -1005,8 +1519,9 @@ class AgreementManager {
     }
 
     /**
-     * Forward: one milestone per participant change above the start while
-     * each builds (its proven set proves the next), each the minimum run that
+     * Forward: one milestone per participant change from `fromHeight` (above
+     * the final point `from`) while each builds (its proven set proves the
+     * next), each the minimum run that
      * proves its hop. Backward: the last milestone from `blockHeight` down to
      * the first block whose finality the collected signatures establish; it
      * stays separate even when its run overlaps the previous one.
@@ -1014,18 +1529,16 @@ class AgreementManager {
     private async buildThresholdMilestones(
         forkId: ForkId,
         blockHeight: BlockHeight,
-        start: ProofStart,
+        from: StateSnapshot,
+        fromHeight: BlockHeight,
         exactFinalPoint = false
     ): Promise<MilestoneProofStruct[]> {
-        const fromHeight = start.canUseOnChainSnapshot
-            ? start.snapshot.blockHeight + 1
-            : 0;
         const participantChangeHeights = this.storage.participantSetChanges
             .getChangePointsInRange(forkId)
             .filter((height) => height >= fromHeight && height <= blockHeight);
 
         const milestones: MilestoneProofStruct[] = [];
-        let previousThresholdSnapshot = start.snapshot;
+        let previousThresholdSnapshot = from;
         const push = (milestone: MilestoneProofStruct) => {
             milestones.push(milestone);
             const newSnapshot = this.getSnapshotFromMilestone(milestone);

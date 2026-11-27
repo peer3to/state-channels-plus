@@ -361,6 +361,10 @@ describe("Unit: AgreementManager proof construction", function () {
                 .stub.stripStoredBlockSignature(h.activeForkId!, j, joiner)
                 .request();
             await dropStoredBlock(h, 0, j + 1);
+            await h
+                .control(h.getPeer(0))
+                .stub.rebuildStoredProof(h.activeForkId!)
+                .request();
             // the local diamond's walk of peer 0's stored run k + 1.. as one hop
             const localDiamondWalk = async () => {
                 const blockConfirmations = await storedConfirmations(
@@ -377,6 +381,10 @@ describe("Unit: AgreementManager proof construction", function () {
             const without = await buildProofView(h, 0, { finalizedOnly: true });
             const walkWithout = await localDiamondWalk();
             await addStoredSignature(h, 0, k + 1, joinerIndex);
+            await h
+                .control(h.getPeer(0))
+                .stub.rebuildStoredProof(h.activeForkId!)
+                .request();
             const withJoiner = await buildProofView(h, 0, {
                 finalizedOnly: true
             });
@@ -753,21 +761,48 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(rebuilt.chainWalk.valid).to.equal(true);
         });
 
-        it("U97: a pruned participant-change block above the anchor → construction throws instead of skipping the hop", async function () {
+        it("U97: a pruned participant-change block above the anchor, below the stored final point → construction still builds the stored hops", async function () {
             const h = TestSession.getHarness();
-            const { forkId, joinHeight, observerIndex } =
+            const { forkId, anchor, joinHeight, observerIndex } =
                 await stageJoinHopWithLaterFinalPoint(h, { postAnchor: true });
+            const before = await buildProofView(h, observerIndex);
+            // premise - the join hop is stored above the anchor
+            expect(before.start.hash).to.equal(anchor!.hash);
+            expect(before.milestoneHeights[0][0]).to.equal(joinHeight);
             await h
                 .control(h.getPeer(observerIndex))
                 .stub.pruneStoredBlocksBelowAnchor(forkId, joinHeight + 1)
                 .request();
 
-            const failed = await tryBuildProofView(h, observerIndex);
+            const view = await buildProofView(h, observerIndex);
+
+            expect(view.milestoneHeights).to.deep.equal(
+                before.milestoneHeights
+            );
+            expect(view.finalized.hash).to.equal(before.finalized.hash);
+            expect(view.chainWalk.valid).to.equal(true);
+            expect(view.chainWalk.finalized.hash).to.equal(view.finalized.hash);
+        });
+
+        it("U97: a dropped tail block above the stored final point → construction throws with the missing-block error", async function () {
+            const h = TestSession.getHarness();
+            const { observerIndex, latestHeight } =
+                await stageFinalThenUnfinalizedTail(h, { postAnchor: false });
+            const finalized = await buildProofView(h, observerIndex, {
+                finalizedOnly: true
+            });
+            // premise - block 1 is the stored final point; 2.. is the tail
+            expect(finalized.milestoneHeights).to.deep.equal([[1]]);
+            await dropStoredBlock(h, observerIndex, latestHeight - 1);
+
+            const failed = await tryBuildProofView(h, observerIndex, {
+                height: latestHeight
+            });
 
             expect(failed.view).to.equal(null);
             expect(failed.thrown).to.match(
                 new RegExp(
-                    `missing the participant-change block at height ${joinHeight}`
+                    `missing the required block at height ${latestHeight - 1}`
                 )
             );
         });
@@ -798,6 +833,10 @@ describe("Unit: AgreementManager proof construction", function () {
                     h.getPeer(offlineIndex).address
                 )
                 .request();
+            await h
+                .control(h.getPeer(observerIndex))
+                .stub.rebuildStoredProof(forkId)
+                .request();
 
             const view = await buildProofView(h, observerIndex);
 
@@ -814,7 +853,7 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(view.chainWalk.replayBlockIndex).to.equal(1);
         });
 
-        it("U97: the pruned snapshot of a join block above the anchor → construction throws instead of skipping the hop", async function () {
+        it("U97: the pruned snapshot of a join block above the anchor, below the stored final point → construction still builds the stored hops", async function () {
             const h = TestSession.getHarness();
             const {
                 anchor,
@@ -831,12 +870,13 @@ describe("Unit: AgreementManager proof construction", function () {
                 )
                 .request();
 
-            const failed = await tryBuildProofView(h, observerIndex);
+            const view = await buildProofView(h, observerIndex);
 
-            expect(failed.view).to.equal(null);
-            expect(failed.thrown).to.match(
-                /Milestone built but corresponding snapshot not found/
+            expect(view.milestoneHeights).to.deep.equal(
+                control.milestoneHeights
             );
+            expect(view.finalized.hash).to.equal(control.finalized.hash);
+            expect(view.chainWalk.valid).to.equal(true);
         });
 
         it("U117: history pruned below the observed anchor, a join hop and virtual-voting evidence above it → the latest proof, the anchor proof and the replay state all remain", async function () {
@@ -1087,10 +1127,19 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(r.thrown).to.match(/missing the required block/);
         });
 
-        it("U98: snapshot posting over a pruned participant-change block above the anchor → the post rejects with the missing-block error, no transaction is sent and the chain snapshot stays", async function () {
+        it("U98: snapshot posting over a pruned participant-change block above the anchor, below the stored final point → the update is still sent and the chain adopts the stored final point", async function () {
             const h = TestSession.getHarness();
-            const { forkId, anchor, joinHeight, observerIndex } =
-                await stageJoinHopWithLaterFinalPoint(h, { postAnchor: true });
+            const {
+                forkId,
+                joinHeight,
+                observerIndex,
+                latestHeight: t
+            } = await stageJoinHopWithLaterFinalPoint(h, { postAnchor: true });
+            const finalPoint = await blockSnapshotHashAt(
+                h,
+                observerIndex,
+                t - 1
+            );
             await h
                 .control(h.getPeer(observerIndex))
                 .stub.pruneStoredBlocksBelowAnchor(forkId, joinHeight + 1)
@@ -1101,32 +1150,12 @@ describe("Unit: AgreementManager proof construction", function () {
                 0
             );
 
-            const r = await h.execOnHost(
-                h.getPeer(observerIndex),
-                async (sm) => {
-                    let thrown = "";
-                    try {
-                        await sm.snapshotUpdateService.postStateSnapshotWait(
-                            sm.forkId
-                        );
-                    } catch (error) {
-                        thrown =
-                            error instanceof Error
-                                ? error.message
-                                : String(error);
-                    }
-                    return { thrown };
-                }
-            );
+            const posted = await postSnapshotFrom(h, observerIndex);
             const sent = await sends.restore();
 
-            expect(r.thrown).to.match(
-                new RegExp(
-                    `missing the participant-change block at height ${joinHeight}`
-                )
-            );
-            expect(sent).to.deep.equal([]);
-            expect((await chainSnapshot(h)).hash).to.equal(anchor!.hash);
+            expect(posted).to.equal("posted");
+            expect(sent.flat()).to.include("updateStateSnapshotSameFork");
+            expect((await chainSnapshot(h)).hash).to.equal(finalPoint);
         });
 
         it("U98 (control): snapshot posting with every required block held → the update is sent and the chain adopts the last milestone's first block", async function () {

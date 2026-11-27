@@ -1146,30 +1146,37 @@ describe("Unit: AgreementManager", function () {
             });
             const peerIndex = honestPeerIndices[0];
             const upperInboundHashes = [randomHash()];
+            // the stored proof holds the new fork only: block 0 is at or
+            // below each fork's start, so no fork reads the peer's own hop
+            const atBlockZero = { height: 0 };
 
             const first = await judgeGenesisHopMisses(
                 h,
                 peerIndex,
                 originalForkId,
-                upperInboundHashes
+                upperInboundHashes,
+                atBlockZero
             );
             const repeated = await judgeGenesisHopMisses(
                 h,
                 peerIndex,
                 originalForkId,
-                upperInboundHashes
+                upperInboundHashes,
+                atBlockZero
             );
             const onOtherFork = await judgeGenesisHopMisses(
                 h,
                 peerIndex,
                 newForkId,
-                upperInboundHashes
+                upperInboundHashes,
+                atBlockZero
             );
             const backOnFirstFork = await judgeGenesisHopMisses(
                 h,
                 peerIndex,
                 originalForkId,
-                upperInboundHashes
+                upperInboundHashes,
+                atBlockZero
             );
 
             expect(first.viewDependent).to.equal(1);

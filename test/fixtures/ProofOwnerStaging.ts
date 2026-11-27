@@ -557,6 +557,9 @@ export async function stageFinalBlocks(
  * posts block 1's snapshot as the chain anchor before the top-up (every
  * mirror has it); with `anchorAfterTopUp` peer 0 posts the final point that
  * consumed the top-up while the lagging peer also holds that snapshot event.
+ * With `dropLaggingBlocksFromTopUp` the lagging peer then loses its stored
+ * blocks from the top-up on and rebuilds its stored proof over the rest: its
+ * own final point stays below the top-up, as its mirror's does.
  */
 export async function stageMirrorMissingTopUp(
     h: MathPeerTestHarness,
@@ -564,6 +567,7 @@ export async function stageMirrorMissingTopUp(
         laggingIndex: number;
         anchorBeforeTopUp?: boolean;
         anchorAfterTopUp?: boolean;
+        dropLaggingBlocksFromTopUp?: boolean;
     }
 ): Promise<{
     forkId: ForkId;
@@ -573,6 +577,7 @@ export async function stageMirrorMissingTopUp(
     await h.lifecycle.start(3, 2);
     await suppressTimeoutChecks(h, [0, 1, 2]);
     let anchor = options.anchorBeforeTopUp ? await postAnchor(h) : null;
+    const heightBeforeTopUp = await latestStoredHeight(h, options.laggingIndex);
     const held = await h.mirror.holdUpdates(
         options.laggingIndex,
         "onInboundMessagesProcessed"
@@ -594,6 +599,8 @@ export async function stageMirrorMissingTopUp(
             .query.getLatestBlockHeight(h.activeForkId!)
             .request()
     );
+    if (options.dropLaggingBlocksFromTopUp)
+        await dropStoredBlocksAbove(h, options.laggingIndex, heightBeforeTopUp);
     return { forkId: h.activeForkId!, anchor, latestHeight };
 }
 
@@ -1104,6 +1111,42 @@ export async function dropStoredBlock(
         { height }
     );
     expect(dropped, `a stored block at height ${height}`).to.equal(true);
+}
+
+/** The height of the peer's latest stored block on the active fork. */
+export async function latestStoredHeight(
+    h: MathPeerTestHarness,
+    peerIndex: number
+): Promise<BlockHeight> {
+    return Number(
+        await h
+            .control(h.getPeer(peerIndex))
+            .query.getLatestBlockHeight(h.activeForkId!)
+            .request()
+    );
+}
+
+/**
+ * The peer loses its stored blocks above `height` and rebuilds its stored
+ * proof over the rest: its own final point stays at or below `height`.
+ */
+export async function dropStoredBlocksAbove(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    height: BlockHeight
+): Promise<void> {
+    const latestHeight = await latestStoredHeight(h, peerIndex);
+    for (let dropHeight = latestHeight; dropHeight > height; dropHeight--)
+        await dropStoredBlock(h, peerIndex, dropHeight);
+    await h
+        .control(h.getPeer(peerIndex))
+        .stub.rebuildStoredProof(h.activeForkId!)
+        .request();
+    const finalPoint = await localFinalizedView(h, peerIndex);
+    expect(
+        finalPoint?.height ?? -1,
+        "the peer's own final point stays at or below the kept blocks"
+    ).to.be.at.most(height);
 }
 
 /**

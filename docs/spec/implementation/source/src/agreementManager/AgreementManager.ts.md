@@ -47,12 +47,9 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P20` — A private finalized point above genesis supplies the verification start while construction remains rooted at mirrored genesis
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P21` — Verification from a newer private final point changes neither mirror nor chain snapshot, nor subsequent proof construction rooted at their anchor
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P22` — Missing required anchor-run blocks make construction throw; restoring the genuine blocks permits an explicit new attempt yielding the expected chain-valid run
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P23` — A missing participant-change block above the anchor makes construction throw instead of skipping its hop
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P24` — Loss of a required join confirmation lowers the proved final point to the preceding block and retains the join in a chain-valid unfinalized tail
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P25` — A missing stored snapshot for a required participant-change block makes construction throw instead of skipping the hop
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P26` — Required proof-block absence makes dispute construction throw and leaves the chain dispute window without commitments
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P27` — Required proof-block absence makes sync payload generation throw and return no replacement payload
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P28` — Missing required participant-change block makes snapshot posting throw before any recorded multicall; the chain anchor stays unchanged
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P29` — With required proof material present, snapshot posting sends updateStateSnapshotSameFork and the chain adopts the newer last-milestone final point
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P30` — A canonical chain walk connection failure during snapshot posting propagates and leaves the chain snapshot unchanged
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P31` — A hop consuming then removing a joiner, absent from both endpoint participant sets, is not final without that joiner; adding its signature makes SDK construction retain it and the local canonical walk verify
@@ -67,7 +64,6 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P40` — A genesis-only lagging mirror fails to verify while the newer chain anchor establishes the same proof
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P41` — A mirror missing consumed inbound evidence returns false; canonical chain verification accepts
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P42` — An unlinked block causes all three tiers to return false; shared verification returns the chain invalid verdict without throwing
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P43` — Missing required participant-change storage while obtaining the local final start throws and no later proof tier runs
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P44` — A local EVM connection failure during mirror walk throws with no chain fallback
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P45` — A node RPC failure after the mirror cannot verify throws without an invalid-proof verdict
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P46` — A later joiner synced past a finalized join retains its participant-change hop, rebuilds a genesis-start proof after joining and progress, and constructs a dispute whose proof verifies on chain
@@ -91,6 +87,11 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64` — A spectator audits a real join proof above its frozen view, then constructs exactly the join point with later union votes; canonical verification accepts, the join is the only milestone, and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65` — For an exact target after an earlier join, audit-persisted evidence above a frozen view produces both overlapping hops with their full union signatures; canonical verification ends at exactly the target and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — `tryBuildStateProof` below the mirrored anchor returns no proof: this view is behind the chain, and no proof is built from history below the anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67` — A missing participant-change block above the anchor and below the stored final point leaves construction building the stored hops
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P68` — A missing tail block above the stored final point makes construction throw the missing-block error
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P69` — A missing stored snapshot of a join block below the stored final point leaves construction building the stored hops
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P70` — Snapshot posting over a missing participant-change block below the stored final point still sends the update, and the chain adopts the stored final point
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P71` — Storage that lacks a participant-change block below the stored final point leaves the local final tier walking the proof and accepting it; no later tier runs
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 
@@ -115,3 +116,18 @@ A failed recovery of a genesis-hop inbound run is remembered per fork and upper 
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P1` — a second never-member signer of the same stored block after the genesis hop's recovery failed: no new chain-log scan
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P2` — after a fork change, the same hop's recovery scans the chain logs again
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-3-ZBC869.P3` — past 256 remembered misses, the oldest is forgotten and its hop is scanned again
+
+## UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB
+
+The stored proof is written only by the own advance, the sync install, the re-root and the reset, and a write never replaces a later stored final point.
+
+- Setup: A spectator that holds its own earlier final point syncs to a later served final point, to the final point it already stores, and with its held install interrupted by a conflicting block or by a stored-proof change; a pending auditor audits a dispute above its own final point; an advance of the old fork runs after a fork change; a peer loses its stored block at its stored final point
+- Oracle: The stored proof read back through `getLocalFinalizedSnapshot` and the `Type.StoredProof` encoding of the record; the install state; the sync result's rejections and blacklist flag; the proof built over the stored final point
+
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P1` — a sync to a later final point stores the served final point with its state
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P2` — a sync to the final point already stored leaves the stored proof unchanged
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P3` — an install that aborts on a conflict after the staging publishes neither the state nor the staged proof
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P4` — an install whose stored proof changed after the staging aborts and writes neither the state nor the staged proof
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P5` — an audit that verifies a later final point than the auditor's own leaves the stored proof unchanged
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P6` — an advance of the old fork after a fork change writes nothing and keeps the new fork's stored proof
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P7` — a stored block dropped at the stored final point leaves the final point and the proof built over it unchanged

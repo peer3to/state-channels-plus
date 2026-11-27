@@ -1,5 +1,9 @@
 // @spec-test-coverage-ignore: local mirror divergence staging shared by mapped local-first tests
 import type { MathPeerTestHarness } from "./MathPeerTestHarness";
+import {
+    dropStoredBlocksAbove,
+    latestStoredHeight
+} from "@test/fixtures/ProofOwnerStaging";
 import { expect } from "chai";
 
 /**
@@ -41,16 +45,23 @@ export async function stageMirrorMissingJoin(
  * block only the chain and the other mirrors hold. The channel is idle
  * afterwards; `suppressWriterTimeouts` keeps every peer from disputing the
  * idle next writer, for a workflow that outlives the participant timeout.
+ * With `dropLaggingBlocksFromTopUp` the lagging peer then loses its stored
+ * blocks from the top-up on and rebuilds its stored proof over the rest: its
+ * own final point stays below the top-up, as its mirror's does.
  */
 export async function stageMirrorMissingConsumedTopUp(
     h: MathPeerTestHarness,
     laggingIndex: number,
-    options: { suppressWriterTimeouts?: boolean } = {}
+    options: {
+        suppressWriterTimeouts?: boolean;
+        dropLaggingBlocksFromTopUp?: boolean;
+    } = {}
 ) {
     await h.scenario.preDisputeSetup();
     if (options.suppressWriterTimeouts)
         for (const peer of h.peers)
             await h.rpcStub.suppressTimeoutCheck(peer.index);
+    const heightBeforeTopUp = await latestStoredHeight(h, laggingIndex);
     const held = await h.mirror.holdUpdates(
         laggingIndex,
         "onInboundMessagesProcessed"
@@ -64,6 +75,8 @@ export async function stageMirrorMissingConsumedTopUp(
         await held.heldCount(),
         "the lagging mirror must have missed the top-up"
     ).to.be.greaterThan(0);
+    if (options.dropLaggingBlocksFromTopUp)
+        await dropStoredBlocksAbove(h, laggingIndex, heightBeforeTopUp);
     return held;
 }
 

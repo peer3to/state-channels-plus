@@ -28,7 +28,10 @@ import {
     waitForChainInboundHead
 } from "@test/fixtures/OlderDisputeStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
-import { stageFinalityFromNextBlock } from "@test/fixtures/ProofOwnerStaging";
+import {
+    dropStoredBlocksAbove,
+    stageFinalityFromNextBlock
+} from "@test/fixtures/ProofOwnerStaging";
 import type { DisputeTamper } from "@test/harness/actions/DisputeTamperingActions";
 import type {
     DisputeSubmissionRecording,
@@ -2000,18 +2003,33 @@ export async function stagePendingJoinerMissingHopBase(h: MathPeerTestHarness) {
 
 /**
  * {@link stageMirrorMissingConsumedTopUp} (three peers, peer 1's mirror
- * misses the consumed top-up) and then peer 0 posts its latest final block
- * as the chain anchor while peer 1 also holds that snapshot event. Peer 1
- * proves no local final point and its mirror walks from the genesis; peer 2
- * mirrors the anchor.
+ * misses the consumed top-up, and peer 1 loses its stored blocks from the
+ * top-up on) and then peer 0 posts its latest final block as the chain
+ * anchor while peer 1 also holds that snapshot event. Peer 1 proves no local
+ * final point from the top-up on and its mirror walks from the genesis;
+ * peer 2 mirrors the anchor. With `pruneBelowAnchor` peers 2 and 1 prune
+ * their stored blocks below the anchor first, and peer 1 then loses the
+ * anchor block and the blocks above it.
  */
-export async function stageLaggingAuditorBelowAnchor(h: MathPeerTestHarness) {
-    await stageMirrorMissingConsumedTopUp(h, 1);
+export async function stageLaggingAuditorBelowAnchor(
+    h: MathPeerTestHarness,
+    options: { pruneBelowAnchor?: boolean } = {}
+) {
+    await stageMirrorMissingConsumedTopUp(h, 1, {
+        dropLaggingBlocksFromTopUp: !options.pruneBelowAnchor
+    });
     const anchor = await postSnapshotPastLaggingMirrors(h, [1]);
-    expect(
-        await localFinalizedHeight(h, 1),
-        "the lagging auditor proves no local final point"
-    ).to.equal(null);
+    if (options.pruneBelowAnchor) {
+        for (const index of [2, 1])
+            await h
+                .control(h.getPeer(index))
+                .stub.pruneStoredBlocksBelowAnchor(
+                    h.activeForkId!,
+                    anchor.blockHeight
+                )
+                .request();
+        await dropStoredBlocksAbove(h, 1, anchor.blockHeight - 1);
+    }
     return { anchor, currentIndex: 2, laggingIndex: 1 };
 }
 

@@ -196,6 +196,10 @@ export default class StateApplicationService {
         sm.storage.stateMachineStates.storeStateMachineState(encodedState, {
             hash: stateSnapshot.snapshotData.stateMachineStateHash
         });
+        // A genesis install starts the fork's stored proof, in this step
+        const installed = StateSnapshot.from(stateSnapshot);
+        if (installed.isGenesis)
+            sm.agreementManager.resetStoredProof(installed, encodedState);
         // Update the forkId to the new fork
         sm.forkId = stateSnapshot.forkId;
         sm.membershipService.publishOffChainEligibility(
