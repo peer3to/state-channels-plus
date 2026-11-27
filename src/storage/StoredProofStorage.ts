@@ -20,4 +20,9 @@ export class StoredProofStorage {
     public get(forkId: ForkId): StoredProof | undefined {
         return this.proofsByFork.get(forkId);
     }
+
+    /** Drops the stored proof of `forkId`; a proof of another fork is kept. */
+    public delete(forkId: ForkId): void {
+        this.proofsByFork.delete(forkId);
+    }
 }

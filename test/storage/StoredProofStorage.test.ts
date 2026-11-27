@@ -57,6 +57,27 @@ describe("StoredProofStorage", () => {
         expect(storedProofs.get(factory.hash())).to.equal(undefined);
     });
 
+    it("holds no stored proof for a fork after its proof is deleted", () => {
+        const storedProofs = new Storage().storedProofs;
+        const forkId = factory.hash();
+
+        storedProofs.set(forkId, factory.storedProof(forkId, 1));
+        storedProofs.delete(forkId);
+
+        expect(storedProofs.get(forkId)).to.equal(undefined);
+    });
+
+    it("keeps the stored proof when another fork's proof is deleted", () => {
+        const storedProofs = new Storage().storedProofs;
+        const forkId = factory.hash();
+        const proof = factory.storedProof(forkId, 1);
+
+        storedProofs.set(forkId, proof);
+        storedProofs.delete(factory.hash());
+
+        expect(storedProofs.get(forkId)).to.deep.equal(proof);
+    });
+
     it("keeps the stored proof unchanged when the caller mutates the value it set or read", () => {
         const storedProofs = new Storage().storedProofs;
         const forkId = factory.hash();
