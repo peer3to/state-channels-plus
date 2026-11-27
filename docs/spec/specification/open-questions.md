@@ -919,8 +919,9 @@ decided by the engineer on the date given.
    (prove each miss as the call reaches it and go on) and strategy 2 (prove each pass's misses in one
    request and run the call again) were measured on 2026-11-22 (`docs/light-client-report.md`, Calls).
    In the channel flows a steady-state round needs 0.07 requests to the endpoint once received blocks
-   no longer read their commitment (testing1, 2026-11-27), so how a miss is fetched changes
-   little. Strategy 2 stays and strategy 1, which was a benchmark
+   no longer read their commitment (testing1, 2026-11-27), and 1.11 after the mirror removal, whose
+   chain timestamp check reads a new commitment key at every height (accepted by the engineer on
+   2026-11-27), so how a miss is fetched changes little. Strategy 2 stays and strategy 1, which was a benchmark
    configuration, is removed (2026-11-26). Strategy 3, the endpoint's own simulation, stays as the
    fallback of a read that fails ([`REQ-LC-3-W7RRHM` (A failed read falls back to the endpoint and is made known)](runtime/light-client.md#req-lc-3-w7rrhm)) and for
    the calls the light client leaves to the endpoint ([`REQ-LC-2-PMY1VG`](runtime/light-client.md#req-lc-2-pmy1vg)).

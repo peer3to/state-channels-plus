@@ -125,8 +125,8 @@ Strategy 2 stays. In the 22 Nov calls, keys known together cost strategy 2 one r
 against 4 requests (19 ms) for strategy 1; on a chain of 8 slots that each name the next, strategy 1
 was 12% faster and spent 26 against 38 ms of peer CPU, because strategy 2 runs the call again. In the
 channel flows a steady-state round needed 0.96 to 1.19 requests to the node with the light client on,
-and 0.07 once received blocks stopped reading their commitment (Channel flows), so how a miss is
-fetched changes little there. Strategy 1 is removed, with its
+0.07 once received blocks stopped reading their commitment, and 1.11 after the mirror was removed
+(Channel flows), so how a miss is fetched changes little there. Strategy 1 is removed, with its
 configuration and its two tests. Strategy 3, the node's own simulation, stays only where the light
 client does not answer: a read that fails falls back to it (`REQ-LC-3-W7RRHM`), and calls with gas
 fields or value go to it (`REQ-LC-2-PMY1VG`). `OQ-SPEC-LC-2-XQ3PR7` item 7 records the choice.
@@ -503,8 +503,8 @@ in them, 2 to 10 blocks. In that time the light client pays its start-up and gai
 
 - Each peer's 4 start-up reads (`P2pRuntimeHostRoot`: the protocol times, the gas limit, the replay gas
   and the participant limit) cost 17 to 22 proof requests and 4 header requests, against 4 calls off.
-- With the light client on, reads the event-built mirror answers without a request go to the chain
-  (`REQ-MIRROR-5-N5SZC9`): in transitions, 30 such reads off against 87 to 94 answered on.
+- With the light client on, reads the event-built mirror answered without a request went to the chain
+  (then `REQ-MIRROR-5`, now `REQ-MIRROR-6-0WSB4V`): in transitions, 30 such reads off against 87 to 94 answered on.
 - The first push of a new channel's subscription was empty in 5 of the 6 flows measured on 2026-11-23:
   the channel has no transaction yet when the peer subscribes.
 
@@ -512,13 +512,15 @@ in them, 2 to 10 blocks. In that time the light client pays its start-up and gai
 (steadyState - transitions) / 9 is the cost of one round once the peers follow their channel. Mean of
 the 3 repeat pairs, requests per round:
 
-| SDK                                               | Node      | Where               | Cold                     | Warm            |
-| ------------------------------------------------- | --------- | ------------------- | ------------------------ | --------------- |
-| light client off                                  | `6bf84b6` | testing1            | 6.04                     |                 |
-| on, before watched keys (`66daf0585`)             | `6bf84b6` | testing1            | 3.44                     |                 |
-| on, watched keys (`69332517e`)                    | `6bf84b6` | testing1            | 1.19 and 0.96            | 1.67            |
-| on, watched keys (`69332517e`)                    | `6bf84b6` | development machine | 0.89                     | 2.33            |
-| on, no commitment read when in time (`9482cd7d3`) | `827ca0d` | testing1            | 0.07 (0.22, -0.22, 0.22) | 0 (-0.33, 0, 0) |
+| SDK                                               | Node      | Where               | Cold                     | Warm                    |
+| ------------------------------------------------- | --------- | ------------------- | ------------------------ | ----------------------- |
+| light client off                                  | `6bf84b6` | testing1            | 6.04                     |                         |
+| on, before watched keys (`66daf0585`)             | `6bf84b6` | testing1            | 3.44                     |                         |
+| on, watched keys (`69332517e`)                    | `6bf84b6` | testing1            | 1.19 and 0.96            | 1.67                    |
+| on, watched keys (`69332517e`)                    | `6bf84b6` | development machine | 0.89                     | 2.33                    |
+| on, no commitment read when in time (`9482cd7d3`) | `827ca0d` | testing1            | 0.07 (0.22, -0.22, 0.22) | 0 (-0.33, 0, 0)         |
+| light client off, mirror removed (`e38c97420`)    | `827ca0d` | testing1            | 30.4 (30.7, 30.4, 30.0)  |                         |
+| on, mirror removed (`e38c97420`)                  | `827ca0d` | testing1            | 1.11 (0.89, 1.22, 1.22)  | 2.15 (3.22, 2.44, 0.78) |
 
 Warm runs a warm-up flow on the same node before the measured one, so the node has served other
 peers and the state channel manager holds more storage. Warm cost more per round than cold (1.67
@@ -530,9 +532,19 @@ testing1 a round then cost 0.07 cold and nothing warm: the pairs differ by 0 to 
 spread between repeats of one flow (transitions 88 to 93). The 9 extra rounds add no watch call either:
 steadyState made 39 in every run, transitions 39 to 42.
 
+Removing the event-built mirror (`e38c97420`, 2026-11-27) moved three checks of each received block
+from the local mirror to the chain: whether its fork is disputed, the previous block's calldata
+commitment, and the timestamp check (`REQ-MIRROR-6-0WSB4V`). With the light client off they cost 220,
+70 and 72 calls per steadyState run, and a round costs 30.4 requests against 6.04. With it on, the
+disputed-fork key is held, but the timestamp check reads the previous block's commitment slot (the
+chain's `hasInvalidTimestamp` reads it too), a new key at every height: one watch call per block, so
+steadyState made 63 to 65 watch calls against 53 to 56 in transitions. A round then costs 1.11 cold
+and 2.15 warm. The engineer accepted that cost on 2026-11-27.
+
 **Correctness.** Every flow ran once more in compare mode, where each read the light client answered
 was also asked of the node at the same block: 900 of 900 matched on 2026-11-25, 907 of 907 on
-2026-11-26, 895 of 895 warm, and 1,576 of 1,576 on 2026-11-27 (778 cold, 798 warm). No read failed,
+2026-11-26, 895 of 895 warm, 1,576 of 1,576 on 2026-11-27 (778 cold, 798 warm), and 2,288 of 2,288 after the mirror removal the
+same day (1,156 cold, 1,132 warm). No read failed,
 no push was refused and no subscription restarted in any run.
 
 **The card's 99%.** Fewer RPC calls by 99% is not reachable in these flows, whatever the light client
@@ -543,7 +555,8 @@ Over a whole cold flow the light client costs more requests, not fewer (table ab
 it removes 98.8% of a round's requests cold and all of them warm on testing1 (0.07 and 0 left of 6.04
 off), which is
 the card's case of repeated calls once the state is held. 0.07 is the mean of pair differences of -2
-to +2 requests over 9 rounds, so the measurement cannot tell 98.8% from 99% or 100% there.
+to +2 requests over 9 rounds, so the measurement cannot tell 98.8% from 99% or 100% there. Since the
+mirror removal a round costs 1.11 cold and 2.15 warm of 30.4 off: 96.3% and 92.9% fewer requests.
 
 ### Capacity with the flows' workload
 
