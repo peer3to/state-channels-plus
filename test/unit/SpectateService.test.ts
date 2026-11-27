@@ -1469,23 +1469,6 @@ describe("Unit: SpectateService", function () {
             expect(r.inboundHeadAfter).to.equal(r.inboundHeadBefore);
         });
 
-        it("window already reduced locally by a concurrent sync, with a fabricated inbound successor → accepted, only the concurrent sync's genuine inbound blocks stored", async function () {
-            const r = await applyDisputeWindowInboundSyncPayload(
-                TestSession.getHarness(),
-                {
-                    reduction: "concurrentLocalSync",
-                    mutate: appendForgedInboundSuccessor
-                }
-            );
-            expect(r.rejections).to.deep.equal([]);
-            expect(r.accepted).to.equal(true);
-            expect(r.appliedInboundHashes.length).to.equal(
-                r.servedInboundHashes.length + 1
-            );
-            expect(r.storedInboundHashes).to.deep.equal(r.servedInboundHashes);
-            expect(r.inboundHeadAfter).to.equal(r.servedInboundHashes.at(-1));
-        });
-
         it("window reduced locally during sync, with forged confirmation signatures → accepted, no forged signature stored", async function () {
             const r = await applyDisputeWindowInboundSyncPayload(
                 TestSession.getHarness(),
@@ -1526,25 +1509,6 @@ describe("Unit: SpectateService", function () {
                 TestSession.getHarness(),
                 {
                     reduction: "chainAfterFinalityRead",
-                    mutate: forgeWindowReductionInputs
-                }
-            );
-            expect(r.rejections).to.deep.equal([]);
-            expect(r.accepted).to.equal(true);
-            expect(r.unservedSignatures.length).to.be.greaterThan(0);
-            expect(r.storedUnservedSignatures).to.deep.equal([]);
-            expect(r.storedUnservedDisputeHashes).to.deep.equal([]);
-            expect(r.appliedWindowSnapshotHash).to.not.equal(
-                r.servedWindowSnapshotHash
-            );
-            expect(r.appliedWindowSnapshotStored).to.equal(false);
-        });
-
-        it("window already reduced locally by a concurrent sync, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored", async function () {
-            const r = await applyDisputeWindowInboundSyncPayload(
-                TestSession.getHarness(),
-                {
-                    reduction: "concurrentLocalSync",
                     mutate: forgeWindowReductionInputs
                 }
             );

@@ -41,19 +41,6 @@ Invalid transition versus local failure
 - [x] `UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P2` — a refusal to run under-funded is thrown, not returned as an invalid transition, and the transition does not run
 - [x] `UNIT-TEST-EVM-DIAMOND-SM-2-D2B2BG.P3` — a failed executor connection is thrown, not returned as an invalid transition, and the transition does not run
 
-## UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC
-
-Local reduction outcome
-
-- Setup: Teleport a session to an expired, unreduced dispute window, persist the chain window into the requester's local diamond, and call `reduceAndFinalizeLocally` with the served window inputs (altered per permutation)
-- Oracle: The returned flag is true only when this call committed the reduction; the local window records the committed fork; a revert throws and commits nothing
-
-- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P1` — served inputs on an unreduced window return true and the local window records the expected fork
-- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P2` — a repeat on the window already reduced to the expected fork returns false and keeps that fork
-- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P3` — a repeat expecting another fork throws `RaceConditionReductionExpectationDoesntMatch` and keeps the committed fork
-- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P4` — disputes naming a fork without a dispute window return false and leave the local window unreduced
-- [x] `UNIT-TEST-EVM-DIAMOND-SM-3-G1KMVC.P5` — an inbound list with a fabricated successor throws `ErrorDisputeInboundMessageBlocksInvalid` and leaves the local window unreduced
-
 ## UNIT-TEST-SM-EVM-ADAPTER-1-4TTJSC
 
 ABI encoding/decoding

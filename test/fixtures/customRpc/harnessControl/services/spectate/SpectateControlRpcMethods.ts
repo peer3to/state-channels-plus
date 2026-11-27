@@ -100,27 +100,24 @@ export class SpectateControlRpcMethods extends ANetworkRpcMethods<SpectateContro
     }
 
     /**
-     * Run the real `reduceAndFinalizeLocally` on one window of an encoded sync
-     * payload, expecting its `reducedForkId`; true when this call committed it.
+     * Run the real `simulateReduceAndFinalize` on one window of an encoded sync
+     * payload, expecting its `reducedForkId`; true when the chain call commits it.
      */
-    public async reduceSyncWindowLocally(
+    public async simulateSyncWindowReduction(
         encodedSyncPayload: string,
         windowIndex: number
     ): Promise<boolean> {
         const window = Codec.decode(encodedSyncPayload, Type.SyncPayload)
             .disputeWindows[windowIndex];
         if (!window) throw new Error("No dispute window at this index");
-        return this.service.sm.diamondStateMachine.reduceAndFinalizeLocally(
+        return this.service.spectate.simulateReduceAndFinalize(
             window.disputeConfirmations.map((disputeConfirmation) =>
                 Codec.decode(
                     disputeConfirmation.signedDispute.encodedDispute,
                     Type.Dispute
                 )
             ),
-            window.latestStateSnapshot,
-            window.latestEncodedStateMachineState,
-            window.inboundMessageBlocksAppliedInReduce,
-            window.reducedForkId
+            window
         );
     }
 

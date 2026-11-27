@@ -17,10 +17,9 @@ import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
 import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
-import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { ZeroHash } from "ethers";
+import { ethers, ZeroHash } from "ethers";
 
 /** The state a sync installs and where its last-run replay starts. */
 type SyncReplayBase = {
@@ -353,7 +352,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * returns not synced with no verdict on the peer; so does a chain view that
      * does not reach the payload's `chainBlock` within one agreement window,
      * a served window
-     * the chain has not reduced that this peer cannot reduce locally, or
+     * the chain has not reduced and does not yet commit (kill period open), or
      * (latest mode) an unreduced window on the final fork, naming the fork in
      * `unsettledForkId`.
      */
@@ -417,7 +416,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             // 2) Fetch all disputeWindows that where provided in the SyncPayload:
             //      2.1) persist/update the localEVM with them
             //      2.2) verify that they're expired - if they're not expired abort
-            //      2.3) reduce them if they're not already reduced (locally only) - this may be a divergence from the on-chain state, but the on-chain one will have to reduce to the same one if expired - think of it as a CRDT where this time we're leading/ahead locally and the chain will eventualy reflect the same state
+            //      2.3) reduce them if they're not already reduced, as an eth_call of the chain's reduceAndFinalize: nothing is committed, but the chain checks the inputs and will reduce to the same fork once someone submits it
             //      2.4) ** If more than 1  has to be reduced -> abort **
             //      2.5) verify that they reduce to the correct forks as given in the SyncPayload -> abort otherwise
             //      2.6) verify final genesisSnapshot is correct -> abort otherwise
@@ -443,12 +442,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             const forkIds = syncPayload.disputeWindows.map(
                 (disputeWindow) => disputeWindow.forkId
             );
-            // Another sync may have finalized this window only in the shared
-            // local EVM. Only chain finality can skip the local reduction.
+            // Only chain finality can skip the chain reduction call.
             // Read finality first: a later window fetch includes any reduction that
             // lands between reads. A false decision then still checks the expected
-            // fork locally, in the window the checked disputes name, but only a
-            // reduction this sync runs checks its inputs.
+            // fork on chain, in the window the checked disputes name, but only a
+            // call that commits the reduction checks its inputs.
             // Values indicate chain-final reduction for each requested fork.
             const finalizedByFork = new Map<ForkId, boolean>();
             // a successor fork's genesis timestamp is its origin window's kill period end, final once the chain says expired
@@ -552,7 +550,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         "dispute window not linked"
                     );
                 // 2.2) the window must exist on chain; whether the chain has
-                // reduced it decides what a failing local reduction means.
+                // reduced it decides what a reverting reduction means.
                 // Use this request's chain response; a competing persist may be older.
                 const onChainDw = onChainDisputeWindows.find(
                     (window) => window.forkId === dw.forkId
@@ -586,7 +584,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             "dispute undecodable"
                         );
                     }
-                    // the local reduce picks its window from the disputes, not from dw
+                    // the chain's reduce picks its window from the disputes, not from dw
                     if (
                         !disputes.every(
                             (dispute) =>
@@ -624,24 +622,17 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     }
                     try {
                         const committedReduction =
-                            await diamondStateMachine.reduceAndFinalizeLocally(
-                                disputes,
-                                dw.latestStateSnapshot,
-                                dw.latestEncodedStateMachineState,
-                                dw.inboundMessageBlocksAppliedInReduce,
-                                dw.reducedForkId
-                            );
+                            await this.simulateReduceAndFinalize(disputes, dw);
                         if (committedReduction)
                             reducedByThisSync.add(dw.forkId);
                     } catch (e) {
-                        if (!isLocalEvmExecutionFailure(e)) throw e;
+                        if (!ethers.isError(e, "CALL_EXCEPTION")) throw e;
                         this.logger.debug(
                             "applySyncResponse - served reduction reverts",
                             { peerAddress, error: errorMessage(e) }
                         );
-                        // the local mirror could not recompute an unreduced
-                        // window (open kill period, or state it lacks: a fresh
-                        // mirror has no inbound head) -> no verdict, the chain's
+                        // the chain does not commit an unreduced window while
+                        // its kill period is open -> no verdict, the chain's
                         // reduction judges the claim. on a reduced window the
                         // call only checks the claimed fork against the chain's
                         // result, so a revert is the responder's
@@ -673,7 +664,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                             "reduced fork mismatch"
                         );
                 }
-                // if the above call fails -> local evm will throw -> catch and abort
+                // if the above call fails -> the chain call throws -> catch and abort
                 currentForkId = dw.reducedForkId;
             }
 
@@ -1273,6 +1264,47 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             { blockNumber, logIndex: END_OF_BLOCK_LOG_INDEX }
         );
         return StateSnapshot.from(read);
+    }
+
+    /**
+     * Run the chain's `reduceAndFinalize` on `window` as an `eth_call`,
+     * expecting its `reducedForkId`. True only when the call commits the
+     * window's reduction: at the call's block the window exists, is not
+     * reduced, and the call does not revert, so the chain validated the
+     * inputs. False when the window was already reduced to the expected fork
+     * or does not exist. A revert throws the chain's error. The window is the
+     * one `disputes[0]` names, so a caller must check that the disputes name
+     * the window it means to reduce.
+     */
+    public async simulateReduceAndFinalize(
+        disputes: DisputeStruct[],
+        window: DisputeWindowVerification
+    ): Promise<boolean> {
+        const stateManager = this.p2pManager.stateManager;
+        const contract = stateManager.stateChannelManagerContract;
+        // one call: the window read and the reduction see the same block, and
+        // read the window the reduction picks
+        const [encodedWindows] = await contract.multicall.staticCall([
+            contract.interface.encodeFunctionData("getDisputeWindows", [
+                disputes[0].input.channelId,
+                [disputes[0].input.forkId]
+            ]),
+            stateManager.reductionManager.buildReduceAndFinalizeCalldata(
+                disputes,
+                window.latestStateSnapshot,
+                window.latestEncodedStateMachineState,
+                window.inboundMessageBlocksAppliedInReduce,
+                window.reducedForkId
+            )
+        ]);
+        const [[windowBefore]] = contract.interface.decodeFunctionResult(
+            "getDisputeWindows",
+            encodedWindows
+        );
+        return (
+            windowBefore.evidence.creationTimestamp != 0n &&
+            windowBefore.reducedResult.forkId === ZeroHash
+        );
     }
 
     /**

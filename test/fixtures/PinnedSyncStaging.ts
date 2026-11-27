@@ -1023,8 +1023,10 @@ export async function applySyncPayload(
  * Peers 0-3 hold their own reductions and count incoming sync requests;
  * peer 1 opens a valid self-removal dispute; a fresh joiner connects inside
  * the kill period, or after it when `connectAfterKillPeriod`. Returns once
- * the joiner applied its first answer and waits for the reduction, and the
- * kill period has ended with the window still unreduced on chain: the
+ * the joiner applied its first answer (inside the kill period it then waits
+ * for the reduction; after it, the chain's reduction call proves the window
+ * and it syncs), and the kill period has ended with the window still
+ * unreduced on chain: the
  * joiner's state then, its responder, and handles to reduce the window and
  * read the outcome. `holdInitialSyncDeadline` never runs the joiner's
  * initial-sync deadline, for a case about what happens before it: a slow

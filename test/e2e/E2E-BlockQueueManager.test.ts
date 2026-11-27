@@ -1894,16 +1894,16 @@ describe("E2E: BlockQueueManager", function () {
             const { originalForkId, newForkId, honestPeers } =
                 await h.scenario.fourPeersDisputeResolution();
             const honestIndices = honestPeers.map((peer) => peer.index);
-            // a snapshot on the successor -> a later sync starts after the
-            // dispute, so the spectator has no local record of it; only the
-            // chain still shows the old fork as disputed
+            // the peers' fork update puts the chain on the successor -> a later
+            // sync starts after the dispute, so the spectator has no local
+            // record of it; only the chain still shows the old fork as
+            // disputed. no same-fork snapshot is posted: on an undisputed fork
+            // it clears every dispute window of the channel
             await h.transition.advanceState({
                 count: 2,
                 waitForPeers: honestIndices,
                 waitForFinalization: true
             });
-            await h.transition.postSnapshotWait({ forkId: String(newForkId) });
-            // the post waits for the reduction to settle on chain
             await waitFor(
                 async () =>
                     (await h.channelManager.getStateSnapshot(h.channelId))

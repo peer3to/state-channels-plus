@@ -2362,17 +2362,14 @@ export class StubService extends ANetworkRpcService<
     }
 
     public holdSyncReductionResult(): void {
-        const diamondStateMachine = this.sm.diamondStateMachine;
-        const original =
-            diamondStateMachine.reduceAndFinalizeLocally.bind(
-                diamondStateMachine
-            );
+        const service = this.p2pManager.localRpc.spectateService;
+        const original = service.simulateReduceAndFinalize.bind(service);
         const hold = this.createRpcHold("spectate");
         this.syncReductionHold = hold;
         this.restoreSyncReduction = () => {
-            diamondStateMachine.reduceAndFinalizeLocally = original;
+            service.simulateReduceAndFinalize = original;
         };
-        diamondStateMachine.reduceAndFinalizeLocally = async (...args) => {
+        service.simulateReduceAndFinalize = async (...args) => {
             const result = await original(...args);
             this.restoreSyncReduction?.();
             hold.entered += 1;

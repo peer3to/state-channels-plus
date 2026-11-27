@@ -10,7 +10,7 @@
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
-  Contradicts: a local reduction out-of-gas in `requestSync` on a window the chain has reduced is classified as invalid served evidence and blacklists the responder (on an unreduced window it is no verdict); reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
+  Contradicts: a chain reduction call (`simulateReduceAndFinalize`) out-of-gas in `requestSync` on a window the chain has reduced is classified as invalid served evidence and blacklists the responder (on an unreduced window it is no verdict); reduction gas sufficiency is unverified ([`FIND-SYNC-REDUCTION-GAS-1-AJE985`](../../../../../../../audit/open-findings.md#find-sync-reduction-gas-1-aje985)).
 - [`INV-SYNC-4-Z6HER7` (Read-only trust establishment)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-4-z6her7)
 - [`REQ-SYNC-1-T2589H` (Minimum-target proving)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-1-t2589h)
 - [`REQ-SYNC-2-TNT4F4` (Economic soundness before adoption)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)
@@ -119,7 +119,6 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P93` — a chain-final window the chain has not adopted, whose inbound list carries an extra fabricated successor: the sync is accepted, none of the listed inbound blocks is stored, and the requester's inbound head is unchanged
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P94` — a window the requester reduces locally during the sync: the sync is accepted and exactly the served inbound blocks are stored, with the inbound head on the last one
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P95` — the P93 payload while the reduction lands on chain after the requester's finality read and before its window fetch, so its local reduction returns early: the sync is accepted, none of the listed inbound blocks is stored, and the inbound head is unchanged
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P96` — the P93 payload while a concurrent sync of the genuine payload reduces the window in the requester's local diamond after this sync persisted the window and before it reduces: both syncs are accepted, only the genuine inbound blocks are stored, and the inbound head is on the last genuine block
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P97` — a window the requester reduces locally during the sync whose inbound list carries an extra fabricated successor: while the chain has not reduced the window: the local reduction reverts, the sync fails with no verdict naming the window and no blacklist, no listed inbound block is stored, the inbound head is unchanged, and the local window stays unreduced
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P98` — an unreduced window at the on-chain fork whose disputes name a fork without a dispute window, claiming a fabricated reduced fork with a self-consistent genesis: the sync is rejected as a dispute window mismatch, the responder is blacklisted, the requester stays on its fork, the local window stays unreduced, and no inbound block is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P99` — the P98 payload when its disputes name the window's fork under a channel without a dispute window: the sync is rejected as a dispute window mismatch, the responder is blacklisted, the requester stays on its fork, the local window stays unreduced, and no inbound block is stored
@@ -136,7 +135,6 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P110` — a window the requester reduces locally during the sync, served with an extra signature on each dispute confirmation: the sync is accepted and no extra signature is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P111` — a chain-final window the chain has not adopted, served with an extra signature on each dispute confirmation, a confirmation of an uncommitted dispute and a latest snapshot with another timestamp: the sync is accepted and none of them is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P112` — the P111 payload while the reduction lands on chain after the requester's finality read and before its window fetch, so its local reduction returns early: the sync is accepted and none of the forged inputs is stored
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113` — the P111 payload while a concurrent sync of the genuine payload reduces the window in the requester's local diamond first: the sync is accepted and none of the forged inputs is stored
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P114` — a sync call with no explicit timeout gets a request deadline of two agreement windows: a responder that does not answer in time fails it only after two windows
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P115` — a responder that answers it is still in its own initial sync: `requestSync` returns `SyncResult.ResponderSyncing` at once, the requester keeps the connection with no strike, and neither side blacklists the other
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P116` — one still-syncing answer shared by a `requestSync` caller and three `syncBlockSource` callers: one request, `requestSync` returns `SyncResult.ResponderSyncing`, every `syncBlockSource` returns false, and the requester counts one strike with no blacklist
@@ -176,3 +174,18 @@ Responder proving
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9` — a recovered dispute window identifies a successor whose genesis is not installed; proof serving uses the computed genesis before installation
 - [ ] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P10` — a disputed window whose disputes the responder holds but whose reduce consumed an inbound block its local diamond applied and its inbound storage lacks: the request fails with an error reply and the requester is not blacklisted
 - [x] `UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P11` — a disputed window the responder reads from chain events but whose reduced head it never received (a spectator cut off before that block): the request fails with an error reply and the responder stores no fraud proof
+
+## UNIT-TEST-SPECTATE-SERVICE-3-2QP6RF
+
+Chain reduction call outcome
+
+- Setup: Teleport a session to a reducible disputed window, fetch the responder's sync payload, and call `simulateReduceAndFinalize` with the served window inputs (altered per permutation); the chain reduces the window first where a permutation needs a reduced window
+- Oracle: The returned flag is true only when, at the call's block, the window exists, is not reduced and the chain's `reduceAndFinalize` does not revert; a revert throws the chain's error; the call commits nothing on chain
+
+- [x] `UNIT-TEST-SPECTATE-SERVICE-3-2QP6RF.P1` — served inputs on an expired unreduced window return true and the chain window stays unreduced
+- [x] `UNIT-TEST-SPECTATE-SERVICE-3-2QP6RF.P2` — a window the chain reduced to the expected fork returns false
+- [x] `UNIT-TEST-SPECTATE-SERVICE-3-2QP6RF.P3` — a window the chain reduced to another fork than expected throws `RaceConditionReductionExpectationDoesntMatch` and the chain keeps its fork
+- [x] `UNIT-TEST-SPECTATE-SERVICE-3-2QP6RF.P4` — disputes naming a fork without a dispute window return false
+- [x] `UNIT-TEST-SPECTATE-SERVICE-3-2QP6RF.P5` — disputes naming a channel without a dispute window return false
+- [x] `UNIT-TEST-SPECTATE-SERVICE-3-2QP6RF.P6` — an inbound list with a fabricated successor throws `ErrorDisputeInboundMessageBlocksInvalid`
+- [x] `UNIT-TEST-SPECTATE-SERVICE-3-2QP6RF.P7` — an unreduced window in its kill period throws `RaceConditionDisputeKillPeriodNotExpired`
