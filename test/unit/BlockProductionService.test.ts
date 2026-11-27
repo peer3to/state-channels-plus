@@ -5,6 +5,7 @@ import { Codec, Type } from "@/utils";
 import { sleep } from "@/utils";
 import { disposeAndRelease } from "@test/fixtures/DisposeCutOffStaging";
 import { clientRootFor } from "@test/fixtures/RuntimeRootObservation";
+import { stageSigningStoppedBySync } from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -405,6 +406,35 @@ describe("Unit: BlockProductionService", function () {
                     .query.getBlockByHeight(reducedForkId, 0)
                     .request()
             ).to.be.null;
+        });
+
+        it("the next writer on a fork where a synced proof showed its own history to be the side chain → nothing authored, no throw, no peer's height moves", async function () {
+            const h = TestSession.getHarness();
+            const { requester, forkId } = await stageSigningStoppedBySync(h);
+            expect((await h.query.getNextPeerToWrite()).index).to.equal(
+                requester.index
+            );
+            const heightsBefore = await Promise.all(
+                [0, 1, 2].map((index) =>
+                    h
+                        .control(h.getPeer(index))
+                        .query.getNextBlockHeight(forkId)
+                        .request()
+                )
+            );
+
+            await requester.p2pInstance.p2pContractInstance.add(1);
+
+            expect(
+                await Promise.all(
+                    [0, 1, 2].map((index) =>
+                        h
+                            .control(h.getPeer(index))
+                            .query.getNextBlockHeight(forkId)
+                            .request()
+                    )
+                )
+            ).to.deep.equal(heightsBefore);
         });
 
         it("not my turn → throws instead of authoring", async function () {

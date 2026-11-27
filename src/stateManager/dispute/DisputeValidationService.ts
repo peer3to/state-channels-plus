@@ -5,6 +5,7 @@ import DisputeValidationStrategy from "../validationStrategy/DisputeValidationSt
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import AgreementManager from "@/agreementManager";
 import {
+    type FinalHistory,
     ProofTier,
     type ProofTierWalk,
     type StateProofEvidence
@@ -193,36 +194,52 @@ export default class DisputeValidationService {
     /**
      * The final-history kills a proof this peer did not build meets against
      * this peer's final history, none stored: the slash set of each counter
-     * the chain accepts (`findFinalHistoryCounters`). The proof is judged as
-     * the state proof of a synthetic dispute of `forkId` that carries nothing
-     * else, so it never reaches a commitment check. Empty when no kill holds:
-     * the proof then shows no conflict with this peer's final history.
+     * the chain accepts (`findFinalHistoryCounters`). Empty when no kill
+     * holds: the proof then shows no conflict with this peer's final history.
      */
     public async findFinalHistoryKills(
         forkId: ForkId,
         stateProof: StateProofStruct,
         evidence: StateProofEvidence
     ): Promise<Address[][]> {
-        const dispute: DisputeStruct = {
-            input: {
-                channelId: this.stateManager.channelId,
+        return await this.findSyntheticDisputeKills(
+            forkId,
+            stateProof,
+            evidence,
+            await this.agreementManager.getOwnFinalHistory(forkId)
+        );
+    }
+
+    /**
+     * The reverse direction: the final-history kills the final history of
+     * a received `stateProof` that `walk` verified meets against this
+     * peer's own proof, none stored. This peer's proof is the one its
+     * dispute would carry, through its latest block with the tail
+     * (`tryBuildStateProof`); F comes from the received hops
+     * (`getReceivedFinalHistory`). A holding kill shows this peer's own
+     * history is the side chain. Empty without an own proof.
+     */
+    public async findReverseFinalHistoryKills(
+        forkId: ForkId,
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        walk: ProofTierWalk
+    ): Promise<Address[][]> {
+        const own = await this.agreementManager.tryBuildStateProof(
+            forkId,
+            this.storage.blocks.getLatestBlockHeight(forkId)
+        );
+        if (!own) return [];
+        return await this.findSyntheticDisputeKills(
+            forkId,
+            own.stateProof,
+            own.evidence,
+            await this.agreementManager.getReceivedFinalHistory(
                 forkId,
-                latestStateSnapshotHash: ethers.ZeroHash,
-                latestInboundMessageBlockHash: ethers.ZeroHash,
-                lastInboundMessageBlockHeight: 0,
                 stateProof,
-                onChainSlashes: [],
-                disputeAuditingDataHash: ethers.ZeroHash,
-                disputer: ethers.ZeroAddress,
-                timeout: getEmptyTimeoutStruct(),
-                selfRemoval: false,
-                requireExistingDisputeWindow: false
-            },
-            postedAuditingData: false,
-            outputSnapshotDataHash: ethers.ZeroHash
-        };
-        return (await this.findFinalHistoryCounters(dispute, evidence)).map(
-            ({ slashes }) => slashes
+                evidence,
+                walk
+            )
         );
     }
 
@@ -249,7 +266,10 @@ export default class DisputeValidationService {
     > {
         const counters = await this.findFinalHistoryCounters(
             dispute,
-            evidence
+            evidence,
+            await this.agreementManager.getOwnFinalHistory(
+                dispute.input.forkId
+            )
         );
         const { maxTransactionBytes } = this.stateManager.disputeManager;
         const chosen = chooseFinalHistoryCounter(counters, maxTransactionBytes);
@@ -283,14 +303,50 @@ export default class DisputeValidationService {
     }
 
     /**
+     * The slash set of each final-history counter the chain accepts against
+     * `stateProof` with F from `history`, none stored. The proof is judged
+     * as the state proof of a synthetic dispute of `forkId` that carries
+     * nothing else, so it never reaches a commitment check.
+     */
+    private async findSyntheticDisputeKills(
+        forkId: ForkId,
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        history: FinalHistory
+    ): Promise<Address[][]> {
+        const dispute: DisputeStruct = {
+            input: {
+                channelId: this.stateManager.channelId,
+                forkId,
+                latestStateSnapshotHash: ethers.ZeroHash,
+                latestInboundMessageBlockHash: ethers.ZeroHash,
+                lastInboundMessageBlockHeight: 0,
+                stateProof,
+                onChainSlashes: [],
+                disputeAuditingDataHash: ethers.ZeroHash,
+                disputer: ethers.ZeroAddress,
+                timeout: getEmptyTimeoutStruct(),
+                selfRemoval: false,
+                requireExistingDisputeWindow: false
+            },
+            postedAuditingData: false,
+            outputSnapshotDataHash: ethers.ZeroHash
+        };
+        return (
+            await this.findFinalHistoryCounters(dispute, evidence, history)
+        ).map(({ slashes }) => slashes);
+    }
+
+    /**
      * Every final-history counter the chain accepts against `dispute`, none
-     * stored: the conflicts with this peer's final points and the
-     * regressions of its final point's inbound (each with its slash set,
+     * stored: the conflicts with the final points of `history` and the
+     * regressions of its final points' inbound (each with its slash set,
      * kill size and `store`).
      */
     private async findFinalHistoryCounters(
         dispute: DisputeStruct,
-        evidence: StateProofEvidence
+        evidence: StateProofEvidence,
+        history: FinalHistory
     ) {
         // the snapshot the first block of the last milestone commits
         const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
@@ -298,11 +354,13 @@ export default class DisputeValidationService {
         return [
             ...(await this.findConflictsWithFinalStateCounters(
                 dispute,
-                latestFinalizedSnapshot
+                latestFinalizedSnapshot,
+                history
             )),
             ...(await this.findFinalPointRegressionCounters(
                 dispute,
-                latestFinalizedSnapshot
+                latestFinalizedSnapshot,
+                history
             ))
         ];
     }
@@ -320,12 +378,12 @@ export default class DisputeValidationService {
 
     /**
      * The dispute's proof holds a block that commits another snapshot than a
-     * final point this peer proves at that height: its history conflicts
+     * final point of `history` at that height: its history conflicts
      * with the final history (under one honest peer, two realities cannot
-     * both be final). The final points are this peer's stored proof's (its
-     * hop points and its latest final point, `getProvableFinalPoints`) and,
-     * at heights where it has none, those of audit evidence that agrees
-     * with it (`getEvidenceFinalPoints`). A block at any other height is no
+     * both be final). For this peer's own history the final points are its
+     * stored proof's (its hop points and its latest final point,
+     * `getProvableFinalPoints`) and, at heights where it has none, those of
+     * audit evidence that agrees with it (`getEvidenceFinalPoints`). A block at any other height is no
      * conflict, even when this peer holds a block there. Each conflict is
      * offered to the chain with the prefix that proves that point; every one
      * the chain accepts is a counter. A block the dispute's walk does not
@@ -336,15 +394,12 @@ export default class DisputeValidationService {
      */
     private async findConflictsWithFinalStateCounters(
         dispute: DisputeStruct,
-        latestFinalizedSnapshot: StateSnapshotStruct
+        latestFinalizedSnapshot: StateSnapshotStruct,
+        history: FinalHistory
     ) {
         const { forkId, stateProof } = dispute.input;
-        const [ownPoints, evidencePoints, anchor] = await Promise.all([
-            this.agreementManager.getProvableFinalPoints(forkId),
-            this.agreementManager.getEvidenceFinalPoints(forkId),
-            this.agreementManager.getChainAnchor(forkId)
-        ]);
-        const finalPoints = [...ownPoints, ...evidencePoints];
+        const anchor = await this.agreementManager.getChainAnchor(forkId);
+        const finalPoints = history.conflictPoints;
         const conflicts = stateProof.milestones.flatMap((milestone, i) =>
             milestone.blockConfirmations.flatMap((confirmation, j) => {
                 const block = Block.tryFromBlockConfirmation(confirmation);
@@ -372,10 +427,7 @@ export default class DisputeValidationService {
         );
         const counters = [];
         for (const { height, ...conflict } of conflicts) {
-            const finalProof = await this.agreementManager.tryBuildFinalProofAt(
-                forkId,
-                height
-            );
+            const finalProof = await history.proveAt(height);
             // the stored proof changed since its points were read, or its walk
             // fails: skipping is safe for the verdict, the walk and the replay
             // still judge the dispute in full
@@ -427,8 +479,9 @@ export default class DisputeValidationService {
      * fewer inbound blocks than F's, and those extra blocks hold a JOIN of an
      * address outside G's participants: on one history the inbound height
      * never goes down, so the dispute's history skipped a JOIN the final
-     * history consumed. F comes from this peer's stored proof
-     * (`getProvableFinalPoints`: its hop points and its latest final point).
+     * history consumed. F comes from `history`'s regression points (for this
+     * peer's own history its stored proof, `getProvableFinalPoints`: its hop
+     * points and its latest final point).
      * When G is above the latest final point, F is that point, with no
      * fallback. Otherwise F is each final point below G, fewest hops first,
      * so on an equal slash set the smallest kill is chosen. G's snapshot `latestFinalizedSnapshot` comes from the
@@ -440,14 +493,14 @@ export default class DisputeValidationService {
      */
     private async findFinalPointRegressionCounters(
         dispute: DisputeStruct,
-        latestFinalizedSnapshot: StateSnapshotStruct
+        latestFinalizedSnapshot: StateSnapshotStruct,
+        history: FinalHistory
     ) {
-        const { forkId, stateProof } = dispute.input;
+        const { stateProof } = dispute.input;
         const first = stateProof.milestones.at(-1)?.blockConfirmations[0];
         const latestFinalized = first && Block.tryFromBlockConfirmation(first);
         if (!latestFinalized) return [];
-        const provable =
-            await this.agreementManager.getProvableFinalPoints(forkId);
+        const provable = history.regressionPoints;
         const latest = provable.at(-1);
         // G above the latest final point: that point is F, with no fallback;
         // otherwise every final point below G is a candidate
@@ -464,10 +517,7 @@ export default class DisputeValidationService {
                 finalized.latestInboundMessageBlockHash
             );
             if (!skippedJoin) continue;
-            const finalProof = await this.agreementManager.tryBuildFinalProofAt(
-                forkId,
-                finalized.blockHeight
-            );
+            const finalProof = await history.proveAt(finalized.blockHeight);
             if (!finalProof) continue;
             const proof = {
                 finalProof,

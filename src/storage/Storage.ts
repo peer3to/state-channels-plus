@@ -106,6 +106,17 @@ export class Storage {
         );
     }
 
+    /**
+     * This peer authors and signs nothing on `forkId`: it disputes the fork,
+     * or a synced proof showed its own history there to be the side chain.
+     */
+    isSigningStopped(forkId: ForkId): boolean {
+        return (
+            this.disputes.didIDispute(forkId) ||
+            this.proofEvidence.hasStoppedSigning(forkId)
+        );
+    }
+
     /** The state of `stateHash`: a held one, else one kept as proof evidence. */
     getStateIncludingEvidence(stateHash: Hash): Bytes | undefined {
         return (

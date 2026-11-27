@@ -46,7 +46,7 @@ export default class BlockProductionService {
             if (!(await this.isMyTurn())) {
                 throw new Error("NOT MY TURN: " + message);
             }
-            if (this.isDisputingCurrentFork()) return undefined;
+            if (this.isSigningStoppedOnCurrentFork()) return undefined;
             this.adjustTimestampIfNeeded(tx);
 
             const coordinates = {
@@ -189,12 +189,16 @@ export default class BlockProductionService {
         return this.stateManager.signerAddress === nextToWrite;
     }
 
-    private isDisputingCurrentFork(): boolean {
+    /** No block on a fork we are disputing, or where a synced proof showed our own history to be the side chain. */
+    private isSigningStoppedOnCurrentFork(): boolean {
         const sm = this.stateManager;
-        if (!sm.storage.disputes.didIDispute(sm.forkId)) return false;
+        if (!sm.storage.isSigningStopped(sm.forkId)) return false;
         this.logger.info(
-            "playTransaction - no block on a fork we are disputing",
-            { forkId: sm.forkId }
+            "playTransaction - no block on a fork whose signing is stopped",
+            {
+                forkId: sm.forkId,
+                disputing: sm.storage.disputes.didIDispute(sm.forkId)
+            }
         );
         return true;
     }

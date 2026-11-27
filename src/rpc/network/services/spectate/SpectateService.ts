@@ -1548,6 +1548,12 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * the proof is a side chain: it is kept as sync evidence, and the
      * responder is rejected only when a kill's slash set shows it signed
      * both histories; a peer that only relayed it is not penalized.
+     * In the reverse direction the proof's final history kills this peer's
+     * own proof: its own history is the side chain. When only that holds,
+     * the proof is kept as sync evidence, this peer stops signing on the
+     * fork for good (`stopSigning`), and no dispute is opened and no
+     * responder penalized for it. When both directions hold, the proof is
+     * a side chain as above and this peer keeps signing.
      * Otherwise the proof shows no conflict but cannot be checked from the
      * final point: no verdict and no close, and the next sync request asks
      * again. A proof ending below the final point (`isTooOld`) stays a
@@ -1561,11 +1567,18 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         isTooOld: boolean
     ): Promise<SyncOutcome> {
         const stateManager = this.p2pManager.stateManager;
-        const kills =
-            await stateManager.disputeValidationService.findFinalHistoryKills(
+        const disputeValidation = stateManager.disputeValidationService;
+        const kills = await disputeValidation.findFinalHistoryKills(
+            forkId,
+            syncPayload.stateProof,
+            evidence
+        );
+        const reverseKills =
+            await disputeValidation.findReverseFinalHistoryKills(
                 forkId,
                 syncPayload.stateProof,
-                evidence
+                evidence,
+                walk
             );
         const metadata = {
             peerAddress,
@@ -1575,7 +1588,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 walk.localFinalized!
             )
         };
-        if (kills.length === 0) {
+        if (kills.length === 0 && reverseKills.length === 0) {
             if (isTooOld)
                 return this.rejectSync(
                     peerAddress,
@@ -1595,6 +1608,22 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             syncPayload.latestFinalizedEncodedState as Bytes,
             await stateManager.disputeManager.getMaxDisputeUploadBytes()
         );
+        // only the served final history kills this peer's proof: its own
+        // history is the side chain; the fork choice decides once disputed
+        if (kills.length === 0) {
+            stateManager.storage.proofEvidence.stopSigning(forkId);
+            this.logger.warn(
+                "applySyncResponse - the served final history kills the stored proof: signing stopped on the fork, kept as sync evidence",
+                {
+                    ...metadata,
+                    evidenceKey,
+                    ...LoggerUtils.getSlashSetMetadata([
+                        ...new Set(reverseKills.flat())
+                    ])
+                }
+            );
+            return { synced: false };
+        }
         const signers = [...new Set(kills.flat())];
         this.logger.warn(
             "applySyncResponse - side chain served: not installed, kept as sync evidence",

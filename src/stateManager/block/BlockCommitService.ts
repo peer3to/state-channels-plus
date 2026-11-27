@@ -184,8 +184,9 @@ export default class BlockCommitService {
     private async shouldSignBlock(block: Block): Promise<boolean> {
         const sm = this.stateManager;
         // Never counter-sign on a fork we are disputing: the signature would
-        // postdate our dispute and make it stale.
-        if (sm.storage.disputes.didIDispute(block.forkId)) return false;
+        // postdate our dispute and make it stale. Nor on a fork where a
+        // synced proof showed our own history to be the side chain.
+        if (sm.storage.isSigningStopped(block.forkId)) return false;
         if (sm.p2pManager.isBlacklisted(block.author)) return false;
         if (sm.status !== Status.PARTICIPATING) return false;
         // Sign only blocks whose previous/resulting participant union contains

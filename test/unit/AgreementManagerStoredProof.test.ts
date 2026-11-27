@@ -1,5 +1,6 @@
 import StateSnapshot from "@/models/StateSnapshot";
 import { proofEvidence, storedProof } from "@test/factory";
+import { localFinalizedView } from "@test/fixtures/ProofOwnerStaging";
 import {
     assertAbortedInstallPublishesNoStoredProof,
     assertAuditKeepsStoredProof,
@@ -15,6 +16,11 @@ import {
     persistSideChainSyncEvidence,
     readConflictFinalPoints
 } from "@test/fixtures/StoredProofStaging";
+import {
+    readReceivedFinalHistory,
+    servingSignedConflictAt,
+    stageAnchoredHistory
+} from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -165,6 +171,42 @@ describe("Unit: AgreementManager stored proof", function () {
                     height: 4
                 }
             ]);
+        });
+    });
+
+    it("the final history of a served proof that verified only from the anchor → its hop point above the anchor for both kills, proved exactly by its hop prefix; no other height is proved, and nothing is stored", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, anchor, payload } = await stageAnchoredHistory(h, {
+            blocksAfter: 2
+        });
+        const requester = h.getPeer(2);
+        const localFinalized = (await localFinalizedView(h, requester.index))!;
+        const served = await servingSignedConflictAt(
+            h,
+            payload,
+            anchor,
+            localFinalized.height
+        );
+
+        const history = await readReceivedFinalHistory(
+            h,
+            requester,
+            forkId,
+            served.payload,
+            localFinalized.height - 1
+        );
+
+        expect(history).to.deep.equal({
+            points: [
+                {
+                    height: localFinalized.height,
+                    hash: String(served.finalSnapshot.hash),
+                    proved: true
+                }
+            ],
+            regressionHeights: [localFinalized.height],
+            otherProved: false,
+            unchanged: true
         });
     });
 });

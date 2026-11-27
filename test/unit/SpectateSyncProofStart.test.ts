@@ -26,12 +26,14 @@ import {
     applyPayloads,
     craftProofBlock,
     evidenceFinalPointHeights,
+    readSigningOn,
     servedBlock,
     servingConflictAt,
     servingJoinerBypass,
     servingSignedConflictAt,
     stageAnchoredHistory,
     stageOwnFinalPointBehindMissedTopUp,
+    stageSigningStoppedBySync,
     syncAboveHeldQueuedBlock,
     syncEvidenceView
 } from "@test/fixtures/SyncProofStaging";
@@ -431,7 +433,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
             ).to.equal(String(finalSnapshot.hash));
         });
 
-        it("a participant served a threshold-final block that conflicts with its own final point, signed by the responder → the conflict kill holds: not installed, kept as sync evidence, and the responder is rejected and blacklisted", async function () {
+        it("a participant served a threshold-final block that conflicts with its own final point, signed by the responder → the conflict kill holds in both directions (equal inbound): not installed, kept as sync evidence, the responder is rejected and blacklisted, and the participant keeps signing on the fork", async function () {
             const h = TestSession.getHarness();
             const { forkId, anchor, payload, latestHeight } =
                 await stageAnchoredHistory(h, { blocksAfter: 2 });
@@ -478,6 +480,69 @@ describe("Unit: SpectateService sync proof verification order", function () {
                 finalizedHash: String(conflicting.finalSnapshot.hash),
                 isStateHeld: true
             });
+            expect(await readSigningOn(h, requester, forkId)).to.deep.equal({
+                stopped: false,
+                stoppedBySync: false,
+                signsLatestBlock: true,
+                disputing: false
+            });
+        });
+
+        it("a participant served a threshold-final block at its own final height that has consumed a joiner's JOIN more → only the reverse conflict kill holds, its own history is the side chain: not installed, kept as sync evidence, no rejection, no blacklist, no dispute, and it stops signing on the fork", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageSigningStoppedBySync(h);
+            const { requester, forkId, localFinalized, outcome } = staged;
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: false, threw: "", head: staged.latestHeight }
+            ]);
+            expect(outcome.stateWrites).to.deep.equal([0]);
+            expect(outcome.localFinalizedHeights).to.deep.equal([
+                localFinalized.height
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(
+                await syncEvidenceView(h, requester, staged.served.finalSnapshot)
+            ).to.deep.equal({
+                startHash: String(staged.anchor.hash),
+                hopHeights: [localFinalized.height],
+                finalizedHash: String(staged.served.finalSnapshot.hash),
+                isStateHeld: true
+            });
+            expect(await readSigningOn(h, requester, forkId)).to.deep.equal({
+                stopped: true,
+                stoppedBySync: true,
+                signsLatestBlock: false,
+                disputing: false
+            });
+            // the stop is the requester's own: the responder still signs
+            expect(
+                (await readSigningOn(h, staged.responder, forkId))
+                    .signsLatestBlock
+            ).to.equal(true);
+        });
+
+        it("a participant whose signing a synced proof stopped is then served its responder's honest proof, which verifies from its own final point → the stop is never lifted on that fork", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageSigningStoppedBySync(h);
+            const { requester, forkId } = staged;
+            expect(
+                (await readSigningOn(h, requester, forkId)).stoppedBySync
+            ).to.equal(true);
+
+            const again = await applyPayloads(h, requester, forkId, [
+                "served"
+            ]);
+
+            expect(again.outcomes[0].threw).to.equal("");
+            expect(again.rejections).to.deep.equal([]);
+            expect(await readSigningOn(h, requester, forkId)).to.deep.equal({
+                stopped: true,
+                stoppedBySync: true,
+                signsLatestBlock: false,
+                disputing: false
+            });
         });
 
         it("S2: an honest continuation fails from the observer's final point (its local diamond missed a consumed top-up) and passes at the chain tier → not installed, no rejection, no blacklist; once its local diamond holds the run the same peer's next answer verifies from that final point and installs", async function () {
@@ -491,9 +556,11 @@ describe("Unit: SpectateService sync proof verification order", function () {
                     ["served"],
                     { observeWalks: true, readLocalFinality: true }
                 );
+                // the second trusted-start walk is the build of the
+                // observer's own proof, judged against the served history
                 expect(
                     before.walks!.trustedStart.local.answers
-                ).to.deep.equal([false]);
+                ).to.deep.equal([false, true]);
                 expect(before.walks!.storage.local.answers).to.deep.equal([
                     false
                 ]);

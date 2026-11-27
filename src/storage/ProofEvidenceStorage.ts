@@ -15,12 +15,17 @@ import type { Logger } from "@/utils/logging/Logger";
  * audited dispute) and sync evidence (one per finalized snapshot). Only sync
  * evidence is bounded, per fork; audit evidence is pinned (never counted,
  * refused or evicted). A fork's records stay until `dropFork`. The value is
- * plain data with a `Codec` type (`Type.ProofEvidence`).
+ * plain data with a `Codec` type (`Type.ProofEvidence`). A fork whose
+ * signing a synced proof stopped is kept with that sync evidence until
+ * `dropFork`.
  */
 export class ProofEvidenceStorage {
     private readonly maxSyncRecordsPerFork: number;
     private readonly logger?: Logger;
     private readonly evidenceByKey = new Map<EvidenceKey, ProofEvidence>();
+    // the forks on which a synced proof, kept as sync evidence, showed this
+    // peer's own history to be the side chain; only `dropFork` lifts one
+    private readonly signingStoppedForkIds = new Set<ForkId>();
 
     constructor(maxSyncRecordsPerFork: number, logger?: Logger) {
         this.maxSyncRecordsPerFork = maxSyncRecordsPerFork;
@@ -117,11 +122,26 @@ export class ProofEvidenceStorage {
         return undefined;
     }
 
-    /** Drops every record (audit and sync) of `forkId`; other forks keep theirs. */
+    /**
+     * Stops this peer's signing on `forkId`: the final history of a synced
+     * proof kept as sync evidence kills this peer's own proof there. It is
+     * never lifted on that fork; only `dropFork` clears it.
+     */
+    public stopSigning(forkId: ForkId): void {
+        this.signingStoppedForkIds.add(forkId);
+    }
+
+    /** Whether a synced proof stopped this peer's signing on `forkId` (`stopSigning`). */
+    public hasStoppedSigning(forkId: ForkId): boolean {
+        return this.signingStoppedForkIds.has(forkId);
+    }
+
+    /** Drops every record (audit and sync) of `forkId` and its signing stop; other forks keep theirs. */
     public dropFork(forkId: ForkId): void {
         for (const [key, evidence] of this.evidenceByKey) {
             if (evidence.forkId === forkId) this.evidenceByKey.delete(key);
         }
+        this.signingStoppedForkIds.delete(forkId);
     }
 
     private countSyncRecords(forkId: ForkId): number {

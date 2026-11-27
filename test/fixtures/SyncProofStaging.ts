@@ -1041,18 +1041,27 @@ export async function stageOwnFinalPointBehindMissedTopUp(
 }
 
 /**
+ * The inbound head a crafted final point names instead of its copied
+ * snapshot's; with `joiner`, that head is the joiner's JOIN, the point seats
+ * it and it signs the point too.
+ */
+type InboundHead = { hash: string; height: bigint; joiner?: Peer };
+
+/**
  * A copy of `payload` serving two milestones: peer 0's stored blocks from
  * the anchor block through `height` - 1, then a final point at `height` by
  * that height's author, confirmed by the two other participants, so it is
  * threshold-final walked from the anchor. It commits a copy of peer 0's
- * snapshot at `height` with a later timestamp, so it conflicts with the
- * stored final block there; the served state is peer 0's at `height`.
+ * snapshot at `height` with a later timestamp (and `inboundHead` as its
+ * inbound head, when given), so it conflicts with the stored final block
+ * there; the served state is peer 0's at `height`.
  */
 export async function servingSignedConflictAt(
     h: MathPeerTestHarness,
     payload: SyncPayload,
     anchor: StateSnapshot,
-    height: number
+    height: number,
+    inboundHead?: InboundHead
 ): Promise<{ payload: SyncPayload; finalSnapshot: StateSnapshot }> {
     const forkId = String(anchor.forkID);
     const run: ServedBlock[] = [];
@@ -1061,6 +1070,19 @@ export async function servingSignedConflictAt(
     const stored = await servedBlock(h, forkId, height);
     const finalSnapshot = StateSnapshot.from({
         ...stored.snapshot,
+        snapshotData: inboundHead
+            ? {
+                  ...stored.snapshot.snapshotData,
+                  participants: [
+                      ...stored.snapshot.snapshotData.participants,
+                      ...(inboundHead.joiner
+                          ? [inboundHead.joiner.address]
+                          : [])
+                  ],
+                  latestInboundMessageBlockHash: inboundHead.hash,
+                  latestInboundMessageBlockHeight: inboundHead.height
+              }
+            : stored.snapshot.snapshotData,
         timestamp: BigInt(stored.snapshot.timestamp) + 1n
     });
     const authorIndex = h.peers.find(
@@ -1078,7 +1100,9 @@ export async function servingSignedConflictAt(
         await Promise.all(
             [0, 1, 2]
                 .filter((index) => index !== authorIndex)
-                .map((index) => block.sign(h.getPeer(index).signer))
+                .map((index) => h.getPeer(index))
+                .concat(inboundHead?.joiner ? [inboundHead.joiner] : [])
+                .map((signer) => block.sign(signer.signer))
         )
     );
     expect(block.hash).to.not.equal(stored.hash);
@@ -1094,6 +1118,41 @@ export async function servingSignedConflictAt(
         ),
         finalSnapshot
     };
+}
+
+/**
+ * A spectator joins: its JOIN is posted and peers 0..2 observe it, and no
+ * block consumes it. Then {@link servingSignedConflictAt} at `height` with
+ * that JOIN as the final point's inbound head, the joiner seated and
+ * signing. The served final point has consumed a JOIN of an address
+ * outside the stored final point at `height`, so with it as F the conflict
+ * kill holds against the stored history, and not the other way.
+ */
+export async function servingSignedConflictAheadInboundAt(
+    h: MathPeerTestHarness,
+    payload: SyncPayload,
+    anchor: StateSnapshot,
+    height: number
+): Promise<{ payload: SyncPayload; finalSnapshot: StateSnapshot }> {
+    const query = h.control(h.getPeer(0)).query;
+    const before = await query.getLatestInboundMessageHash().request();
+    const joiner = h.getPeer((await h.join.addSpectatorWait()).index);
+    await h.join.forceInboundJoinWait({
+        participant: joiner.address,
+        observePeerIndices: [0, 1, 2]
+    });
+    const joinHash = (await query.getLatestInboundMessageHash().request())!;
+    expect(joinHash).to.not.equal(before);
+    const join = Codec.decode(
+        (await query.getInboundMessageBlock(joinHash).request())!
+            .encodedMessageBlock,
+        Type.MessageBlock
+    );
+    return await servingSignedConflictAt(h, payload, anchor, height, {
+        hash: joinHash,
+        height: BigInt(join.blockHeight),
+        joiner
+    });
 }
 
 /**
@@ -1360,4 +1419,146 @@ export async function holdCanonicalProofWalk(
                 return true;
             })
     };
+}
+
+/**
+ * Participant peer 2 of {@link stageAnchoredHistory} (two final blocks
+ * after the anchor, every timeout check suppressed) and peer 0's served
+ * proof with a final point at peer 2's own final height that has consumed
+ * a spectator's JOIN more ({@link servingSignedConflictAheadInboundAt}).
+ * With that point as F the conflict kill holds against peer 2's own
+ * history, not the other way: peer 2's history is the side chain.
+ */
+export async function stageOwnHistoryBehindServedInbound(
+    h: MathPeerTestHarness
+) {
+    const staged = await stageAnchoredHistory(h, { blocksAfter: 2 });
+    for (const index of [0, 1, 2])
+        await h.rpcStub.suppressTimeoutCheck(index);
+    const requester = h.getPeer(2);
+    const localFinalized = (await localFinalizedView(h, requester.index))!;
+    expect(localFinalized.height).to.be.greaterThan(staged.anchor.blockHeight);
+    const served = await servingSignedConflictAheadInboundAt(
+        h,
+        staged.payload,
+        staged.anchor,
+        localFinalized.height
+    );
+    return { ...staged, requester, localFinalized, served };
+}
+
+/** {@link stageOwnHistoryBehindServedInbound}, then peer 2 applies the served proof. */
+export async function stageSigningStoppedBySync(h: MathPeerTestHarness) {
+    const staged = await stageOwnHistoryBehindServedInbound(h);
+    const outcome = await applyPayloads(
+        h,
+        staged.requester,
+        staged.forkId,
+        [staged.served.payload],
+        { readLocalFinality: true }
+    );
+    return { ...staged, outcome };
+}
+
+/**
+ * `peer`'s signing on `forkId`: the stop (`getSigningStop`), whether its
+ * commit step would sign the latest stored block there, and whether it
+ * holds an own dispute marker on the fork.
+ */
+export async function readSigningOn(
+    h: MathPeerTestHarness,
+    peer: Peer,
+    forkId: string
+) {
+    const query = h.control(peer).query;
+    return {
+        ...(await query.getSigningStop(forkId).request()),
+        signsLatestBlock: await h.execOnHost(
+            peer,
+            async (sm, args) => {
+                const block = sm.storage.blocks.getLatestBlock(args.forkId);
+                if (!block) throw new Error("no stored block");
+                return await sm.blockCommitService["shouldSignBlock"](block);
+            },
+            { forkId }
+        ),
+        disputing: await query.didIDispute(forkId).request()
+    };
+}
+
+/**
+ * `peer`'s final history of a served `payload` it did not install
+ * (`getReceivedFinalHistory` after its tier walk): per conflict point its
+ * height and hash and whether `proveAt` proves exactly that snapshot, the
+ * regression point heights, whether `proveAt(otherHeight)` proves anything,
+ * and whether the read left the stored proof and the proof evidence of the
+ * fork unchanged.
+ */
+export async function readReceivedFinalHistory(
+    h: MathPeerTestHarness,
+    peer: Peer,
+    forkId: string,
+    payload: SyncPayload,
+    otherHeight: number
+) {
+    return await h.execOnHost(
+        peer,
+        async (sm, args, { Codec, Type }) => {
+            const served = Codec.decode(args.encodedPayload, Type.SyncPayload);
+            const am = sm.agreementManager;
+            const evidence = {
+                genesisStateSnapshotData:
+                    served.latestForkGenesisSnapshot.snapshotData,
+                milestoneSnapshots: served.milestoneSnapshots
+            };
+            const readStores = () =>
+                JSON.stringify([
+                    Codec.encode(
+                        sm.storage.storedProofs.get(args.forkId)!,
+                        Type.StoredProof
+                    ),
+                    sm.storage.proofEvidence
+                        .getForkEvidence(args.forkId)
+                        .map((record) => Codec.encode(record, Type.ProofEvidence))
+                ]);
+            const before = readStores();
+            const walk = await am.verifyStateProof(
+                args.forkId,
+                served.stateProof,
+                evidence
+            );
+            const history = await am.getReceivedFinalHistory(
+                args.forkId,
+                served.stateProof,
+                evidence,
+                walk
+            );
+            const points = [];
+            for (const point of history.conflictPoints) {
+                const proof = await history.proveAt(point.blockHeight);
+                const last = proof?.milestoneSnapshots.at(-1);
+                points.push({
+                    height: Number(point.blockHeight),
+                    hash: String(point.hash),
+                    proved:
+                        !!last &&
+                        Codec.encode(last, Type.StateSnapshot) ===
+                            Codec.encode(point.toStruct(), Type.StateSnapshot)
+                });
+            }
+            return {
+                points,
+                regressionHeights: history.regressionPoints.map((point) =>
+                    Number(point.blockHeight)
+                ),
+                otherProved: !!(await history.proveAt(args.otherHeight)),
+                unchanged: readStores() === before
+            };
+        },
+        {
+            forkId,
+            otherHeight,
+            encodedPayload: Codec.encode(payload, Type.SyncPayload) as string
+        }
+    );
 }

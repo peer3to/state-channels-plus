@@ -894,6 +894,18 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return this.service.storage.disputes.didIDispute(forkId);
     }
 
+    /** Whether this peer signs nothing on `forkId` (`Storage.isSigningStopped`), and whether a synced proof stopped it there. */
+    public getSigningStop(forkId: ForkId): {
+        stopped: boolean;
+        stoppedBySync: boolean;
+    } {
+        const storage = this.service.storage;
+        return {
+            stopped: storage.isSigningStopped(forkId),
+            stoppedBySync: storage.proofEvidence.hasStoppedSigning(forkId)
+        };
+    }
+
     public hasDisputeConfirmation(disputeHash: Hash): boolean {
         return !!this.service.storage.disputes.getDisputeConfirmation(
             disputeHash

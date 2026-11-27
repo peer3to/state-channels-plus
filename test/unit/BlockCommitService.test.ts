@@ -6,6 +6,10 @@ import {
 } from "@test/fixtures/CommitEligibilityFixture";
 import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverRelaysNothingAfterItsLeave } from "@test/fixtures/LeaverRelayFixture";
+import {
+    readSigningOn,
+    stageSigningStoppedBySync
+} from "@test/fixtures/SyncProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -215,6 +219,20 @@ describe("Unit: BlockCommitService", function () {
 
             expect(await evaluate(next.index)).to.equal(false);
             expect(await evaluate(other.index)).to.equal(true);
+        });
+
+        it("a block on a fork where a synced proof showed this participant's own history to be the side chain → not signed; a peer without that stop signs it", async function () {
+            const h = TestSession.getHarness();
+            const { requester, responder, forkId } =
+                await stageSigningStoppedBySync(h);
+
+            const stopped = await readSigningOn(h, requester, forkId);
+            const other = await readSigningOn(h, responder, forkId);
+
+            expect(stopped.stoppedBySync).to.equal(true);
+            expect(stopped.disputing).to.equal(false);
+            expect(stopped.signsLatestBlock).to.equal(false);
+            expect(other.signsLatestBlock).to.equal(true);
         });
     });
 

@@ -126,6 +126,20 @@ export type ProofTierWalk = {
 };
 
 /**
+ * The final history a final-history kill takes its F from, in hop order:
+ * the points a conflict compares the dispute's blocks with, the points a
+ * regression measures (the last one is the latest), and the proof of
+ * exactly one of those points as a walk input (undefined when none).
+ */
+export type FinalHistory = {
+    conflictPoints: StateSnapshot[];
+    regressionPoints: StateSnapshot[];
+    proveAt: (
+        finalHeight: BlockHeight
+    ) => Promise<ProofWalkInputStruct | undefined>;
+};
+
+/**
  * AgreementManager owns state proofs: it builds them from the local diamond's
  * anchor and verifies them from the latest trusted start. It also interprets
  * storage for the other agreement reads.
@@ -567,6 +581,66 @@ class AgreementManager {
             if (proof) return proof;
         }
         return undefined;
+    }
+
+    /**
+     * This peer's own final history on `forkId`: its stored proof's points
+     * (`getProvableFinalPoints`), for a conflict also those of agreeing
+     * audit evidence (`getEvidenceFinalPoints`), each proved by
+     * `tryBuildFinalProofAt`.
+     */
+    public async getOwnFinalHistory(forkId: ForkId): Promise<FinalHistory> {
+        const [own, evidence] = await Promise.all([
+            this.getProvableFinalPoints(forkId),
+            this.getEvidenceFinalPoints(forkId)
+        ]);
+        return {
+            conflictPoints: [...own, ...evidence],
+            regressionPoints: own,
+            proveAt: (finalHeight) =>
+                this.tryBuildFinalProofAt(forkId, finalHeight)
+        };
+    }
+
+    /**
+     * The final history of a received `stateProof` that `walk` verified: its
+     * threshold hop points above the local diamond's anchor, each proved by
+     * the received hops up to it from that anchor (`tryProveHopPrefix`).
+     * Nothing is stored.
+     */
+    public async getReceivedFinalHistory(
+        forkId: ForkId,
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        walk: ProofTierWalk
+    ): Promise<FinalHistory> {
+        const hops = this.selectReceivedHops(
+            stateProof,
+            evidence,
+            walk,
+            walk.start ?? this.getGenesisSnapshot(forkId)
+        );
+        const start = await this.getConstructionStart(forkId);
+        const points = hops
+            .map(({ snapshot }) => StateSnapshot.from(snapshot))
+            .filter(
+                (point) =>
+                    !start.canUseOnChainSnapshot ||
+                    point.blockHeight > start.snapshot.blockHeight
+            );
+        return {
+            conflictPoints: points,
+            regressionPoints: points,
+            proveAt: async (finalHeight) =>
+                this.findHopAt(hops, finalHeight) === -1
+                    ? undefined
+                    : await this.tryProveHopPrefix(
+                          forkId,
+                          hops,
+                          finalHeight,
+                          start
+                      )
+        };
     }
 
     /**

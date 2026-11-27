@@ -380,4 +380,80 @@ describe("ProofEvidenceStorage", () => {
             storage.getStateIncludingEvidence(latest.stateMachineStateHash)
         ).to.equal(evidence.encodedLatestState);
     });
+
+    it("stops signing only on the fork it was stopped on", () => {
+        const proofEvidence = new Storage().proofEvidence;
+        const stoppedForkId = factory.hash();
+        const otherForkId = factory.hash();
+        expect(proofEvidence.hasStoppedSigning(stoppedForkId)).to.equal(false);
+
+        proofEvidence.stopSigning(stoppedForkId);
+
+        expect(proofEvidence.hasStoppedSigning(stoppedForkId)).to.equal(true);
+        expect(proofEvidence.hasStoppedSigning(otherForkId)).to.equal(false);
+    });
+
+    it("never lifts a signing stop when the fork's evidence is written or another fork is dropped", () => {
+        const proofEvidence = new Storage(1).proofEvidence;
+        const forkId = factory.hash();
+        const otherForkId = factory.hash();
+        proofEvidence.setSyncEvidence(factory.proofEvidence(forkId, 1));
+        proofEvidence.stopSigning(forkId);
+
+        // a refused sync record at the bound, an audit record and a drop of another fork
+        proofEvidence.setSyncEvidence(factory.proofEvidence(forkId, 2));
+        proofEvidence.setAuditEvidence(
+            factory.hash(),
+            factory.proofEvidence(forkId, 3)
+        );
+        proofEvidence.stopSigning(otherForkId);
+        proofEvidence.dropFork(otherForkId);
+
+        expect(proofEvidence.hasStoppedSigning(forkId)).to.equal(true);
+        expect(proofEvidence.hasStoppedSigning(otherForkId)).to.equal(false);
+    });
+
+    it("drops a fork's signing stop with its evidence and keeps another fork's stop", () => {
+        const proofEvidence = new Storage().proofEvidence;
+        const droppedForkId = factory.hash();
+        const keptForkId = factory.hash();
+        proofEvidence.setSyncEvidence(factory.proofEvidence(droppedForkId, 1));
+        proofEvidence.stopSigning(droppedForkId);
+        proofEvidence.stopSigning(keptForkId);
+
+        proofEvidence.dropFork(droppedForkId);
+
+        expect(proofEvidence.hasStoppedSigning(droppedForkId)).to.equal(false);
+        expect(proofEvidence.getForkEvidence(droppedForkId)).to.deep.equal([]);
+        expect(proofEvidence.hasStoppedSigning(keptForkId)).to.equal(true);
+    });
+
+    it("storage stops signing on a fork this peer disputes or whose signing a synced proof stopped, and on no other fork", () => {
+        const storage = new Storage();
+        const disputedForkId = factory.hash();
+        const stoppedForkId = factory.hash();
+        const openForkId = factory.hash();
+
+        storage.disputes.storeDisputedFork(disputedForkId, true);
+        storage.proofEvidence.stopSigning(stoppedForkId);
+
+        expect(storage.isSigningStopped(disputedForkId)).to.equal(true);
+        expect(storage.isSigningStopped(stoppedForkId)).to.equal(true);
+        expect(storage.isSigningStopped(openForkId)).to.equal(false);
+    });
+
+    it("storage signs again on a fork whose own dispute marker is rolled back, unless a synced proof stopped it there", () => {
+        const storage = new Storage();
+        const rolledBackForkId = factory.hash();
+        const stoppedForkId = factory.hash();
+        for (const forkId of [rolledBackForkId, stoppedForkId])
+            storage.disputes.storeDisputedFork(forkId, true);
+        storage.proofEvidence.stopSigning(stoppedForkId);
+
+        for (const forkId of [rolledBackForkId, stoppedForkId])
+            storage.disputes.storeDisputedFork(forkId, false);
+
+        expect(storage.isSigningStopped(rolledBackForkId)).to.equal(false);
+        expect(storage.isSigningStopped(stoppedForkId)).to.equal(true);
+    });
 });
