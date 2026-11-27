@@ -79,7 +79,7 @@ milestone when its start differs from the preceding hop, even if the runs overla
 existing milestone only when its first block is the same. Append the linked tail inside the last
 milestone. Missing signatures can lower the proved final point while leaving a valid unfinalized
 tail; they do not necessarily mean data is unavailable. A snapshot update targets the first final
-block of the last milestone, never its evidence tail. An anchor-only update makes no progress.
+block of the last milestone, never its evidence tail. An anchor-only update makes no progress. Before it returns a proof, construction checks it with one walk from the proof's start, run on the chain; a proof that walk rejects is never returned (construction throws), and no second walk from another start follows, because both start at the chain's anchor and cannot differ.
 
 ## Verification and replay
 
@@ -90,7 +90,7 @@ final state or a completed false result advances to the next tier. The chain det
 verdict when earlier starts cannot establish the proof. An independent valid counter may end an
 audit before these tiers: a conflict with a known final state is not a required fallback case.
 For example, a proof built from chain anchor 25 through 50 can fail when attempted from local
-anchor 5 and still succeed from the chain's correct start.
+anchor 5 and still succeed from the chain's correct start. Both tiers are walks the chain evaluates: the first from the peer's own final state, supplied to the chain as the trusted start, the second (the chain walk below) from the chain's own anchor; no tier walks a local replica.
 
 Replay follows the same tier order. Each attempt replays from that tier's verified start and
 state, so a chain anchor can exclude a bad earlier transition. Internal errors, unavailable
@@ -784,6 +784,10 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-8-9zccej.t2.p19"></a>`REQ-SP-8-9ZCCEJ.T2.P19` — With the light client stubbed in, construction starts at the chain's anchor whether or not the mirror lags it.
 
+<a id="req-sp-8-9zccej.t2.p20"></a>`REQ-SP-8-9ZCCEJ.T2.P20` — Construction checks the built proof with one walk from its start on the chain; the chain accepts it though the mirror lacks a consumed inbound block, and no second walk runs.
+
+<a id="req-sp-8-9zccej.t2.p21"></a>`REQ-SP-8-9ZCCEJ.T2.P21` — The chain rejects the built proof (its view precedes a consumed inbound block): construction throws and returns no proof, and no second walk runs.
+
 #### <a id="req-sp-3-sp1jg4.t3"></a>`REQ-SP-3-SP1JG4.T3`
 
 **Requirements / invariants:**
@@ -800,7 +804,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 **Required permutations:**
 
-<a id="req-sp-3-sp1jg4.t3.p1"></a>`REQ-SP-3-SP1JG4.T3.P1` — A hop consuming then removing a joiner, absent from both endpoint participant sets, is not final without that joiner; adding its signature makes SDK construction retain it and the local canonical walk verify.
+<a id="req-sp-3-sp1jg4.t3.p1"></a>`REQ-SP-3-SP1JG4.T3.P1` — A hop consuming then removing a joiner, absent from both endpoint participant sets, is not final without that joiner; adding its signature makes SDK construction retain it and the chain's canonical walk verify.
 
 <a id="req-sp-3-sp1jg4.t3.p2"></a>`REQ-SP-3-SP1JG4.T3.P2` — An ordinary join hop retains exactly the previous/resulting participant union signatures and produces chain-valid finalized-only and tailed proofs.
 

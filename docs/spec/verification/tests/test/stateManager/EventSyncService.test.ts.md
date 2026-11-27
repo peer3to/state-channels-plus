@@ -51,7 +51,7 @@ listener is left behind.
 
 - `authoritative slash recovery returns no change for an empty chain set`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P34, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P5
 - `authoritative slash recovery exposes a failed source read`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P35, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P6, REQ-CHAINOBS-3-N137ZP.T1.P33
-- `authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P36, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P7
+- `authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P36, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P7, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P42, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P27, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P43
 - `authoritative slash recovery rejects a missing chain head`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P8
 - `authoritative slash recovery rejects exhausted chain log queries`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P9
 - `joins concurrent calldata recovery onto one chain query`: none

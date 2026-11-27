@@ -154,11 +154,10 @@ export async function computeLocalReduction(
                 throw new Error("The window commitments are not available");
             const disputes =
                 await sm.agreementManager.getForkDisputes(commitments);
-            const computation =
-                await sm.reductionManager.computeReductionLocally(
-                    args.forkId,
-                    disputes
-                );
+            const computation = await sm.reductionManager.computeReduction(
+                args.forkId,
+                disputes
+            );
             if (!computation)
                 throw new Error("The peer cannot compute the reduction");
             const output = computation.reduceData.reducedOutput;

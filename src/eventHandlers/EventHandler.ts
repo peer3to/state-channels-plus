@@ -30,6 +30,9 @@ import {
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { TransactionResponse } from "ethers";
 
+/** A chain block number. */
+export type BlockNumber = number;
+
 export type EventCoordinate = {
     blockNumber: number;
     logIndex: number;
@@ -115,25 +118,37 @@ export class EventHandler {
             );
             return;
         }
-        const localDiamond = this.diamondStateMachine.localDiamondContract;
-        await localDiamond.onStateSnapshotUpdated(
+        await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
             channelId,
             stateSnapshot,
             coordinate.blockNumber,
             coordinate.logIndex
         );
-        // The mirror drops a snapshot older than one it already applied (a
-        // pinned read that resolves after a later event); membership then
-        // keeps the newer one too.
-        const mirrored = StateSnapshot.from(
-            await localDiamond.getStateSnapshot(channelId)
-        );
-        if (mirrored.hash !== StateSnapshot.from(stateSnapshot).hash) {
-            this.logger.debug(
-                "Ignoring a state snapshot older than the mirrored one",
-                { channelId, mirroredSnapshotHash: mirrored.hash }
+        // Membership publishes only a snapshot the chain still holds: a
+        // later update supersedes this event (a read at the head answers
+        // with it), and membership then keeps the later one.
+        // A snapshot without participants closes the channel and the chain
+        // deletes its snapshot then: nothing is left to compare it with.
+        const isClosing = stateSnapshot.snapshotData.participants.length === 0;
+        if (!isClosing) {
+            const held = await this.readAtHeadReaching(
+                coordinate.blockNumber,
+                async (blockTag) =>
+                    StateSnapshot.from(
+                        await this.stateManager.stateChannelManagerContract.getStateSnapshot(
+                            channelId,
+                            { blockTag }
+                        )
+                    )
             );
-            return;
+            if (!held) return;
+            if (held.hash !== StateSnapshot.from(stateSnapshot).hash) {
+                this.logger.debug(
+                    "Ignoring a state snapshot the chain no longer holds",
+                    { channelId, heldSnapshotHash: held.hash }
+                );
+                return;
+            }
         }
 
         this.stateManager.membershipService.publishOnChainSnapshot(
@@ -366,6 +381,18 @@ export class EventHandler {
         // A delivered join event publishes eligibility before later gossip.
         this.stateManager.membershipService.observeInboundMembership(
             messageBlock
+        );
+    }
+
+    /**
+     * An event of `blockNumber` that changes the pending set was handled in
+     * order by the event pipeline. The pending-set pin moves only through this:
+     * a direct call of a handler (the spectator's snapshot fetch at the head)
+     * does not.
+     */
+    public observePendingSetChangedAt(blockNumber: BlockNumber): void {
+        this.stateManager.membershipService.observePendingSetChangedAt(
+            blockNumber
         );
     }
 
@@ -797,6 +824,53 @@ export class EventHandler {
     }
 
     /**
+     * `read` pinned to `blockNumber`, or undefined when the handler is
+     * disposed first. Logs arrive from every RPC node but a read goes to one,
+     * so the node is waited for until it reaches the block.
+     */
+    public async readAtBlock<T>(
+        blockNumber: BlockNumber,
+        read: (blockTag: BlockNumber) => Promise<T>
+    ): Promise<T | undefined> {
+        if (!(await this.readAtBlockHeadWait(blockNumber))) return undefined;
+        return read(blockNumber);
+    }
+
+    /**
+     * `read` pinned to the chain's head, once the head reaches `blockNumber`,
+     * or undefined when the handler is disposed first. Logs arrive from every
+     * RPC node but a read goes to one, so a node behind the event is waited
+     * for, never trusted.
+     */
+    private async readAtHeadReaching<T>(
+        blockNumber: BlockNumber,
+        read: (blockTag: BlockNumber) => Promise<T>
+    ): Promise<T | undefined> {
+        const eventSyncService = this.stateManager.eventSyncService;
+        for (;;) {
+            const reached = await this.readAtBlockHeadWait(blockNumber);
+            if (!reached) return undefined;
+            const result = await eventSyncService.readAtHead(read);
+            if (result.blockNumber >= blockNumber) return result.value;
+        }
+    }
+
+    private async readAtBlockHeadWait(
+        blockNumber: BlockNumber
+    ): Promise<boolean> {
+        while (
+            !(await this.stateManager.eventSyncService.waitForChainHead(
+                blockNumber,
+                this.stateManager.timeConfig.agreementTime * 1000,
+                this.disposal.signal
+            ))
+        ) {
+            if (this.disposal.signal.aborted) return false;
+        }
+        return true;
+    }
+
+    /**
      * The on-chain window of a relevant dispute, or undefined for one that is
      * not. A dispute is relevant on the current fork, or when final and it
      * completes an operation after its locally computed candidate changed the
@@ -859,7 +933,8 @@ export class EventHandler {
             forkId,
             storage: this.storage,
             p2pEventHooks: this.p2pEventHooks,
-            diamondStateMachine: this.diamondStateMachine,
+            stateChannelManagerContract:
+                this.stateManager.stateChannelManagerContract,
             logger: this.logger
         });
     }

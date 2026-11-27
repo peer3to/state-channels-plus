@@ -33,6 +33,35 @@ describe("Unit: DisputeBuilder", function () {
             expect(r.isSameResult).to.equal(true);
         });
 
+        it("the comparison of a dispute with the evidence already built reduces on the chain, never the mirror", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+            const reads = await h.mirror.observe(0, "reduce");
+            try {
+                await h.execOnHost(
+                    h.getPeer(0),
+                    async (sm, args) => {
+                        const builder = sm.disputeManager["disputeBuilder"];
+                        const result =
+                            (await sm.disputeManager.constructDispute(
+                                args.forkId
+                            ))!;
+                        await builder["hasMoreEvidence"](
+                            args.forkId,
+                            result.dispute
+                        );
+                    },
+                    { forkId }
+                );
+                const { local, chain } = await reads.observation();
+                expect(local.reads).to.equal(0);
+                expect(chain.reads).to.equal(2);
+            } finally {
+                await reads.restore();
+            }
+        });
+
         it("a valid signature merged into the unchanged latest block after a cached construction → the cached result is returned and adds no evidence", async function () {
             const h = TestSession.getHarness();
             const {

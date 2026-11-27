@@ -1890,6 +1890,35 @@ describe("Unit: SpectateService", function () {
             await restoreEvents(false);
         });
 
+        it("a disputed window's reduction for the payload is read from the chain, never the mirror", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId, race, restoreEvents } =
+                await h.scenario.disputeWithSuppressedCommitEvents({
+                    observerIndex,
+                    maliciousPeerIndex: 2,
+                    passFirst: true
+                });
+            const reads = await h.mirror.observe(observerIndex, "reduce");
+            try {
+                await h
+                    .control(h.getPeer(observerIndex))
+                    .spectate.generateSyncPayload(h.channelId!, forkId, 0)
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+                const { local, chain } = await reads.observation();
+                expect(local.reads).to.equal(0);
+                expect(chain.reads).to.be.greaterThan(0);
+            } finally {
+                await reads.restore();
+                await race.release({
+                    replayEvents: false,
+                    runHeldTasks: false,
+                    keepTasksHeld: true
+                });
+                await restoreEvents(false);
+            }
+        });
+
         // a spectator cut off before the participants' last block follows the
         // dispute from chain events only: its window is readable, but it never
         // received the reduced head, so it has no reduce data to prove with

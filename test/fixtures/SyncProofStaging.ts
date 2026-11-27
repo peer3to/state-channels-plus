@@ -4,7 +4,6 @@ import { Status, type SyncPayload } from "@/types";
 import type { Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { buildAndEncodeBlock, hash as randomHash } from "@test/factory";
-import { LOCAL_WALK } from "@test/fixtures/customRpc/harnessControl/services/mirror/MirrorService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     chainSnapshot,
@@ -321,7 +320,10 @@ export async function applyPayloads(
     const observeWalks = options.observeWalks || !!options.walkFault;
     const walks = observeWalks
         ? {
-              trustedStart: await h.mirror.observe(requester.index, LOCAL_WALK),
+              trustedStart: await h.mirror.observe(
+                  requester.index,
+                  "verifyMilestonesFromTrustedStart"
+              ),
               storage: await h.mirror.observe(
                   requester.index,
                   "verifyMilestones"
@@ -330,9 +332,9 @@ export async function applyPayloads(
         : undefined;
     try {
         if (options.walkFault === "localFinalized")
-            await h.mirror.failNextLocalRead(
+            await h.mirror.failNextChainRead(
                 requester.index,
-                LOCAL_WALK,
+                "verifyMilestonesFromTrustedStart",
                 "transport"
             );
         if (options.walkFault === "chain")

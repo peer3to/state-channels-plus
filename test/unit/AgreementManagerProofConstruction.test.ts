@@ -1175,11 +1175,11 @@ describe("Unit: AgreementManager proof construction", function () {
             });
             const observed = await h.mirror.observe(
                 lagging,
-                "verifyMilestones"
+                "verifyMilestonesFromTrustedStart"
             );
             await h.mirror.failNextChainRead(
                 lagging,
-                "verifyMilestones",
+                "verifyMilestonesFromTrustedStart",
                 "transport"
             );
 
@@ -1199,8 +1199,7 @@ describe("Unit: AgreementManager proof construction", function () {
             await observed.restore();
 
             expect(r.thrown).to.not.equal("");
-            // the lagging mirror cannot prove the hop, so the chain walk ran
-            // and failed
+            // the build's one chain walk ran and failed
             expect(observation.chain.failures).to.have.length(1);
             expect((await chainSnapshot(h)).hash).to.equal(anchor!.hash);
         });

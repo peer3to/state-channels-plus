@@ -42,7 +42,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P21` — output-correctness check failure
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P23` — true flag alone supplies a reason: valid state audits successfully without a fraud proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P24` — Audit with no local final state walks the proof from the chain's anchor and accepts
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P25` — Audit whose local diamond misses consumed inbound evidence accepts the canonical chain proof without a counter
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P25` — Audit whose local diamond misses consumed inbound evidence accepts from the chain's trusted-start walk without a counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P26` — Audit by a participant whose mirror holds no same-fork anchor walks the proof from the chain's anchor and accepts
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P29` — Malformed retained tail with posted auditing data produces an invalid-proof counter without crashing
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P30` — Malformed retained tail with permitted omitted data produces an invalid-proof counter without crashing
@@ -124,7 +124,7 @@ Audit order and evidence
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P106` — A missing participant-change block required to establish the local final point makes audit throw before any chain walk and produce no counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P107` — After the local final point cannot establish a consumed-inbound hop, a chain transport failure makes audit throw with no counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P108` — An unproven prefix below the local final point is skipped: trusted-start walk accepts without a chain walk and without counter
-- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P109` — An unproven prefix above the genesis trusted start produces InvalidStateProof pointing inside that prefix without a block index; canonical step verification accepts it, and the auditor kills the dispute and slashes submitter
+- [ ] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P109` — An unproven prefix above the genesis trusted start produces InvalidStateProof pointing inside that prefix without a block index; canonical step verification accepts it, and the auditor kills the dispute and slashes submitter. Untested: needs an auditor without the threshold signatures while the proof's last milestone is final; the only staging found relied on mirror lag
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P110` — When no tier can supply a forged hop snapshot, the auditor holds no block at that height and auditing data is omitted, audit throws for missing milestone snapshots without a counter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P111` — A forged hop conflicting with a held final block is countered at milestone zero/block zero without a chain walk; the auditor kills the dispute with ConflictsWithFinalState and slashes submitter
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P112` — After an honest proof is accepted without a chain walk, replacing its latest snapshot hash with an earlier real snapshot makes audit return InvalidStateProof

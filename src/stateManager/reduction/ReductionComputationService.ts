@@ -31,17 +31,6 @@ export default class ReductionComputationService {
         return this.computeFromOutput(forkId, reducedOutput);
     }
 
-    public async computeLocally(
-        forkId: ForkId,
-        disputes: DisputeStruct[]
-    ): Promise<ReductionComputation | undefined> {
-        const reducedOutput =
-            await this.stateManager.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                disputes
-            );
-        return this.computeFromOutput(forkId, reducedOutput);
-    }
-
     public buildReduceAndFinalizeCalldata(
         disputes: DisputeStruct[],
         latestStateSnapshot: ReduceData["latestStateSnapshot"],

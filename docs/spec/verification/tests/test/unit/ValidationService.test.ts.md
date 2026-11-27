@@ -84,10 +84,10 @@ once the chain is past genesis, does not abort and stores no proof.
 - `conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16
 - `the peer's own stored block replayed verbatim → no conflict, never a double-sign of its honest author`: none
 - `conflict at a taken height, not linked, different author → conflictingButNotLinkedBlockDetected → DISCONNECT`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18
-- `first block with a timestamp before genesis → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P13, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P26
-- `non-first block, bad timestamp, previous block not on-chain → DISPUTE + InvalidTimestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P19
-- `previous-block calldata recovered, candidate now valid → recursive pass returns SUCCESS and caches the timestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P4
-- `previous-block calldata recovered but the candidate is still invalid → objectiveInvalidTimestampDetected`: none
+- `first block with a timestamp before genesis → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P13, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P26, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P41, REQ-MIRROR-6-0WSB4V.T1.P29
+- `non-first block, bad timestamp, previous block not on-chain → DISPUTE + InvalidTimestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P19, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P43, REQ-MIRROR-6-0WSB4V.T1.P30
+- `previous-block calldata recovered, candidate now valid → recursive pass returns SUCCESS and caches the timestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P4, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P42, REQ-TIME-4-83V27Z.T1.P16
+- `previous-block calldata recovered but the candidate is still invalid → objectiveInvalidTimestampDetected`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P44, REQ-TIME-4-83V27Z.T1.P17
 - `block replayed from a synchronization proof outside agreementTime → the subjective window does not apply → SUCCESS`: REQ-BLOCK-PIPE-3-WW2SB7.T1.P11, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P21, UNIT-TEST-BLOCK-INGEST-1-JV64AS.P1, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P23
 - `on-chain timestamp exactly at the post deadline → ON_TIME → SUCCESS even outside agreementTime`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P5
 - `on-chain timestamp one second past the deadline → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P14, UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P19

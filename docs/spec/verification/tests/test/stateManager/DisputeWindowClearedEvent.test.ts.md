@@ -68,7 +68,7 @@ and a new block, no runtime error was reported, `onDisputeStarted` never fired a
 ## Tests
 
 - `a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes and leaves`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P27, UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P57, REQ-LIF-10-QR8NQ9.T1.P39, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P1
-- `a timed-out peer removed by a same-fork snapshot update it never installed stays a participant while the chain lists it as a pending joiner`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P58, REQ-LIF-10-QR8NQ9.T1.P40
+- `a timed-out peer removed by a same-fork snapshot update it never installed stays a participant while the chain lists it as a pending joiner`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P58, REQ-LIF-10-QR8NQ9.T1.P40, REQ-MIRROR-6-0WSB4V.T1.P32
 - `a double signer whose chain events were held through a threshold-final dispute, its reduction and a same-fork snapshot update ignores the final dispute without installing its output, and leaves`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P28, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P3
 - `a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes: nothing persisted, no reduction scheduled, and its mirror holds the chain's snapshot`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P2
 - `an auditor whose read node is behind the block of a fork's first dispute waits for it, then acknowledges, audits and kills the invalid dispute`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P30, REQ-DISPUTE-PIPE-14-5C2SXH.T1.P4

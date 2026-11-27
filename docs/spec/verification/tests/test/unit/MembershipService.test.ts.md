@@ -41,19 +41,22 @@ the chain's. Two top-ups by peer 1, the first one's log lost by the local diamon
 missing below its head; the refresh stores it and the head stays at the chain's. A refresh held after
 its chain read while peer 0 posts a newer snapshot leaves the local diamond at the chain's snapshot.
 
-Three cases record a pending joiner's chain calls. Its refresh makes exactly one multicall and no
-other call: the refresh applies its inbound run to the local diamond, whose pending set then answers
-the pending check. Applying the chain snapshot through the spectate service reads only the snapshot
-when the joiner's local diamond holds its JOIN. When the local diamond missed the JOIN log for good,
-it reads the snapshot and the pending set once each. Both cases first confirm that the joiner's local state
-does not list it, so the snapshot's departure check reaches its pending lookup.
+Three cases record a pending joiner's chain calls. Its refresh makes one multicall, then the head
+read that confirms the snapshot its event announced and one read of the chain's pending set. Applying
+the chain snapshot through the spectate service reads the snapshot, the confirming head read of the
+snapshot, and the pending set once, whether the joiner handled its JOIN's inbound event or never
+received that log. Both cases first confirm that the joiner's local state does not list it, so the
+snapshot's departure check reaches its pending lookup.
 
-Four cases read the membership lookups on real signers next to the chain's seated and pending sets. A
-joiner whose local mirror missed its JOIN for good, while the chain lists it pending, runs a join check
-after a snapshot application: the mirror-only lookup answers false, the chain-confirmed pending lookup
-answers true, and the join keeps no force-join counting start. A seated participant that no pending set
-lists is not pending on chain but is on chain. The joiner that its mirror missed is on chain from the
-chain's pending set alone.
+Six cases read the membership lookups on real signers next to the chain's seated and pending sets. A
+joiner whose handler never saw its JOIN's inbound log (the log is dropped), while the chain lists it
+pending, runs a join check after a snapshot application: the pinned lookup answers false, the
+chain-confirmed pending lookup answers true, and the join keeps no force-join counting start. The pin
+case moves the observed block by hand: the lookup lists nothing before the JOIN's block, lists the JOIN
+at it, and an older block observed later does not move it back. In the consumption case a handled
+snapshot consumes a handled JOIN, and the lookup stops listing it. A seated participant that no
+pending set lists is not pending on chain but is on chain. The joiner that never handled its JOIN's
+inbound event is on chain from the chain's pending set alone.
 
 One pushed-snapshot case loses one inbound log on a peer, so a new participant's JOIN lands above
 the hole. After a cache reset, `publishOnChainSnapshot` with the chain snapshot makes that
@@ -84,12 +87,14 @@ dispute it constructs declares no self-removal.
 - `a refresh fills an inbound block the local diamond misses below its head without moving the head back`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P15, REQ-GOSSIP-4-J5Z4DF.T1.P42
 - `a refresh read before a live snapshot update does not overwrite that newer snapshot in the local diamond or in membership`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P16, REQ-GOSSIP-4-J5Z4DF.T1.P43, REQ-MIRROR-2-E9F3TM.T1.P6, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P21
 - `a pending joiner's refresh makes its pinned multicall chain call and one pending-set chain read`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P17, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19, REQ-GOSSIP-4-J5Z4DF.T1.P44
-- `a pending joiner whose local diamond holds its JOIN reads the pending set from the chain when it applies a snapshot`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P72, REQ-SDK-ARCH-1-7H14H6.T1.P9, REQ-MIRROR-6-0WSB4V.T1.P18
-- `a pending joiner whose local diamond misses its JOIN reads the pending set from the chain once`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P20, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P73, REQ-SDK-ARCH-1-7H14H6.T1.P10
-- `a pending JOIN the chain lists but the joiner's local mirror misses is not observed locally and starts no force-join counters`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P70, REQ-SDK-ARCH-1-7H14H6.T1.P7
-- `a seated participant absent from the mirror's and the chain's pending sets is not pending on chain`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P74
+- `a pending joiner that handled its JOIN's inbound event reads the pending set from the chain when it applies a snapshot`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P72, REQ-SDK-ARCH-1-7H14H6.T1.P9, REQ-MIRROR-6-0WSB4V.T1.P18
+- `a pending joiner that has not handled its JOIN's inbound event reads the pending set from the chain once`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P20, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P73, REQ-SDK-ARCH-1-7H14H6.T1.P10
+- `a pending JOIN the chain lists but the joiner has not handled is not observed and starts no force-join counters`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P70, REQ-SDK-ARCH-1-7H14H6.T1.P7, INV-TJOIN-2-H7JSQM.T2.P12, INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P12
+- `the pending lookup follows the last handled inbound block: before the JOIN's block it lists nothing, at it the JOIN, and an older event handled later does not move it back`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P82, INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P10
+- `a JOIN that a later handled snapshot consumed is no longer pending at the pin`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P83, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26, INV-MEMBERSHIP-PENDING-1-2H1T75.T1.P11
+- `a seated participant absent from the pinned and the head pending sets is not pending on chain`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P74
 - `a participant seated on chain with no pending entry is on chain`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P75
-- `a joiner pending on chain and missed by its local mirror is on chain`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P76
+- `a joiner pending on chain whose inbound event it has not handled is on chain`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P76
 - `a snapshot participant unknown to the cache while a JOIN is pending is admitted, not blacklisted`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P52, REQ-GOSSIP-4-J5Z4DF.T1.P39
 - `a local diamond failure during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P53, REQ-GOSSIP-4-J5Z4DF.T1.P40
 - `a local diamond failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P67, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P18, REQ-GOSSIP-4-J5Z4DF.T1.P45
@@ -117,4 +122,4 @@ dispute it constructs declares no self-removal.
 - `U77: after the agreementTime grace, fires exactly at the first counted block + participants + 1`: INV-TJOIN-2-H7JSQM.T2.P7, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P41
 - `a clean leave everyone signed → snapshot path, force-exit flag kept`: none
 - `a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52, REQ-RMSTORE-2-Y2T1PG.T1.P5, REQ-LIF-10-QR8NQ9.T1.P36
-- `a pending joiner with chain reads proven reads the pending set from the chain even while its local diamond holds its JOIN`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P80
+- `a pending joiner with chain reads proven reads the pending set from the chain after it handled its JOIN's inbound event`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P80

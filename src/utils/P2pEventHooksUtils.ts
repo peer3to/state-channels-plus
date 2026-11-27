@@ -1,4 +1,3 @@
-import ADiamondStateMachine from "@/ADiamondStateMachine";
 import { Block } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import type LeaveChannelService from "@/stateManager/membership/LeaveChannelService";
@@ -15,6 +14,7 @@ import {
 import { addressesEqual, getChecksumAddress } from "@/utils/address";
 import { errorMessage } from "@/utils/errorMessage";
 import type { Logger } from "@/utils/logging";
+import { StateChannelManagerInterface } from "@typechain-types";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 
 type NotifyDisputeUpdateOptions = {
@@ -22,7 +22,7 @@ type NotifyDisputeUpdateOptions = {
     forkId: ForkId;
     storage: Storage;
     p2pEventHooks: P2pEventHooks;
-    diamondStateMachine: ADiamondStateMachine;
+    stateChannelManagerContract: StateChannelManagerInterface;
     logger: Logger;
 };
 
@@ -56,13 +56,13 @@ export default class P2pEventHooksUtils {
         forkId,
         storage,
         p2pEventHooks,
-        diamondStateMachine,
+        stateChannelManagerContract,
         logger
     }: NotifyDisputeUpdateOptions): Promise<void> {
         let disputeCommitments: Hash[];
         try {
             disputeCommitments =
-                await diamondStateMachine.localDiamondContract.getWindowCommitments(
+                await stateChannelManagerContract.getWindowCommitments(
                     channelId,
                     forkId
                 );

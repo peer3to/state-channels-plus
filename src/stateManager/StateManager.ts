@@ -187,8 +187,7 @@ class StateManager<
             this.eventHandler,
             this.storage,
             this.timeConfig,
-            logger,
-            this.diamondStateMachine.localDiamondContract
+            logger
         );
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
@@ -200,7 +199,6 @@ class StateManager<
             this.eventSyncService,
             this.logger,
             () => this.channelId,
-            this.diamondStateMachine.localDiamondContract,
             this.stateChannelManagerContract
         );
         this.disputeManager = new DisputeManager(

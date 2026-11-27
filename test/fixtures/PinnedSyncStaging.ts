@@ -98,7 +98,7 @@ async function holdComputedSuccessor(
                     args.forkId
                 ))!
             );
-            return (await sm.reductionManager.computeReductionLocally(
+            return (await sm.reductionManager.computeReduction(
                 args.forkId,
                 disputes
             ))!.reducedForkId;

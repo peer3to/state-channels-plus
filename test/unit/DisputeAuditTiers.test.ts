@@ -214,7 +214,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(chain.reads).to.equal(0);
             // the local final point is proven twice (conflict check, tier
             // start), then the first tier walks the dispute's proof from it
-            const trusted = (await trustedWalks.observation()).local;
+            const trusted = (await trustedWalks.observation()).chain;
             expect(trusted.reads).to.be.at.least(3);
             expect(trusted.answers.at(-1)).to.equal(true);
         });
@@ -239,12 +239,16 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(chain.failures).to.deep.equal([]);
         });
 
-        it("U28: the local diamond misses the inbound run a hop consumes -> the chain's walk accepts, true", async function () {
+        it("U28: the local diamond misses the inbound run a hop consumes -> the chain's trusted-start walk accepts, true", async function () {
             const h = TestSession.getHarness();
             await stageMirrorMissingConsumedTopUp(h, 1);
             const { dispute } = await h.dispute.fetchConstructedDispute(0);
             expect(dispute.postedAuditingData).to.equal(false);
             const walks = await h.mirror.observe(1, "verifyMilestones");
+            const trustedWalks = await h.mirror.observe(
+                1,
+                "verifyMilestonesFromTrustedStart"
+            );
 
             const run = await h.dispute.auditDispute(1, dispute);
 
@@ -252,7 +256,10 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(run.disputeFraudProofCount).to.equal(0);
             const { local, chain } = await walks.observation();
             expect(local.reads).to.equal(0);
-            expect(chain.answers).to.deep.equal([true]);
+            expect(chain.reads).to.equal(0);
+            const trusted = await trustedWalks.observation();
+            expect(trusted.local.reads).to.equal(0);
+            expect(trusted.chain.answers.at(-1)).to.equal(true);
         });
 
         it("D4: an authentic block conflicts with the local final point -> the conflict counter is stored before any tier walk", async function () {
@@ -288,7 +295,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(local.reads + chain.reads).to.equal(0);
             // only the local final point's own proofs ran, never a walk of
             // the dispute's proof from it
-            const trusted = (await trustedWalks.observation()).local;
+            const trusted = (await trustedWalks.observation()).chain;
             expect(trusted.answers.every((answer) => answer === true)).to.equal(
                 true
             );
@@ -383,17 +390,20 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
         it("U30: the chain's walk cannot reach the RPC node -> the audit throws it, no proof", async function () {
             const h = TestSession.getHarness();
-            // the first tier cannot prove the hop: the chain tier is asked
-            await stageMirrorMissingConsumedTopUp(h, 1);
-            const { dispute } = await h.dispute.fetchConstructedDispute(0);
-            const walks = await h.mirror.observe(1, "verifyMilestones");
+            // nothing is final while peer 2 is away: the chain tier is asked
+            await h.scenario.preDisputeSetupDisconnectedPeer();
+            await h.control(h.getPeer(3)).dispute.setForceExit(true).request();
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(3);
+            expect(await localFinalizedHeight(h, 0)).to.equal(null);
+            const walks = await h.mirror.observe(0, "verifyMilestones");
             await h.mirror.failNextChainRead(
-                1,
+                0,
                 "verifyMilestones",
                 "transport"
             );
 
-            const run = await h.dispute.auditDispute(1, dispute);
+            const run = await h.dispute.auditDispute(0, dispute, auditingData);
 
             expect(run.outcome).to.equal("threw");
             expect(run.disputeFraudProofCount).to.equal(0);
@@ -430,83 +440,9 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             expect(local.reads).to.equal(0);
             expect(chain.reads).to.equal(0);
             // the walk from the final point ran and accepted the proof
-            const trusted = (await trustedWalks.observation()).local;
+            const trusted = (await trustedWalks.observation()).chain;
             expect(trusted.reads).to.be.at.least(3);
             expect(trusted.answers.at(-1)).to.equal(true);
-        });
-
-        it("U32: the same unproven hop above the auditor's trusted start (chain anchor still the genesis) -> false + DisputeInvalidStateProof whose evidence the chain accepts", async function () {
-            const h = TestSession.getHarness();
-            // peer 1's mirror cannot prove the top-up hop: it walks from the
-            // genesis, below the unproven hop
-            await stageMirrorMissingConsumedTopUp(h, 1);
-            const forkId = h.activeForkId!;
-            const disputer = h.getPeer(0);
-            // every peer's live audit stores its counter but sends no kill
-            const kills = await Promise.all(
-                h.peers.map((peer) => h.rpcStub.suppressDisputeKill(peer.index))
-            );
-            const { dispute: honest, auditingData: honestData } =
-                await h.dispute.fetchConstructedDispute(0);
-            const invalidPrefix = await unsignedOwnMilestonesThrough(h, 0, 1);
-            expect(await localFinalizedHeight(h, 1)).to.equal(null);
-            const { dispute } = await h.tamper.postTamperedDispute(
-                disputer.index,
-                (posted) => {
-                    posted.input.stateProof.milestones = [
-                        ...invalidPrefix,
-                        ...posted.input.stateProof.milestones
-                    ];
-                }
-            );
-
-            const run = await h.dispute.auditDispute(1, dispute);
-
-            expect(run).to.include({ outcome: "returned", isValid: false });
-            expect(run.storedProof?.disputeFraudProofType).to.equal(
-                DisputeFraudProofType.DisputeInvalidStateProof
-            );
-            // the omitted-data counter points at an unproven hop of the
-            // prefix, and the chain judges that step failed with its evidence
-            const evidence = Codec.decode(
-                run.storedProof!.encodedProof,
-                DisputeFraudProofType.DisputeInvalidStateProof
-            );
-            expect(Number(evidence.milestoneIndex)).to.be.lessThan(
-                invalidPrefix.length
-            );
-            expect(evidence.hasBlockIndex).to.equal(false);
-            expect(
-                await h.channelManager.isStateProofStepInvalid.staticCall(
-                    dispute,
-                    evidence
-                )
-            ).to.equal(true);
-            // control: the honest proof walks with the same genesis data
-            const control = await h.channelManager.verifyMilestones.staticCall({
-                channelId: honest.input.channelId,
-                forkId: honest.input.forkId,
-                stateProof: honest.input.stateProof,
-                genesisStateSnapshotData:
-                    evidence.auditingData.genesisStateSnapshotData,
-                milestoneSnapshots: honestData.milestoneSnapshots
-            });
-            expect(control.valid).to.equal(true);
-            expect(
-                await h.channelManager.isCorrectLatestState.staticCall(
-                    honest,
-                    evidence.auditingData.genesisStateSnapshotData
-                )
-            ).to.equal(true);
-            // the auditor's own kill transaction lands on chain
-            await kills[1]!.restore();
-            await killSpamDispute(h, 1, disputer.address, forkId);
-            const kill = await readDisputeKill(h, disputer.address);
-            expect(kill.killer).to.equal(h.getPeer(1).address);
-            expect(kill.appliedProofTypes).to.deep.equal([
-                DisputeFraudProofType.DisputeInvalidStateProof
-            ]);
-            await h.assert.dispute.slashedOnChain(disputer.address);
         });
 
         it("U42: a hop whose committed snapshot no tier can supply, at a height the auditor holds no block for, with omitted data -> the audit throws, no unsupported counter", async function () {

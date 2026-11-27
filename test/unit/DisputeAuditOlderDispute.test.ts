@@ -419,7 +419,7 @@ describe("Unit: DisputeValidationService data availability and older disputes", 
             expect(local.reads + chain.reads).to.equal(0);
             await balance.restore();
             // the audit ran: it walked the older proof from its final point
-            const trusted = (await trustedWalks.observation()).local;
+            const trusted = (await trustedWalks.observation()).chain;
             expect(trusted.reads).to.be.at.least(1);
             expect(trusted.answers.at(-1)).to.equal(true);
             await trustedWalks.restore();
@@ -530,7 +530,7 @@ describe("Unit: DisputeValidationService data availability and older disputes", 
             expect(local.reads + chain.reads).to.equal(0);
             await balance.restore();
             // the audit ran: it walked the older proof from its final point
-            const trusted = (await trustedWalks.observation()).local;
+            const trusted = (await trustedWalks.observation()).chain;
             expect(trusted.reads).to.be.at.least(1);
             expect(trusted.answers.at(-1)).to.equal(true);
             await trustedWalks.restore();

@@ -849,7 +849,7 @@ export async function latestSyncFromResponderBehindDerivedFork(
                         forkId
                     ))!
                 );
-                return (await sm.reductionManager.computeReductionLocally(
+                return (await sm.reductionManager.computeReduction(
                     forkId,
                     disputes
                 ))!.reducedForkId;

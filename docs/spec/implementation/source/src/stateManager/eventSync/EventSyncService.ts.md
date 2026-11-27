@@ -16,6 +16,8 @@
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
 - [`REQ-IX-7-A004VZ` (Chain observation)](../../../../../specification/interactions.md#req-ix-7-a004vz)
 - [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
+- [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
 - [`REQ-RMSTORE-1-BWKVBG` (Monotone observation progress)](../../../../../specification/storage/progress-markers.md#req-rmstore-1-bwkvbg)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
 
@@ -55,8 +57,8 @@ Reconnect catch-up
 
 Ordering and recovery
 
-- Setup: Deliver logs out of order; drop events; restart mid-stream; exhaust recovery attempts; hold the local diamond's inbound applications and release them in either order; read membership before a live snapshot update; fail the local diamond's next write while a recovered log is applied; hold a streamed dispute log's handling in flight while the dispute-window recovery runs, and let it succeed, store its dispute then fail, or fail before storing
-- Oracle: Per-channel order preserved; recovery fills gaps within caps; restart resumes without skips; a membership synchronization is idempotent with live logs and log recovery, never moves the local diamond back, and makes no chain call its pinned read answers; a failed recovery read or a local handler failure on a log the recovery itself dispatched rejects the recovery for every caller; the dispute-window recovery awaits a dispute log already in flight or already failed and rejects with its failure only while its dispute is still missing, so a log that stored its dispute and then failed leaves the window readable
+- Setup: Deliver logs out of order; drop events; restart mid-stream; exhaust recovery attempts; hold the local diamond's inbound applications and release them in either order; read membership before a live snapshot update; fail the local diamond's next write while a recovered log is applied; recover a slash twice; hold a streamed dispute log's handling in flight while the dispute-window recovery runs, and let it succeed, store its dispute then fail, or fail before storing
+- Oracle: Per-channel order preserved; recovery fills gaps within caps; restart resumes without skips; a membership synchronization is idempotent with live logs and log recovery, never moves the local diamond back, and makes no chain call its pinned read answers, except the head read that confirms its snapshot; slash recovery diffs the chain's slash set against the slashes this service handled, which replayed slash logs fill and a storage clearing empties; an inbound-messages or snapshot event records its block for the pending-set pin before its handler runs; a failed recovery read or a local handler failure on a log the recovery itself dispatched rejects the recovery for every caller; the dispute-window recovery awaits a dispute log already in flight or already failed and rejects with its failure only while its dispute is still missing, so a log that stored its dispute and then failed leaves the window readable
 
 - [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P1` — ordering
 - [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P2` — gap recovery within attempts
@@ -73,7 +75,7 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P14` — the same with the refresh's application applied first and the live log's after it
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P15` — membership synchronization fills an inbound block of the pending run that the local diamond misses below its head; the head and deposit total stay at the chain's
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P16` — membership synchronization applies its snapshot at the end of its pinned chain block, so a newer StateSnapshotUpdated log the local diamond applied meanwhile stays
-- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P17` — the pinned membership read is one multicall, and applying it for a pending joiner makes no other chain call: the pending check reads the local diamond that the applied inbound run filled
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P17` — the pinned membership read is one multicall, and applying it for a pending joiner makes no other chain call than the head read that confirms the snapshot and one pending-set read: the pending check reads the chain's pending set
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P18` — membership synchronization rejects with the failure of a local handler applying a slash log its recovery read
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P19` — membership synchronization rejects with the failure of a local handler applying an inbound log its recovery read
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20` — the reduce, audit and dispute inbound recovery rejects with the failure of a local handler applying a recovered log
@@ -82,6 +84,9 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24` — the dispute-window recovery rejects with the failure of a local handler applying a dispute log it dispatched itself
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25` — the dispute-window recovery for a fork the node already left: the handler runs no audit and stores nothing, the recovery stores the chain's copy of each dispute and resolves with the window
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26` — a handled InboundMessagesProcessed or StateSnapshotUpdated event records its block for the pending-set pin before its handler runs
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P27` — slash recovery diffs the chain's slash set against the slashes this service handled: a recovered slash is dispatched once and a repeated recovery reports no change
+- [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P28` — a replayed ChainSlashed or DisputeKilled log fills the handled slashes, and ChannelStorageCleared empties them
 
 ## UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6
 

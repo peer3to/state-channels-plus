@@ -1048,7 +1048,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
 
             // After collecting disputes for this window, reduce to get the next fork
             const computation =
-                await stateManager.reductionManager.computeReductionLocally(
+                await stateManager.reductionManager.computeReduction(
                     currentForkId,
                     currentWindowDisputes
                 );

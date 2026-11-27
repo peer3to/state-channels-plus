@@ -36,9 +36,9 @@ Dispute-event branches
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P11` — improvement upload skipped as already initiated: reduction still scheduled
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P12` — A disconnected spectator observes a committed dispute and successor fork without invoking the first local or chain audit predicate or storing a dispute counter, while a participant audits the same dispute
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P18` — A pending joiner whose uncertain join can still land handles a snapshot event that does not list it: it stays PENDING_PARTICIPANT and its join stays pending.
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19` — a snapshot applied while the local diamond's pending set lists the signer still reads the chain's pending set once
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P20` — a snapshot applied while the local diamond misses the signer's JOIN reads the chain's pending set once
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P21` — a snapshot the local diamond drops as older than the mirrored one updates no membership
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19` — a snapshot applied after the signer's JOIN inbound event was handled still reads the chain's pending set once
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P20` — a snapshot applied before the signer's JOIN inbound event was handled reads the chain's pending set once
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P21` — a snapshot the chain no longer holds (a newer one landed) updates no membership
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P22` — a non-disputer auditing an invalid dispute builds its state proof once, during the audit, and its kill-and-dispute reuses it and lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P23` — the state proof built during the audit fails: the kill-and-dispute builds its own and lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P24` — a peer that already disputed audits an invalid dispute: no state proof is built and its kill goes out alone and lands
@@ -50,3 +50,8 @@ Dispute-event branches
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P30` — a participant whose read node is behind the block of a fork's first dispute waits for that block instead of taking the missing window as cleared: then it requests the acknowledgment, fires `onDisputeStarted` once, audits the invalid dispute and its kill lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P31` — a participant disposed while its window read waits for a lagging read node: the runtime release ends the wait well before its deadline, no further read or wait follows, the dispute is not handled (no `onDisputeStarted`, no upload, no kill), and no runtime error is reported
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P32` — a participant observing a kill's slash asks the chain whether the fork is disputed; its mirror is not read
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P33` — a snapshot event whose snapshot the chain still holds at its head is published to membership
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P34` — a snapshot event announced after a newer snapshot landed is not published to membership
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P35` — an older snapshot event handled after a newer one is not published to membership
+- [ ] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P36` — a closing snapshot (no participants) is published without a read of the chain's snapshot
+- [ ] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P37` — a snapshot event of a block the read node has not reached waits for the node, then compares the chain's snapshot at the head

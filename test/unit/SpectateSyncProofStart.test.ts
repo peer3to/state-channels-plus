@@ -105,7 +105,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         ]);
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.answers).to.include(true);
+        expect(outcome.walks!.trustedStart.chain.answers).to.include(true);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.reads).to.equal(0);
     });
@@ -129,7 +129,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         expect(outcome.rejections).to.deep.equal([
             "latest-fork outbound blocks invalid"
         ]);
-        expect(outcome.walks!.trustedStart.local.answers).to.include(true);
+        expect(outcome.walks!.trustedStart.chain.answers).to.include(true);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.reads).to.equal(0);
     });
@@ -149,7 +149,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         ]);
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
+        expect(outcome.walks!.trustedStart.chain.reads).to.equal(0);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
     });
@@ -178,7 +178,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         ]);
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
+        expect(outcome.walks!.trustedStart.chain.reads).to.equal(0);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
     });
@@ -316,7 +316,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         });
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
+        expect(outcome.walks!.trustedStart.chain.reads).to.equal(0);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
     });
@@ -341,7 +341,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
             [conflicting],
             { observeWalks: true }
         );
-        expect(outcome.walks!.trustedStart.local.answers).to.include(false);
+        expect(outcome.walks!.trustedStart.chain.answers).to.include(false);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
         expect(outcome.outcomes).to.deep.equal([
@@ -365,7 +365,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         });
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
+        expect(outcome.walks!.trustedStart.chain.reads).to.equal(0);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
     });
@@ -382,7 +382,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         });
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
+        expect(outcome.walks!.trustedStart.chain.reads).to.equal(0);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
     });
@@ -407,12 +407,12 @@ describe("Unit: SpectateService sync proof verification order", function () {
         expect(outcome.outcomes[0].threw).to.equal("");
         expect(outcome.rejections).to.deep.equal(["milestones invalid"]);
         expect(outcome.blacklisted).to.equal(true);
-        expect(outcome.walks!.trustedStart.local.answers).to.include(false);
+        expect(outcome.walks!.trustedStart.chain.answers).to.include(false);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([false]);
     });
 
-    it("U30: the local finalized tier's walk fails at the executor connection → the sync throws it, no later tier walks, nobody is rejected or blacklisted", async function () {
+    it("U30: the local finalized tier's chain walk meets a refused RPC connection → the sync throws it, no later tier walks, nobody is rejected or blacklisted", async function () {
         const h = TestSession.getHarness();
         const { forkId, requester, payload } =
             await stageAnchoredSyncPayload(h);
@@ -424,8 +424,8 @@ describe("Unit: SpectateService sync proof verification order", function () {
             { walkFault: "localFinalized" }
         );
         expect(outcome.outcomes[0].accepted).to.equal(false);
-        expect(outcome.outcomes[0].threw).to.contain("Malformed RPC request");
-        expect(outcome.walks!.trustedStart.local.failures).to.have.length(1);
+        expect(outcome.outcomes[0].threw).to.contain("ECONNREFUSED");
+        expect(outcome.walks!.trustedStart.chain.failures).to.have.length(1);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.reads).to.equal(0);
         expect(outcome.rejections).to.deep.equal([]);

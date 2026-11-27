@@ -127,6 +127,7 @@ blacklist.
 - `window already reduced locally by a concurrent sync, with forged confirmation signatures, an uncommitted dispute and a forged window snapshot → accepted, none of them stored`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P113
 - `chain-final unadopted window synced by a requester that handled none of its dispute logs → the sync stores no confirmation, and the requester, now on the reduced fork, recovers every window dispute from chain logs without auditing`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25
 - `committed dispute missing locally → recovers before generating the payload`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P9
+- `a disputed window's reduction for the payload is read from the chain, never the mirror`: REQ-MIRROR-6-0WSB4V.T1.P28
 - `reduce data unavailable for a disputed window → the request fails, no fraud proof stored`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P11
 - `dispute window unavailable → the request fails, the requester is not blacklisted`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P6, REQ-SPC-3-AZBKR1.T1.P7
 - `all dispute events suppressed → recovers and proves the successor fork`: none

@@ -37,7 +37,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `U98: sync serving over a pruned required block → generateSyncPayload rejects instead of serving a shorter proof`: REQ-SP-8-9ZCCEJ.T2.P15, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P27
 - `U98: snapshot posting over a pruned participant-change block above the anchor → the post rejects with the missing-block error, no transaction is sent and the chain snapshot stays`: REQ-SP-8-9ZCCEJ.T2.P16, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P28
 - `U98 (control): snapshot posting with every required block held → the update is sent and the chain adopts the last milestone's first block`: REQ-SP-8-9ZCCEJ.T2.P17, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P29
-- `U98: snapshot posting whose proof construction fails on its chain walk → the post rejects and the chain snapshot stays`: REQ-SP-8-9ZCCEJ.T2.P18, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P30
+- `U98: snapshot posting whose proof construction fails on its chain walk → the post rejects and the chain snapshot stays`: REQ-SP-8-9ZCCEJ.T2.P18, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P30, REQ-MIRROR-6-0WSB4V.T2.P10
 - `FR1: an exact final proof keeps later virtual votes and rejects the unfinalized support height`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P59
 - `TO1: exact join finality retains the later union vote and disappears when that sole vote is removed`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P62
 - `TO1: exact exit finality retains the old and new union and needs its sole later confirmation`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63

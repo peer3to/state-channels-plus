@@ -217,20 +217,29 @@ describe("Unit: AgreementManager verification tiers", function () {
 
     it("U30: the chain walk fails on the node RPC connection → verification throws instead of returning an invalid verdict", async function () {
         const h = TestSession.getHarness();
-        const lagging = 2;
-        await stageMirrorMissingTopUp(h, {
-            laggingIndex: lagging,
-            anchorBeforeTopUp: true
+        const { observerIndex } = await stageFinalThenUnfinalizedTail(h, {
+            postAnchor: true
         });
-        const view = await buildProofView(h, 0);
-        const observed = await h.mirror.observe(lagging, "verifyMilestones");
+        const view = await buildProofView(h, observerIndex);
+        expect(
+            await localFinalizedView(h, observerIndex),
+            "nothing above the anchor is provably final"
+        ).to.equal(null);
+        const observed = await h.mirror.observe(
+            observerIndex,
+            "verifyMilestones"
+        );
         await h.mirror.failNextChainRead(
-            lagging,
+            observerIndex,
             "verifyMilestones",
             "transport"
         );
 
-        const verified = await verifyProofView(h, lagging, view.stateProof);
+        const verified = await verifyProofView(
+            h,
+            observerIndex,
+            view.stateProof
+        );
         const observation = await observed.observation();
         await observed.restore();
 

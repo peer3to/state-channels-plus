@@ -354,7 +354,7 @@ that holds for the worst case it can reach, and a test chain that enforces the l
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 is implemented:
 [MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md)
-owns `isSignerPendingInMirror` (local-only pending observation for the force-join counters),
+owns `isSignerPendingAtLastPendingSetChange` (the pending observation for the force-join counters, pinned at the last handled pending-set event; formerly the mirror-only `isSignerPendingInMirror`),
 `isSignerPendingOnChain` (local-first pending lookup with chain confirmation on absence) and
 `isSignerOnChain` (direct-chain seated-plus-pending lookup).
 [ChannelJoinService](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md)

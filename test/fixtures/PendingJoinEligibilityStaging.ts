@@ -18,13 +18,15 @@ type MathPeer = TestPeer<
 /**
  * Three participants and a joiner whose JOIN is pending on chain. Peer 0 has
  * applied the JOIN event to its storage and its local diamond. `beforeJoin`
- * runs once the channel is open, before the JOIN is submitted. Returns the
- * joiner.
+ * runs once the channel is open, before the JOIN is submitted. With
+ * `isJoinerUnobserved` the wait for the inbound message skips the joiner
+ * (its handler is held). Returns the joiner.
  */
 export async function stageMirroredPendingJoin(
     h: MathPeerTestHarness,
     initialTransitions = 0,
-    beforeJoin?: (joiner: MathPeer) => Promise<unknown>
+    beforeJoin?: (joiner: MathPeer) => Promise<unknown>,
+    isJoinerUnobserved = false
 ) {
     const prepared =
         await h.scenario.syncSpectatorAndPrepareJoin(initialTransitions);
@@ -34,7 +36,15 @@ export async function stageMirroredPendingJoin(
         prepared.expectedSnapshotHash,
         prepared.expectedForkId
     );
-    await h.assert.storage.honestPeersObserveInboundMessageWait();
+    await h.assert.storage.honestPeersObserveInboundMessageWait(
+        isJoinerUnobserved
+            ? {
+                  peerIndices: h.peers
+                      .map((peer) => peer.index)
+                      .filter((index) => index !== prepared.joiner.index)
+              }
+            : undefined
+    );
     // the event handler marks the joiner eligible after its local diamond
     // applied the JOIN
     await waitFor(
@@ -282,48 +292,50 @@ export async function refreshAppliedAfterLiveSnapshot(h: MathPeerTestHarness) {
     }
 }
 
-/** The joiner's local diamond lists the joiner's own pending JOIN. */
-async function isOwnJoinMirrored(h: MathPeerTestHarness, joiner: MathPeer) {
-    return h.execOnHost(joiner, async (sm) =>
-        sm.membershipService.includesSigner(
-            await sm.diamondStateMachine.localDiamondContract.getPendingParticipants(
-                sm.channelId
-            )
-        )
+/**
+ * Whether the joiner's pending lookup (pinned at the block of the last
+ * InboundMessagesProcessed it handled) lists the joiner's own pending JOIN.
+ */
+async function isOwnJoinObserved(h: MathPeerTestHarness, joiner: MathPeer) {
+    return h.execOnHost(joiner, (sm) =>
+        sm.membershipService.isSignerPendingAtLastPendingSetChange()
     );
 }
 
 /**
  * A pending JOIN (see {@link stageMirroredPendingJoin}) that the joiner's own
- * local diamond applied too. Returns the joiner.
+ * event handler handled too. Returns the joiner.
  */
-export async function stagePendingJoinMirroredByJoiner(h: MathPeerTestHarness) {
+export async function stagePendingJoinHandledByJoiner(h: MathPeerTestHarness) {
     const joiner = h.getPeer((await stageMirroredPendingJoin(h)).index);
-    await waitFor(() => isOwnJoinMirrored(h, joiner));
+    await waitFor(() => isOwnJoinObserved(h, joiner));
     return joiner;
 }
 
 /**
- * A pending JOIN (see {@link stageMirroredPendingJoin}) whose log the
- * joiner's own local diamond misses for good. Returns the joiner and
- * whether its local diamond lists the JOIN.
+ * A pending JOIN (see {@link stageMirroredPendingJoin}) whose
+ * InboundMessagesProcessed log never reaches the joiner's event pipeline
+ * (the chain lists the JOIN, the joiner has not seen its block). Returns the
+ * joiner and whether its pending lookup lists the JOIN.
  */
-export async function stagePendingJoinMissedByJoinerMirror(
+export async function stagePendingJoinMissedByJoinerHandler(
     h: MathPeerTestHarness
 ) {
-    let held: MirrorUpdateHold | undefined;
-    const staged = await stageMirroredPendingJoin(h, 0, async (joiner) => {
-        held = await h.mirror.holdUpdates(
-            joiner.index,
-            "onInboundMessagesProcessed"
-        );
-    });
-    if (!held) throw new Error("Expected the mirror hold");
-    const hold = held;
-    await waitFor(async () => (await hold.heldCount()) === 1);
-    await hold.discard();
+    let dropped:
+        | Awaited<ReturnType<typeof h.rpcStub.dropInboundMessageLogs>>
+        | undefined;
+    const staged = await stageMirroredPendingJoin(
+        h,
+        0,
+        async (joiner) => {
+            dropped = await h.rpcStub.dropInboundMessageLogs(joiner.index);
+        },
+        true
+    );
+    if (!dropped) throw new Error("Expected the inbound log drop");
+    await dropped.waitUntilDropped();
     const joiner = h.getPeer(staged.index);
-    return { joiner, isOwnJoinMirrored: await isOwnJoinMirrored(h, joiner) };
+    return { joiner, isOwnJoinObserved: await isOwnJoinObserved(h, joiner) };
 }
 
 /**
@@ -346,7 +358,8 @@ export async function readSignerMembershipLookups(
         const membership = sm.membershipService;
         return {
             isInLocalState: await membership.isSignerInLocalState(),
-            isPendingInMirror: await membership.isSignerPendingInMirror(),
+            isPendingAtLastInbound:
+                await membership.isSignerPendingAtLastPendingSetChange(),
             isPendingOnChain: await membership.isSignerPendingOnChain(),
             isOnChain: await membership.isSignerOnChain()
         };

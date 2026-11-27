@@ -12,7 +12,6 @@ import {
     Signature
 } from "@/types/types";
 import { Codec, difference, Logger, Type } from "@/utils";
-import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import type {
@@ -113,7 +112,6 @@ class AgreementManager {
         private logger: Logger,
         /** the channel is set after construction, so it is read on use */
         private readonly getChannelId: () => ChannelId,
-        private readonly localDiamondContract: LocalDiamondContract,
         private readonly stateChannelManagerContract: StateChannelManagerInterface
     ) {
         this.logger = logger.child({ component: "AgreementManager" });
@@ -228,18 +226,13 @@ class AgreementManager {
                 this.getRequiredMilestoneSnapshot(forkId, milestone, start)
             )
         };
-        const localWalk =
-            await this.localDiamondContract.verifyMilestonesFromTrustedStart.staticCall(
+        // the start is the chain's anchor (or the fork genesis), so the chain
+        // answers the walk itself: no second walk from the stored anchor
+        const walk =
+            await this.stateChannelManagerContract.verifyMilestonesFromTrustedStart.staticCall(
                 this.toWalkInput(forkId, stateProof, evidence),
                 start.snapshot.toStruct()
             );
-        // a lagging mirror can leave a hop unproven locally (plan: being
-        // behind must not make the proof invalid): the chain's walk decides
-        const walk = localWalk.valid
-            ? localWalk
-            : await this.stateChannelManagerContract.verifyMilestones.staticCall(
-                  this.toWalkInput(forkId, stateProof, evidence)
-              );
         if (!walk.valid)
             throw new Error(
                 `Built state proof of fork ${forkId} at height ${blockHeight} does not verify from its anchor`
@@ -345,7 +338,7 @@ class AgreementManager {
             yield {
                 ...this.toTierWalk(
                     ProofTier.LocalFinalized,
-                    await this.localDiamondContract.verifyMilestonesFromTrustedStart.staticCall(
+                    await this.stateChannelManagerContract.verifyMilestonesFromTrustedStart.staticCall(
                         input,
                         localFinalized.toStruct()
                     )
@@ -827,7 +820,7 @@ class AgreementManager {
             )
         };
         const walk =
-            await this.localDiamondContract.verifyMilestonesFromTrustedStart.staticCall(
+            await this.stateChannelManagerContract.verifyMilestonesFromTrustedStart.staticCall(
                 this.toWalkInput(forkId, { milestones }, evidence),
                 start.snapshot.toStruct()
             );

@@ -300,7 +300,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             // the second is accepted from the local finalized state
             expect(outcome.walks!.storage.local.reads).to.equal(0);
             expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
-            expect(outcome.walks!.trustedStart.local.answers).to.include(true);
+            expect(outcome.walks!.trustedStart.chain.answers).to.include(true);
             expect(outcome.rebuilt).to.deep.include({
                 chainValid: true,
                 startHeight: staged.anchor.blockHeight,

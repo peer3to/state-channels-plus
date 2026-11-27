@@ -6,20 +6,21 @@ Test file: [test/unit/DisputeAuditTiers.test.ts](../../../../../../test/unit/Dis
 
 Exercises the audit proof tiers (the peer's finalized state and the chain) with real local and chain state. Cases check missing or stale starts, fatal execution failures, protected history, exact counter targets and replay fallback.
 
+The case that audited an unproven hop above the auditor's trusted start (`U32`) was removed: it needs an auditor without the threshold signatures while the proof's last milestone is final, and the only staging found relied on mirror lag. Its permutations stay unassigned.
+
 Snapshot state-hash tampering uses the shared byzantine harness action.
 
 ## Tests
 
 - `U26: the latest locally finalized state verifies the proof -> accepted there, no chain walk, true`: REQ-SP-9-RNXP56.T7.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P104
 - `U27: no locally finalized state -> the chain's walk accepts, true`: REQ-SP-9-RNXP56.T1.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P24
-- `U28: the local diamond misses the inbound run a hop consumes -> the chain's walk accepts, true`: REQ-SP-9-RNXP56.T1.P2, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P25
+- `U28: the local diamond misses the inbound run a hop consumes -> the chain's trusted-start walk accepts, true`: REQ-SP-9-RNXP56.T1.P2, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P25, REQ-MIRROR-6-0WSB4V.T1.P25
 - `D4: an authentic block conflicts with the local final point -> the conflict counter is stored before any tier walk`: REQ-FP-7-4DD0D7.T2.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P34
 - `U28 (audit entry): the mirror holds no same-fork anchor -> the chain's anchor walk accepts, true`: REQ-SP-9-RNXP56.T1.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P26
 - `U29: every walked tier rejects the proof (the posted snapshot of block 0 is block 1's) -> invalid at the chain, false + DisputeInvalidStateProof`: REQ-SP-9-RNXP56.T7.P2, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P105
 - `U30 (audit entry): storage lacks a required participant-change block of the local final point -> the audit throws, no walk runs, no proof`: REQ-SP-9-RNXP56.T7.P3, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P106
 - `U30: the chain's walk cannot reach the RPC node -> the audit throws it, no proof`: REQ-SP-9-RNXP56.T7.P4, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P107
 - `U31: an unproven earlier hop below the auditor's final point -> the auditor walks from its final point, never reads it, true`: REQ-SP-9-RNXP56.T7.P5, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P108
-- `U32: the same unproven hop above the auditor's trusted start (chain anchor still the genesis) -> false + DisputeInvalidStateProof whose evidence the chain accepts`: REQ-SP-9-RNXP56.T7.P6, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P109
 - `U42: a hop whose committed snapshot no tier can supply, at a height the auditor holds no block for, with omitted data -> the audit throws, no unsupported counter`: REQ-SP-9-RNXP56.T7.P7, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P110
 - `U42: an auditor holding a final block at the hop's height kills the dispute with DisputeConflictsWithFinalState, which the chain accepts`: REQ-FP-7-4DD0D7.T9.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P111
 - `U33/U90: the proof verifies at the first tier, but the dispute names an earlier real state as its latest -> false + DisputeInvalidStateProof`: REQ-DISPUTE-PIPE-2-MJRJV1.T2.P1, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P112

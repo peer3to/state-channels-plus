@@ -28,7 +28,6 @@ import {
 import { indexedTopic } from "@/utils/bytes32";
 import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
 import { assertLogQueryMaxBlocks, config } from "@/utils/config";
-import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { settleBy } from "@/utils/settleBy";
 import { StateChannelManagerInterface } from "@typechain-types";
@@ -51,6 +50,8 @@ export type BlockCalldataRecoveryResult = {
     validationScheduled: boolean;
 };
 type BlockStates = Map<BlockNumber, BlockState>;
+/** The participants whose slash event this service handed to its handler. */
+type HandledSlashes = Set<ChecksumAddress>;
 type StateChannelManagerEventName =
     keyof StateChannelManagerInterface["filters"];
 const STATE_CHANNEL_MANAGER_EVENT_NAMES = [
@@ -140,6 +141,12 @@ export default class EventSyncService {
     private readonly eventBlockNumbers = new Map<EventKey, BlockNumber>();
     /** Per-channel pending event counts used to publish completed block watermarks. */
     private readonly blockStates = new Map<ChannelKey, BlockStates>();
+    /**
+     * Per channel, the slashes this service's handlers took in (ChainSlashed,
+     * DisputeKilled): what slash recovery compares the chain's set with. A
+     * channel's storage clearing empties it, as it empties the chain's set.
+     */
+    private readonly handledSlashes = new Map<ChannelKey, HandledSlashes>();
     private readonly logger: Logger;
     private channelId: ChannelId;
 
@@ -149,8 +156,7 @@ export default class EventSyncService {
         private readonly eventHandler: EventHandler,
         private readonly storage: Storage,
         private readonly timeConfig: TimeConfig,
-        logger: Logger,
-        private readonly localDiamondContract: LocalDiamondContract
+        logger: Logger
     ) {
         this.channelId = channelId;
         this.logger = logger.child({ component: "EventSyncService" });
@@ -524,6 +530,8 @@ export default class EventSyncService {
         // moves its head back -> the whole pending run fills any block it
         // misses, also below its head. Its pending set then holds the pinned
         // one, so the snapshot below reads no pending set from the chain.
+        // before the handlers: their bus events run the join checks, which read the pin
+        this.eventHandler.observePendingSetChangedAt(membership.blockNumber);
         for (const block of inbound)
             await this.eventHandler.onInboundMessagesProcessed(
                 channelId,
@@ -545,18 +553,16 @@ export default class EventSyncService {
     /**
      * Recover authoritative slashes through the ordinary timestamped event
      * handlers. `true` when the chain's set holds a slash outside
-     * `previouslyObserved` (the local diamond's set when omitted).
+     * `previouslyObserved` (the slashes this service handled when omitted).
      */
     public async recoverOnChainSlashes(
         channelId: ChannelId,
         previouslyObserved?: readonly Address[]
     ): Promise<boolean> {
         const membership = await this.readPinnedChainMembership(channelId);
-        const previous =
-            previouslyObserved ??
-            (await this.localDiamondContract.getOnChainSlashedParticipants(
-                channelId
-            ));
+        const previous = previouslyObserved ?? [
+            ...this.getHandledSlashes(channelId)
+        ];
         if (!(await this.recoverSlashes(channelId, membership)))
             throw new Error(
                 "Slash recovery did not recover the authoritative set"
@@ -688,18 +694,17 @@ export default class EventSyncService {
     }
 
     /**
-     * Dispatch the slash logs the local diamond misses for `membership`'s
-     * authoritative set, up to its pinned block. Whether the local diamond
-     * then holds the whole set.
+     * Dispatch the slash logs this service has not handled for `membership`'s
+     * authoritative set, up to its pinned block. Whether the handled slashes
+     * then hold the whole set.
      */
     private async recoverSlashes(
         channelId: ChannelId,
         membership: PinnedChainMembership
     ): Promise<boolean> {
-        const local = this.localDiamondContract;
         const expected = membership.slashed;
-        let held = await local.getOnChainSlashedParticipants(channelId);
-        if (expected.every((address) => held.includes(address))) return true;
+        const held = this.getHandledSlashes(channelId);
+        if (expected.every((address) => held.has(address))) return true;
         for await (const logs of this.searchLogs(
             channelId,
             ["ChainSlashed", "DisputeKilled"],
@@ -712,13 +717,15 @@ export default class EventSyncService {
                     const args = this.parseLog(log)?.args;
                     return (
                         args &&
-                        !held.includes(args.participant ?? args.disputer)
+                        !held.has(
+                            getChecksumAddress(
+                                args.participant ?? args.disputer
+                            )
+                        )
                     );
                 })
             );
-            held = await local.getOnChainSlashedParticipants(channelId);
-            if (expected.every((address) => held.includes(address)))
-                return true;
+            if (expected.every((address) => held.has(address))) return true;
         }
         return false;
     }
@@ -791,6 +798,16 @@ export default class EventSyncService {
             if (missing.size === 0) break;
         }
         return missing;
+    }
+
+    private getHandledSlashes(channelId: ChannelId): HandledSlashes {
+        const key = toChannelKey(channelId);
+        let handled = this.handledSlashes.get(key);
+        if (!handled) {
+            handled = new Set();
+            this.handledSlashes.set(key, handled);
+        }
+        return handled;
     }
 
     /** The key one contract log is scheduled under. */
@@ -980,6 +997,10 @@ export default class EventSyncService {
                 );
                 break;
             case "StateSnapshotUpdated":
+                // before the handler: its bus event runs the join checks, which read the pin
+                this.eventHandler.observePendingSetChangedAt(
+                    coordinate.blockNumber
+                );
                 await this.eventHandler.onStateSnapshotUpdated(
                     args.channelId,
                     args.stateSnapshot,
@@ -1010,6 +1031,9 @@ export default class EventSyncService {
                 );
                 break;
             case "ChainSlashed":
+                this.getHandledSlashes(scheduledChannelId).add(
+                    getChecksumAddress(args.participant)
+                );
                 await this.eventHandler.onChainSlashed(
                     args.channelId,
                     args.participant,
@@ -1034,6 +1058,7 @@ export default class EventSyncService {
                 );
                 break;
             case "ChannelStorageCleared":
+                this.getHandledSlashes(scheduledChannelId).clear();
                 await this.eventHandler.onChannelStorageCleared(
                     args.channelId,
                     args.firstPrunedInboundMessageBlockHash,
@@ -1043,6 +1068,9 @@ export default class EventSyncService {
             case "DisputeKilled": {
                 const block = await this.getProvider().getBlock(log.blockHash);
                 if (!block) throw new Error(`Block ${log.blockHash} not found`);
+                this.getHandledSlashes(scheduledChannelId).add(
+                    getChecksumAddress(args.disputer)
+                );
                 await this.eventHandler.onDisputeKilled(
                     args.channelId,
                     args.forkId,
@@ -1053,6 +1081,9 @@ export default class EventSyncService {
                 break;
             }
             case "InboundMessagesProcessed":
+                this.eventHandler.observePendingSetChangedAt(
+                    coordinate.blockNumber
+                );
                 await this.eventHandler.onInboundMessagesProcessed(
                     args.channelId,
                     args.messageBlock

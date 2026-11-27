@@ -243,13 +243,14 @@ export default class DisputeBuilder {
         try {
             // Compare reduced disputes to see if we have more evidence
             const singleDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [dispute]
-                );
+                await this.stateChannelManagerContract.reduce.staticCall([
+                    dispute
+                ]);
             const combinedDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [ourDispute, dispute]
-                );
+                await this.stateChannelManagerContract.reduce.staticCall([
+                    ourDispute,
+                    dispute
+                ]);
             isEvidenceAdded = !isEqual(
                 singleDisputeReduction,
                 combinedDisputeReduction

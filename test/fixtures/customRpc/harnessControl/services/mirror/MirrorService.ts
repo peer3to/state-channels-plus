@@ -19,7 +19,8 @@ import {
 /**
  * The chain reads the validators make (the mirror is not read for them), plus
  * the state-proof walk the chain tier runs
- * (`AgreementManager.walkStateProofTiers`).
+ * (`AgreementManager.walkStateProofTiers`), the walk from a supplied start
+ * included.
  */
 export const MIRROR_READS = [
     "isAuditingDataOmissionAllowed",
@@ -28,7 +29,9 @@ export const MIRROR_READS = [
     "validateTimeoutCalldataPostedProof",
     "isDisputeInboundHashValid",
     "hasStateProofHeaderMismatch",
-    "verifyMilestones"
+    "verifyMilestones",
+    "verifyMilestonesFromTrustedStart",
+    "reduce"
 ] as const satisfies readonly (keyof LocalDiamondContract &
     keyof StateChannelManagerInterface)[];
 export type MirrorRead = (typeof MIRROR_READS)[number];
@@ -53,26 +56,18 @@ export const REPLICATED_READS = [
     "getOnChainSlashedParticipants",
     "getStateSnapshot",
     "getDisputeWindowCreationTimestamp",
-    "getOnChainThresholdSet"
+    "getOnChainThresholdSet",
+    "getWindowCommitments"
 ] as const satisfies readonly (keyof LocalDiamondContract &
     keyof StateChannelManagerInterface)[];
 export type ReplicatedRead = (typeof REPLICATED_READS)[number];
 
-/** The local tiers' walk from a supplied start: the chain has no such read. */
-export const LOCAL_WALK =
-    "verifyMilestonesFromTrustedStart" satisfies keyof LocalDiamondContract;
-
 /** Every read the service can observe. */
-export type ObservableRead =
-    | MirrorRead
-    | LocalOnlyRead
-    | ReplicatedRead
-    | typeof LOCAL_WALK;
+export type ObservableRead = MirrorRead | LocalOnlyRead | ReplicatedRead;
 const OBSERVABLE_READS: readonly ObservableRead[] = [
     ...MIRROR_READS,
     ...LOCAL_ONLY_READS,
-    ...REPLICATED_READS,
-    LOCAL_WALK
+    ...REPLICATED_READS
 ];
 
 /**
@@ -217,12 +212,12 @@ export class MirrorService extends ANetworkRpcService<
             (original, args) =>
                 this.localRead(entry, local, read, original, args)
         );
-        const restoreChain =
-            read === LOCAL_WALK
-                ? () => {}
-                : this.wrapStaticCall(chain, read, (original, args) =>
-                      this.chainRead(entry, chain, read, original, args)
-                  );
+        const restoreChain = this.wrapStaticCall(
+            chain,
+            read,
+            (original, args) =>
+                this.chainRead(entry, chain, read, original, args)
+        );
         entry.restore = () => {
             restoreLocal();
             restoreChain();

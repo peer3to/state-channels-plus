@@ -102,7 +102,7 @@ Specification cases tested: 4/6. Untested: T1.P5, T1.P6.
 Specification cases tested: 11/14. Untested: T1.P2, T1.P3, T1.P4.
 
 [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
-Specification cases tested: 7/8. Untested: T1.P6.
+Specification cases tested: 10/11. Untested: T1.P6.
 
 [`INV-MIRROR-1-VAF778` (Single implementation)](../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 Specification cases tested: 4/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6.
@@ -171,7 +171,7 @@ Specification cases tested: 0/5.
 Specification cases tested: 4/4.
 
 [`INV-TJOIN-2-H7JSQM` (Local pending protection for submitted joins)](../specification/peer-communication/targeted-channel-join.md#inv-tjoin-2-h7jsqm)
-Specification cases tested: 18/18.
+Specification cases tested: 19/19.
 
 [`INV-TRUST-1-6TYWDH` (Every safety-relevant disagreement MUST be resolvable by the chain from…)](../specification/security/trust-model.md#inv-trust-1-6tywdh)
 Specification cases tested: 0/6.
@@ -396,7 +396,7 @@ Specification cases tested: 3/3.
 Specification cases tested: 9/9.
 
 [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
-Specification cases tested: 38/40. Untested: T1.P37, T1.P39.
+Specification cases tested: 40/42. Untested: T1.P37, T1.P39.
 
 [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
 Specification cases tested: 23/23.
@@ -534,7 +534,7 @@ Specification cases tested: 5/11. Untested: T1.P1, T1.P2, T1.P3, T1.P5, T1.P6, T
 Specification cases tested: 7/10. Untested: T1.P1, T1.P2, T1.P3.
 
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
-Specification cases tested: 37/38. Untested: T1.P37.
+Specification cases tested: 42/43. Untested: T1.P37.
 
 [`REQ-GOSSIP-5-2EQ7P6` (Live gossip waits for the initial sync)](../specification/peer-communication/block-gossip.md#req-gossip-5-2eq7p6)
 Specification cases tested: 5/5.
@@ -726,7 +726,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 2/3. Untested: T1.P8.
 
 [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
-Specification cases tested: 40/41. Untested: T3.P11.
+Specification cases tested: 52/53. Untested: T3.P11.
 
 [`REQ-MSG-1-AY3A77` (Snapshots MUST commit both stream tips + totals)](../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77)
 Specification cases tested: 0/12.
@@ -957,10 +957,10 @@ Specification cases tested: 0/12.
 Specification cases tested: 26/40. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-SP-8-9ZCCEJ` (Construct proofs from the chain's anchor, read on the chain, never from the…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
-Specification cases tested: 33/33.
+Specification cases tested: 35/35.
 
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
-Specification cases tested: 75/75.
+Specification cases tested: 74/75. Untested: T7.P6.
 
 [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
 Specification cases tested: 45/45.
@@ -1026,7 +1026,7 @@ Specification cases tested: 0/12.
 Specification cases tested: 4/14. Untested: T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-TIME-4-83V27Z` (Timeouts/fraud proofs/slashing use only objectively validated timestamps)](../specification/protocol-model/time.md#req-time-4-83v27z)
-Specification cases tested: 0/15.
+Specification cases tested: 2/17. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15.
 
 [`REQ-TIME-5-S9NQXK` (Every local contract execution observes the runtime's current estimated chain…)](../specification/protocol-model/time.md#req-time-5-s9nqxk)
 Specification cases tested: 3/3.

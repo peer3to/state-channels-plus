@@ -52,6 +52,7 @@ peer 1's `onDisputeReducedResultCommitted`, and asserts peer 1 keeps no built di
 ## Tests
 
 - `unchanged inputs → the second construction returns the cached result`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P3
+- `the comparison of a dispute with the evidence already built reduces on the chain, never the mirror`: REQ-MIRROR-6-0WSB4V.T1.P27
 - `a valid signature merged into the unchanged latest block after a cached construction → the cached result is returned and adds no evidence`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P1, REQ-DISPUTE-PIPE-6-6FZB9M.T1.P14
 - `a newer latest block after a cached construction → the next dispute proves the later block`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P4
 - `an exit started after a cached construction → the next dispute carries the self-removal`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P5, UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P3

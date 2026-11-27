@@ -512,6 +512,31 @@ export default class ValidationService {
     }
 
     /**
+     * Recover the previous block's calldata from the chain and, when it
+     * matches, record its on-chain timestamp on the block and in storage.
+     */
+    private async recoverPreviousOnChainTimestamp(
+        previousBlock: Block
+    ): Promise<void> {
+        await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+            previousBlock.forkId,
+            previousBlock.height,
+            previousBlock.author
+        );
+
+        const recoveredPreviousCalldata =
+            this.storage.blockCalldata.getMatchingBlockCalldata(previousBlock);
+        if (recoveredPreviousCalldata) {
+            previousBlock.onChainTimestamp =
+                recoveredPreviousCalldata.onChainTimestamp;
+            this.storage.blocks.setOnChainTimestamp(
+                previousBlock.hash,
+                recoveredPreviousCalldata.onChainTimestamp
+            );
+        }
+    }
+
+    /**
      * Ensure block.timestamp is within the allowed
      * p2pTime window of the previous timestamp, optionally
      * fetching a better on-chain timestamp if needed.
@@ -530,6 +555,22 @@ export default class ValidationService {
         let previousStateSnapshot: StateSnapshot | undefined;
         // previous block or snapshot
         const previous = this.previousOf(entry);
+        // The chain reads the previous block's on-chain timestamp from the
+        // proof (0 = unknown): when the chain holds that block's calldata
+        // but this peer has not recovered it, recover it before asking.
+        if (
+            previous.block &&
+            previous.block.onChainTimestamp === undefined &&
+            (
+                await this.stateChannelManagerContract.getBlockCallDataCommitment(
+                    block.channelId,
+                    previous.block.forkId,
+                    previous.block.height,
+                    previous.block.author
+                )
+            ).found
+        )
+            await this.recoverPreviousOnChainTimestamp(previous.block);
         if (previous.block) {
             previousBlock = previous.block;
             previousTimestamp = previousBlock.getRelevantTimestamp(
@@ -546,7 +587,7 @@ export default class ValidationService {
         const invalidTimestampProof =
             this.fraudProofService.buildInvalidTimestampProof(block, previous);
         const isValidTimestamp =
-            !(await this.diamondStateMachine.localDiamondContract.hasInvalidTimestamp.staticCall(
+            !(await this.stateChannelManagerContract.hasInvalidTimestamp.staticCall(
                 invalidTimestampProof
             ));
 
@@ -579,24 +620,7 @@ export default class ValidationService {
             }
 
             // Try on-chain query to schedule validation for the previous block.
-            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
-                previousBlock.forkId,
-                previousBlock.height,
-                previousBlock.author
-            );
-
-            const recoveredPreviousCalldata =
-                this.storage.blockCalldata.getMatchingBlockCalldata(
-                    previousBlock
-                );
-            if (recoveredPreviousCalldata) {
-                previousBlock.onChainTimestamp =
-                    recoveredPreviousCalldata.onChainTimestamp;
-                this.storage.blocks.setOnChainTimestamp(
-                    previousBlock.hash,
-                    recoveredPreviousCalldata.onChainTimestamp
-                );
-            }
+            await this.recoverPreviousOnChainTimestamp(previousBlock);
 
             const previousBlockOnChainTimestamp =
                 this.storage.blocks.getBlock(previousBlock.hash)
