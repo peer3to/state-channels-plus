@@ -17,6 +17,7 @@
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
 - [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
+- [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
 
 ## UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D
 
@@ -131,3 +132,13 @@ The stored proof is written only by the own advance, the sync install, the re-ro
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P5` — an audit that verifies a later final point than the auditor's own leaves the stored proof unchanged
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P6` — an advance of the old fork after a fork change writes nothing and keeps the new fork's stored proof
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P7` — a stored block dropped at the stored final point leaves the final point and the proof built over it unchanged
+
+## UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH
+
+The final points a conflict counter rests on: the stored proof's own points, and audit evidence points only at heights where the stored proof has none, from records that agree with it.
+
+- Setup: A factory-built stored proof installed as the peer's stored proof, and factory-built audit evidence records that share its hops, add a hop above them, or hold other snapshots at its final heights
+- Oracle: The heights and snapshot hashes that `getEvidenceFinalPoints` returns, against the hops the factory built
+
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P1` — an agreeing record's points at the stored proof's own heights are not returned; its point above them is
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P2` — a record with another snapshot at one of the stored proof's heights adds no point; an agreeing record still adds its point
