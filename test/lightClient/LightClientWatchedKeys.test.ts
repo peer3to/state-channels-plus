@@ -235,55 +235,6 @@ describe("Light client watched keys", function () {
         });
     });
 
-    it("keeps watching a refused key at every read while the endpoint is at its cap, and answers it right", async function () {
-        fixture = await LightClientProviderFixture.start({ maxWatchedKeys: 1 });
-        const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(PARTITION_CONTRACT);
-        await fixture.followContract(contract);
-        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
-        await fixture.pushedThrough(first.blockNumber);
-        // slot 10 takes the one place, slot 11 is refused
-        expect(await provider.getStorage(contract, 10)).to.equal(
-            toBeHex(7, 32)
-        );
-        expect(await provider.getStorage(contract, 11)).to.equal(
-            toBeHex(0, 32)
-        );
-        expect(proxy.forwardedCount(WATCH)).to.equal(2);
-
-        const second = await node.readWriteLog(contract, CHANNEL_A, 5, 11, 4);
-        await fixture.pushedThrough(second.blockNumber);
-        expect(await provider.getStorage(contract, 11)).to.equal(
-            toBeHex(4, 32)
-        );
-        expect(await provider.getStorage(contract, 10)).to.equal(
-            toBeHex(7, 32)
-        );
-
-        // the refused key was proven again, the watched one came with the push
-        const watches = requestsOf(proxy.forwardedRequests, WATCH);
-        expect(
-            watches.map(({ params }) => watchedKeysOf(params))
-        ).to.deep.equal([
-            [slotKey(contract, 10)],
-            [slotKey(contract, 11)],
-            [slotKey(contract, 11)]
-        ]);
-        expect(provider.lightClientCounters).to.deep.include({
-            fromPushedState: 1,
-            withFallbackRead: 3,
-            failed: 0
-        });
-        // a new subscription watches again only the key the endpoint took
-        await fixture.follow(contract, CHANNEL_B);
-        await waitFor(() => proxy.forwardedCount(WATCH) === 4);
-        const again = requestsOf(proxy.forwardedRequests, WATCH)[3];
-        expect(watchedKeysOf(again.params)).to.deep.equal([
-            slotKey(contract, 10)
-        ]);
-        expect(fixture.loggedErrors()).to.deep.equal([]);
-    });
-
     it("proves a read with a plain read proof while the followed contract's subscription has had no message", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider, proxy } = fixture;
@@ -448,124 +399,19 @@ describe("Light client watched keys", function () {
         expect(fixture.loggedErrors()).to.deep.equal([]);
     });
 
-    it("watches a key again at the read after a change once the endpoint's expiry passed since the last watch that named it", async function () {
-        fixture = await LightClientProviderFixture.start({
-            watchedKeyBlocks: 2
-        });
-        const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(PARTITION_CONTRACT);
-        await fixture.followContract(contract);
-        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
-        await fixture.pushedThrough(first.blockNumber);
-        expect(await provider.getStorage(contract, 10)).to.equal(
-            toBeHex(7, 32)
-        );
-        expect(proxy.forwardedCount(WATCH)).to.equal(1);
-        // more than two blocks after the watch the endpoint no longer pushes the key
-        const watchedBy = await node.provider.getBlockNumber();
-        await fixture.pushedThrough(watchedBy + 3);
-
-        const second = await node.readWriteLog(contract, CHANNEL_A, 10, 10, 1);
-        await fixture.pushedThrough(second.blockNumber);
-        expect(await provider.getStorage(contract, 10)).to.equal(
-            toBeHex(8, 32)
-        );
-
-        const watches = requestsOf(proxy.forwardedRequests, WATCH);
-        expect(
-            watches.map(({ params }) => watchedKeysOf(params))
-        ).to.deep.equal([[slotKey(contract, 10)], [slotKey(contract, 10)]]);
-        expect(provider.lightClientCounters).to.deep.include({
-            withFallbackRead: 2,
-            failed: 0
-        });
-        // the push that released the key named it: taken, not refused, so no new subscription
-        expect(proxy.forwardedCount(SUBSCRIBE)).to.equal(1);
-        expect(fixture.loggedWarningMessages()).to.deep.equal([]);
-        expect(fixture.loggedErrors()).to.deep.equal([]);
-    });
-
-    it("watches again on a new subscription only the keys the endpoint still keeps current", async function () {
-        fixture = await LightClientProviderFixture.start({
-            watchedKeyBlocks: 2
-        });
-        const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(PARTITION_CONTRACT);
-        await fixture.followContract(contract);
-        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
-        await fixture.pushedThrough(first.blockNumber);
-        expect(await provider.getStorage(contract, 10)).to.equal(
-            toBeHex(7, 32)
-        );
-        const watchedBy = await node.provider.getBlockNumber();
-        await fixture.pushedThrough(watchedBy + 3);
-        // a watch answered past slot 10's expiry: slot 11 is written, so its read needs the node
-        const second = await node.readWriteLog(contract, CHANNEL_A, 5, 11, 4);
-        await fixture.pushedThrough(second.blockNumber);
-        expect(await provider.getStorage(contract, 11)).to.equal(
-            toBeHex(4, 32)
-        );
-        expect(proxy.forwardedCount(WATCH)).to.equal(2);
-
-        await fixture.follow(contract, CHANNEL_B);
-        await waitFor(() => proxy.forwardedCount(WATCH) === 3);
-
-        const again = requestsOf(proxy.forwardedRequests, WATCH)[2];
-        expect(watchedKeysOf(again.params)).to.deep.equal([
-            slotKey(contract, 11)
-        ]);
-        expect(fixture.loggedErrors()).to.deep.equal([]);
-    });
-
-    it("refuses a watch whose expiry is not a whole number of blocks, counts the failed read and answers through the endpoint", async function () {
+    it("watches the kept keys again on a new subscription however many blocks passed since their watch", async function () {
         fixture = await LightClientProviderFixture.start();
         const { node, provider, proxy } = fixture;
         const contract = await node.deploy(PARTITION_CONTRACT);
         await fixture.followContract(contract);
         const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
         await fixture.pushedThrough(first.blockNumber);
-        // a proof that decides the key, with an expiry of half a block
-        const { at, proof } = await readProofAt(fixture, contract, 10);
-        proxy.answerNextRequest(WATCH, {
-            at,
-            proof,
-            watched: [slotKey(contract, 10)],
-            expiresAfterBlocks: 0.5
-        });
-
-        expect(await provider.getStorage(contract, 10)).to.equal(
-            toBeHex(7, 32)
-        );
-
-        expect(provider.lightClientCounters).to.deep.include({ failed: 1 });
-        expect(fixture.loggedErrorMessages()).to.deep.equal([FAILED_READ]);
-        expect(fixture.loggedErrors()[0].meta[0]).to.deep.include({
-            reason: "proof rejected"
-        });
-    });
-
-    it("watches a key whose watch named no expiry again on a new subscription however many blocks passed", async function () {
-        fixture = await LightClientProviderFixture.start({
-            watchedKeyBlocks: 2
-        });
-        const { node, provider, proxy } = fixture;
-        const contract = await node.deploy(PARTITION_CONTRACT);
-        await fixture.followContract(contract);
-        const first = await node.readWriteLog(contract, CHANNEL_A, 5, 10, 7);
-        await fixture.pushedThrough(first.blockNumber);
-        // an endpoint without expiry: its answer names none
-        const { at, proof } = await readProofAt(fixture, contract, 10);
-        proxy.answerNextRequest(WATCH, {
-            at,
-            proof,
-            watched: [slotKey(contract, 10)]
-        });
         expect(await provider.getStorage(contract, 10)).to.equal(
             toBeHex(7, 32)
         );
         const watchedBy = await node.provider.getBlockNumber();
         await fixture.pushedThrough(watchedBy + 3);
-        // a watch answered past where an expiry of two blocks would end
+        // the node keeps a watched key until the subscription ends
         const second = await node.readWriteLog(contract, CHANNEL_A, 5, 11, 4);
         await fixture.pushedThrough(second.blockNumber);
         expect(await provider.getStorage(contract, 11)).to.equal(

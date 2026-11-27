@@ -167,9 +167,6 @@ export default class FrontierPushedPartition extends APushedPartition {
         const values = message.sync
             ? new Map<StorageKey, StorageValue>()
             : new Map(this.values);
-        // a key the node no longer keeps current is no longer held
-        for (const key of message.released ?? [])
-            values.delete(key.toLowerCase());
         for (const { key, value } of message.values)
             values.set(key.toLowerCase(), value?.toLowerCase() ?? null);
         const nodes = message.sync

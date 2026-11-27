@@ -600,9 +600,11 @@ written, and each such key stayed watched, so a long-running peer filled its 1,0
 and sixth rows). Watching the commitments of the next 32 heights ahead kept them bounded (last two
 rows) but cost about 60% of the node's capacity, and was removed when the read itself was removed:
 a block received in time no longer reads its commitment (`REQ-BLOCK-PIPE-8-N529VH`), and watched keys
-now expire 64 blocks after the last watch that named them (`--light-client-watched-key-blocks`).
+expired 64 blocks after the last watch that named them (`--light-client-watched-key-blocks`, node `827ca0d`).
+On 2026-11-28 that expiry was reverted for PR #8's model (`bebaa76`): a watched key stays watched until
+its subscription ends, up to 10,000 keys per subscription, and the SDK no longer handles expiry.
 
-The first two rows are the code as it is (2026-11-27: SDK `9482cd7d3`, driver `b5f627215`, node `827ca0d`): each
+The first two rows are the expiry model of 2026-11-27 (SDK `9482cd7d3`, driver `b5f627215`, node `827ca0d`): each
 subscriber watches its 50 keys again once the node released them, every 65 blocks. Both rounds of
 each model gave the same limits, with no failed watch. On distinct partitions the node is the limit:
 building the pushes took a median 1.45 to 1.53 s of the 2 s block at 1,000 subscribers and 2.02 to

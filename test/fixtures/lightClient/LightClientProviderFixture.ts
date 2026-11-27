@@ -57,31 +57,12 @@ export class LightClientProviderFixture {
         options: {
             withoutEndpoints?: boolean;
             withoutWatch?: boolean;
-            /** The most keys one subscription watches on the node (its own default when unset). */
-            maxWatchedKeys?: number;
-            /** Blocks the node keeps a watched key current after the last watch that named it (its own default when unset). */
-            watchedKeyBlocks?: number;
             endpoints?: number;
             /** Ask the node every read the light client answers too, and count how they match. */
             comparesReads?: boolean;
         } = {}
     ): Promise<LightClientProviderFixture> {
-        const node = await LightClientNodeFixture.start({
-            lightClientArgs: [
-                ...(options.maxWatchedKeys === undefined
-                    ? []
-                    : [
-                          "--light-client-max-watched-keys",
-                          String(options.maxWatchedKeys)
-                      ]),
-                ...(options.watchedKeyBlocks === undefined
-                    ? []
-                    : [
-                          "--light-client-watched-key-blocks",
-                          String(options.watchedKeyBlocks)
-                      ])
-            ]
-        });
+        const node = await LightClientNodeFixture.start();
         try {
             await node.firstBlockSealed();
             const proxies: RpcNodeProxy[] = [];

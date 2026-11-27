@@ -42,12 +42,6 @@ export type LightClientWatched = {
     at: string;
     proof: string[];
     watched: string[];
-    /**
-     * Blocks after `at` the node keeps the watched keys current unless a later
-     * watch names them again. Absent from a node that keeps them until the
-     * subscription ends.
-     */
-    expiresAfterBlocks?: number;
 };
 
 /** A Substrate block header as `chain_getHeader` returns it. */
@@ -88,10 +82,5 @@ export type LightClientStorageBlock = {
     sync: boolean;
     values: LightClientEntry[];
     proofNodes: string[];
-    /**
-     * Keys the subscription held that the node no longer keeps current from
-     * this block on; absent when there are none.
-     */
-    released?: string[];
     stages: LightClientStages;
 };
