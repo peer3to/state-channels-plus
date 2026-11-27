@@ -759,10 +759,10 @@ Specification cases tested: 17/18. Untested: T1.P6.
 Specification cases tested: 3/3.
 
 [`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](../specification/storage/proof-store.md#req-proofstore-2-dbn7sy)
-Specification cases tested: 3/4. Untested: T1.P3.
+Specification cases tested: 4/4.
 
 [`REQ-PROOFSTORE-3-FDNJYN` (Seeding from a verified synchronization)](../specification/storage/proof-store.md#req-proofstore-3-fdnjyn)
-Specification cases tested: 2/2.
+Specification cases tested: 3/3.
 
 [`REQ-PROOFSTORE-4-XB8Z9W` (Re-rooting on a chain anchor advance)](../specification/storage/proof-store.md#req-proofstore-4-xb8z9w)
 Specification cases tested: 2/2.
@@ -774,7 +774,7 @@ Specification cases tested: 2/2.
 Specification cases tested: 1/1.
 
 [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
-Specification cases tested: 4/4.
+Specification cases tested: 6/6.
 
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.
@@ -994,6 +994,9 @@ Specification cases tested: 0/3.
 
 [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
 Specification cases tested: 22/22.
+
+[`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
+Specification cases tested: 8/8.
 
 [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../specification/protocol-model/time.md#req-time-1-fm4651)
 Specification cases tested: 0/12.

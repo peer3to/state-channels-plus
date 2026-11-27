@@ -98,7 +98,11 @@ final state or a completed false result advances to the next tier. The chain det
 verdict when earlier starts cannot establish the proof. An independent valid counter may end an
 audit before these tiers: a conflict with a known final state is not a required fallback case.
 For example, a proof built from chain anchor 25 through 50 can fail when attempted from local
-anchor 5 and still succeed from the chain's correct start.
+anchor 5 and still succeed from the chain's correct start. In synchronization the first accepting tier
+establishes validity, not installation: a requester with an own final point installs only a proof
+that verified from that final point or from a trusted start at or above it
+([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)). The dispute audit
+keeps its tiers.
 
 Replay follows the same tier order. Each attempt replays from that tier's verified start and
 state, so a chain anchor can exclude a bad earlier transition. Internal errors, unavailable
@@ -921,7 +925,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t3.p13"></a>`REQ-SP-9-RNXP56.T3.P13` — A fresh requester missing a consumed top-up accepts canonical proof verification after the mirror returns false, with no penalty.
 
-<a id="req-sp-9-rnxp56.t3.p14"></a>`REQ-SP-9-RNXP56.T3.P14` — A conflicting proof fails the private-final walk but passes the mirror walk without chain query; subsequent block replay rejects sync and blacklists the responder.
+<a id="req-sp-9-rnxp56.t3.p14"></a>`REQ-SP-9-RNXP56.T3.P14` — A conflicting proof fails the private-final walk but passes the mirror walk without chain query; the sync does not install it, replays none of its blocks and does not blacklist the relaying responder.
 
 <a id="req-sp-9-rnxp56.t3.p15"></a>`REQ-SP-9-RNXP56.T3.P15` — A requester whose mirror lacks the newer anchor accepts sync through chain-anchor fallback after genesis-start verification fails.
 

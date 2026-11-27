@@ -141,6 +141,10 @@ The stored proof is written only by the own advance, the sync install, the re-ro
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P7` — a stored block dropped at the stored final point leaves the final point and the proof built over it unchanged
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P8` — a re-root at a snapshot below the final point moves the anchor there and keeps the hop above it and the final point with its state
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P9` — a reset at a genesis of a fork with no stored proof makes that genesis, with its state and no hop, the stored proof and drops the old fork's
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P10` — a sync from the own final point whose last hop changes no membership replaces that hop with the served final point
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P11` — own final points with no membership change keep one hop, at the latest final point
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P12` — a side chain kept out of a sync is kept as sync evidence under the chain's upload cap, with its start, conflicting hop and final point with its state
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P13` — a side chain whose hops exceed the upload cap is not kept as sync evidence
 
 ## UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH
 

@@ -15,6 +15,7 @@
 - [`REQ-SYNC-2-TNT4F4` (Economic soundness before adoption)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-2-tnt4f4)
 - [`REQ-SYNC-3-1P5ZHT` (Suffix through the standard pipeline)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-3-1p5zht)
 - [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)
+- [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../../../../../../../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
 - [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../../../../../../../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-MSG-9-BFN9P5` (Spectating MUST be fail-closed)](../../../../../../../specification/settlement/cross-layer-messages.md#req-msg-9-bfn9p5)
@@ -73,7 +74,7 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P45` — After local-final proof verification succeeds, a forged latest-fork outbound block still fails the independent sync check
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P46` — A fresh requester skips absent private finality, accepts the mirror proof walk and does not query the chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P47` — A fresh requester missing a consumed top-up accepts canonical proof verification after the mirror returns false, with no penalty
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P48` — A conflicting proof fails the private-final walk but passes the mirror walk without chain query; subsequent block replay rejects sync and blacklists the responder
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P48` — A conflicting proof fails the private-final walk but passes the mirror walk without chain query; the sync does not install it, replays none of its blocks and does not blacklist the relaying responder
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P49` — A requester whose mirror lacks the newer anchor accepts sync through chain-anchor fallback after genesis-start verification fails
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P50` — A requester whose mirror has the anchor but lacks later consumed inbound evidence accepts chain fallback without penalty
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P51` — Undecodable retained last-block bytes return false at all three proof tiers; sync rejects as invalid milestones and blacklists the responder without throwing

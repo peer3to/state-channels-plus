@@ -117,8 +117,13 @@ synchronization.** After a received proof verifies in synchronization
 stored proof it yields and write it in the persist step
 ([`INV-PROOFSTORE-1-0N80S6`](proof-store.md#inv-proofstore-1-0n80s6)). When the proof verified from
 the node's own final point, the record keeps its anchor and its hops and gains the received hops
-above that final point. When it verified from the anchor or the fork genesis, the record is the
-received hops rooted at that start. Received hops are kept as received, since a verified hop
+above that final point, folded as an own advance folds them
+([`REQ-PROOFSTORE-2-DBN7SY`](proof-store.md#req-proofstore-2-dbn7sy)): a received final point replaces the last hop when that hop
+changes no membership, and when the folded record does not verify from the anchor the received hops
+are appended. A proof that verified from the anchor or the fork genesis installs only for a node
+without an own final point, or with one at or below that start
+([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)); the
+record is then the received hops rooted at that start, and a proof kept out writes nothing to it. Received hops are kept as received, since a verified hop
 needs no other evidence; the last one is cut to the run that carries its required signatures,
 because its tail is replayed as block history. The record is written only when its final point is
 later than the stored one, and only when the node holds the state at the walk's final point; a
@@ -169,7 +174,14 @@ the dispute's latest point with its state. No block, snapshot or membership chan
 for it. When a hop's final block conflicts with the block stored at its height or with a final block
 of other evidence of the fork, nothing is kept. Audit evidence is pinned: it is never counted toward
 the bound, refused or evicted. Sync evidence holds proofs verified in synchronization; each fork
-holds at most as many sync records as the channel's maximum participant count; a record that would
+holds at most as many sync records as the channel's maximum participant count. A sync record is
+written only for a proof that synchronization verified but kept out because a final-history kill
+held ([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)): the walk's start (the fork genesis without
+one), the threshold hops above it as received with the snapshots they prove, and the walk's final
+point, also its latest point, with the served state there when it hashes to that point's state,
+else empty bytes. It is kept only when its hops fit in a dispute upload under the chain's cap, since
+no dispute can carry a larger history. Only audit evidence adds final points for a counter or for
+the conflict check of later audit evidence; sync evidence serves snapshot and state lookups; a record that would
 exceed that bound is refused and the refusal is logged, while a record replacing one with the same
 final point is accepted. A fork's audit and sync records stay until the local mirror's chain anchor
 leaves that fork. A state is read from evidence only by its hash, and an empty state is never
@@ -346,17 +358,21 @@ final point; every advance verifies from the anchor.
 
 **Setup and stimulus:**
 
-Synchronize a node to a later final point than its own, and to the final point it already holds.
+Synchronize a node to a later final point than its own, and to the final point it already holds;
+synchronize from the own final point with a last hop that changes no membership.
 
 **Expected result:**
 
-A later final point is written with its state; the same final point changes nothing.
+A later final point is written with its state; the same final point changes nothing; a received
+final point replaces a last hop that changes no membership.
 
 **Required permutations:**
 
 <a id="req-proofstore-3-fdnjyn.t1.p1"></a>`REQ-PROOFSTORE-3-FDNJYN.T1.P1` — A synchronization to a later final point than the stored one stores the served final point with its state.
 
 <a id="req-proofstore-3-fdnjyn.t1.p2"></a>`REQ-PROOFSTORE-3-FDNJYN.T1.P2` — A synchronization to the final point already stored leaves the stored proof unchanged.
+
+<a id="req-proofstore-3-fdnjyn.t1.p3"></a>`REQ-PROOFSTORE-3-FDNJYN.T1.P3` — A synchronization from the own final point whose last hop changes no membership replaces that hop with the served final point: the stored proof holds one hop.
 
 #### <a id="req-proofstore-4-xb8z9w.t1"></a>`REQ-PROOFSTORE-4-XB8Z9W.T1`
 
@@ -429,12 +445,14 @@ A missing tail block makes construction fail.
 **Setup and stimulus:**
 
 Store audit and sync records on several forks up to and past the sync bound; drop a fork; read
-states that a record does not hold.
+states that a record does not hold. Keep a side chain from a synchronization under the chain's upload cap
+and under a cap its hops exceed.
 
 **Expected result:**
 
 Sync evidence is bounded per fork and refused at the bound; audit evidence is never refused or
-evicted; a dropped fork keeps nothing; an empty state is never returned.
+evicted; a dropped fork keeps nothing; an empty state is never returned; a side chain is kept
+only when its hops fit in a dispute upload.
 
 **Required permutations:**
 
@@ -445,6 +463,10 @@ evicted; a dropped fork keeps nothing; an empty state is never returned.
 <a id="req-proofstore-7-b5pw2p.t1.p3"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P3` — Dropping a fork removes its audit and sync evidence and keeps another fork's.
 
 <a id="req-proofstore-7-b5pw2p.t1.p4"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P4` — A state a record does not hold is never returned, also for the hash of empty bytes.
+
+<a id="req-proofstore-7-b5pw2p.t1.p5"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P5` — A side chain kept out of a synchronization under the chain's upload cap is kept as sync evidence of its final point: its start, the conflicting hop and the final point with its state.
+
+<a id="req-proofstore-7-b5pw2p.t1.p6"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P6` — A side chain whose hops do not fit in a dispute upload is not kept as sync evidence.
 
 ## Future Work
 

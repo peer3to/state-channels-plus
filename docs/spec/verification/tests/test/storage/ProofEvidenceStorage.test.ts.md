@@ -30,6 +30,7 @@ evidence.
 - `never refuses or evicts audit evidence when the fork's sync evidence is at the bound`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P9, REQ-PROOFSTORE-7-B5PW2P.T1.P2
 - `keeps audit and sync evidence apart when the dispute hash equals the finalized snapshot hash`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P10
 - `returns every audit and sync record of a fork and none of another fork`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P11
+- `returns only the audit records of a fork as its audit evidence: its sync records and another fork's audit records are left out`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P20
 - `drops a fork's audit and sync evidence and keeps another fork's`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P12, REQ-PROOFSTORE-7-B5PW2P.T1.P3
 - `accepts sync evidence of a dropped fork again up to the bound`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P13
 - `keeps stored evidence unchanged when the caller mutates the value it set or read`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P14

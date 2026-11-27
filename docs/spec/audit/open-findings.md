@@ -465,13 +465,18 @@ remains subject to this finding; the gas/liveness evidence is outstanding.
 
 ### FIND-PROOF-PERSISTENCE-1-HYC9DS
 
-**Current defect:** _Audit path resolved (2026-11-27); sync path open._ Unexecuted retained support
-can still contaminate installed history through sync persistence and produce unsupported replay
-accusations. An audit no longer writes it.
+**Current defect:** _Audit path resolved (2026-11-27); sync path open for installed proofs only._
+Unexecuted retained support can still contaminate installed history through the persistence of a
+sync that installs and produce unsupported replay accusations. An audit no longer writes it, and
+neither does a sync that keeps a proof out.
 
 **Disposition:** Audit path resolved by the card #397 evidence store (decided by Ljuba, 2026-11-25,
-evidence-store details 2026-11-27). Sync path open; high. Sync evidence moves to the same store in a
-later part of card #397. Details, the resolution and the remaining regressions below.
+evidence-store details 2026-11-27). Sync path narrowed (2026-11-27): a proof that verifies only from
+a start below the requester's own final point is not installed
+([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)); it writes nothing to
+block history or the stored proof, and a side chain among them is kept only as sync evidence in
+the same store. A proof that installs still persists its verified support into block history; that
+part stays open, high. Details, the resolution and the remaining regressions below.
 
 **Resolution (audit path, 2026-11-27).** Block history holds only executed or proven blocks.
 "Executed" includes the blocks an audit replays from a dispute's last-milestone tail: they are

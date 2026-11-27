@@ -32,3 +32,4 @@ Audit and sync proof evidence, with a per-fork bound on sync evidence only
 - [x] `UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P17` — the final and latest held states are found by their hashes
 - [x] `UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P18` — a `0x` (not held) state is never returned
 - [x] `UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P19` — the storage facade reads a snapshot and state kept only as evidence
+- [x] `UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P20` — a fork's audit-evidence scan returns its audit records and leaves out its sync records and another fork's audit records
