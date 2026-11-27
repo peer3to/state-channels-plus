@@ -11,7 +11,7 @@ mapping: the returned status, which strategy hooks fired, which forks were dispu
 proof type. Queue-layer behavior is out of scope (owned by `E2E-BlockQueueManager`). The cases walk
 the whole predicate chain: channel/open guards, author membership with on-chain fallback,
 punishment attribution, conflict classification (double-sign / invalid-transition / wrong-genesis /
-unattributable), objective time logic with calldata-recovery retry, the subjective agreement
+unattributable, with the invalid-transition class bounded by the executed head: a block stored above it without moving it, as a dispute replay stores, raises no conflict), objective time logic with calldata-recovery retry, the subjective agreement
 window, the input envelope, disputed-fork handling, the dispute-strategy divergences, and storage
 interleaving races.
 
@@ -81,6 +81,8 @@ once the chain is past genesis, does not abort and stores no proof.
 - `empty local union, author only in the on-chain pending set → passes the author guard`: none
 - `second block at a taken height by the same author → doubleSignDetected → DISPUTE + DoubleSign proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P3, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P9, UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P10, REQ-BLOCK-PIPE-3-WW2SB7.T1.P1
 - `linked conflict at a taken height by a different author → invalidStateTransitionDetected → DISPUTE`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P15
+- `linked conflict below the executed head by a different author → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39, REQ-BLOCK-PIPE-2-PCXNT6.T2.P5
+- `the leader's real next block over another author's block a dispute replay persisted above the executed head → no conflict: SUCCESS, no fraud proof, no dispute`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38, REQ-BLOCK-PIPE-2-PCXNT6.T2.P4
 - `conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16
 - `the peer's own stored block replayed verbatim → no conflict, never a double-sign of its honest author`: none
 - `conflict at a taken height, not linked, different author → conflictingButNotLinkedBlockDetected → DISCONNECT`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18

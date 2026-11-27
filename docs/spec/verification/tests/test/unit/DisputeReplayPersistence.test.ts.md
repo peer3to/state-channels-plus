@@ -4,7 +4,7 @@ Test file: [test/unit/DisputeReplayPersistence.test.ts](../../../../../../test/u
 
 ## Overview
 
-Replays dispute evidence with explicit predecessor state. Checks persisted results while live membership, force-join scheduling and view remain unchanged, including overlapping stored support. The audit evidence cases check that unexecuted support never enters block history, that a side dispute's replayed tail is executed history, and that each reader of audit material finds it in proof evidence. Expected blocks and snapshots come from the disputer's own history or the forged dispute, not from the auditor's store.
+Replays dispute evidence with explicit predecessor state. Checks persisted results while live membership, force-join scheduling and view remain unchanged, including overlapping stored support. The audit evidence cases check that unexecuted support never enters block history, that a side dispute's replayed tail is executed history, that another author's block stored above the view without moving it raises no conflict against the honest tail, and that each reader of audit material finds it in proof evidence. Expected blocks and snapshots come from the disputer's own history or the forged dispute, not from the auditor's store.
 
 ## Tests
 
@@ -23,6 +23,7 @@ Replays dispute evidence with explicit predecessor state. Checks persisted resul
 - `U135: the honest dispute is audited first, then the dispute carrying a forged block at its tail height → history keeps the real block, a second audit of the honest dispute stays valid with no counter`: REQ-SP-10-JMVHTB.T2.P17
 - `U143: a dispute carrying a block forged by the honest tail block's own author is audited, then the honest dispute → the honest dispute is valid with no dispute counter, history holds the real block, no double-sign proof comes from unexecuted support`: REQ-SP-10-JMVHTB.T2.P9
 - `a side dispute replays a re-signed copy of the honest tail block at a free height, then the honest dispute replays the real block there → the honest dispute is valid with no dispute counter, the copy's author is proven a double signer, and the honest latest state is held for reduction`: REQ-SP-10-JMVHTB.T2.P10
+- `another author's block a side replay persisted at a free height above the view, linked to the honest tail, then the honest dispute replays the real block there → the honest dispute is valid with no dispute counter, no proof against the real block's author, and the honest latest state is held for reduction`: REQ-SP-10-JMVHTB.T2.P18
 - `a threshold-final head an audit verified and never executed → block history holds neither its block, snapshot nor state; the evidence holds the block and the state`: REQ-SP-10-JMVHTB.T2.P11
 - `a head an audit kept only as evidence → the walk evidence of that dispute's proof ends at the head's snapshot`: REQ-SP-10-JMVHTB.T2.P12
 - `a head an audit kept only as evidence → that dispute's latest snapshot and state for a final dispute are the head's`: REQ-SP-10-JMVHTB.T2.P13

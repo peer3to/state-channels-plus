@@ -222,7 +222,7 @@ Specification cases tested: 2/3. Untested: T1.P2.
 Specification cases tested: 9/12. Untested: T1.P1, T1.P3, T1.P4.
 
 [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
-Specification cases tested: 4/13. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
+Specification cases tested: 6/15. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
 [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 Specification cases tested: 16/20. Untested: T1.P2, T1.P3, T1.P8, T1.P9.
@@ -933,7 +933,7 @@ Specification cases tested: 29/32. Untested: T2.P11, T2.P13, T2.P16.
 Specification cases tested: 78/79. Untested: T3.P7.
 
 [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
-Specification cases tested: 54/55. Untested: T5.P13.
+Specification cases tested: 55/56. Untested: T5.P13.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 Specification cases tested: 7/8. Untested: T1.P1.

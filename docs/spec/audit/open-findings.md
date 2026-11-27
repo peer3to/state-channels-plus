@@ -491,11 +491,15 @@ when the chain anchor leaves that fork. Evidence:
 **Residual (audit path).** A side dispute's replayed tail is executed history and stays in block
 history until its fork is pruned. An honest later tail block at that height by the same author
 yields a correct double-sign proof. By another author, linked to this peer's stored previous block,
-conflict validation still treats the side block as proof of an invalid transition and stores a
-counter without a preflight (`ValidationService.ts` conflict check →
-`DisputeValidationStrategy.invalidStateTransitionDetected`); this case is code-traced, not
-executed. Evidence of a fork the chain anchor never reached is kept, and the anchor fork is
-tracked in memory only.
+the conflict check now raises no conflict while the side block is above the executed head (fixed
+2026-11-27, decided by Ljuba: [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6),
+tests [`REQ-BLOCK-PIPE-2-PCXNT6.T2.P4`](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t2.p4) live and
+[`REQ-SP-10-JMVHTB.T2.P18`](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb.t2.p18) replay). Before the fix it stored a
+proof against the honest author (live: plus a dispute request; replay: a counter against the honest
+dispute), which the chain rejects as invalid and slashes the submitter. The live disputed-fork gate
+runs after the conflict check, so it never protected this case. The side block in a gap below the
+head stays open: [`FIND-BLOCK-PIPE-2-3PN059`](open-findings.md#find-block-pipe-2-3pn059). Evidence of a fork the chain anchor
+never reached is kept, and the anchor fork is tracked in memory only.
 
 **Open; high, with a potential honest-auditor slash. Engineer disposition (2026-10-06): defer the
 implementation and regression tests to a follow-up PR.** Luka requested that PR #519's SR1
@@ -587,6 +591,26 @@ signature; [FR1](../../../test/unit/DisputeAuditTiers.test.ts#L47) tests conflic
 These do not cover the distinct authenticated, unexecuted-support cases above. The first
 regression above is covered by U135 (both orders) and U143; the others stay open. Closing the sync path requires the source fix, exact unit/E2E evidence, and
 updated specification and mappings.
+
+<a id="find-block-pipe-2-3pn059"></a>
+
+### FIND-BLOCK-PIPE-2-3PN059 — A side block in a gap below the head is treated as agreed history
+
+A dispute replay stores each block it executes by coordinate without moving the head (first write
+wins). The conflict check treats a stored block as agreed history when it is at or below the
+executed head ([`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)). A head does not prove that every height below it
+holds an executed block: after a compact sync the node holds no blocks below its installed point,
+and the pruning planned in card #397 removes blocks below the anchor. A side dispute's replay can
+then store another author's valid block in such a gap. An honest block at that height linked to
+the stored block before it then yields invalid-transition evidence against its honest author
+(`ValidationService.checkConflictingBlock` → `strategy.invalidStateTransitionDetected`): the chain
+rejects that proof and slashes the submitter. Code-traced, not executed.
+
+Related, code-traced: above the head the honest block now passes validation, but its commit store
+is refused because the side block holds the coordinate (`BlockCommitService` → `BlockStorage.storeBlock`
+returns `undefined`, the result is ignored); the live head then does not move past that height.
+
+**Status:** Open (2026-11-27). Recorded for the pruning part of card #397. No remedy is selected.
 
 ## Atomic state updates across the VM and storage
 

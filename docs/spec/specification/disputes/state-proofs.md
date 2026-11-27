@@ -553,6 +553,8 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-10-jmvhtb.t2.p17"></a>`REQ-SP-10-JMVHTB.T2.P17` — The same forged support is audited after the honest dispute; block history keeps the real block, and auditing the honest dispute again stays valid with no counter.
 
+<a id="req-sp-10-jmvhtb.t2.p18"></a>`REQ-SP-10-JMVHTB.T2.P18` — Another author's block, linked to the honest tail, is stored at a height above the frozen view without moving it, as a side dispute's replay leaves it; the honest dispute then replays the real block there: it is valid with no dispute counter, no proof against the real block's author, and the honest latest state is held.
+
 #### <a id="req-sp-9-rnxp56.t2"></a>`REQ-SP-9-RNXP56.T2`
 
 **Requirements / invariants:**

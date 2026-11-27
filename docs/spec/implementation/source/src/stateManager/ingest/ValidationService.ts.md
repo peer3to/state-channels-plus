@@ -5,6 +5,7 @@
 ## Requirements
 
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
+  Partial: `checkConflictingBlock` bounds the linked-conflict class by the executed head only, so another author's block a dispute replay stored in a gap below the head still yields invalid-transition evidence ([`FIND-BLOCK-PIPE-2-3PN059`](../../../../../audit/open-findings.md#find-block-pipe-2-3pn059)).
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 - [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
 - [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
@@ -58,6 +59,8 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P35` — Compact sync installs above an already queued gossip block while omitting its history; release drops that block without closing the spectator or blacklisting honest sources, and the spectator then follows a new live head
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36` — forged-inbound detector: a carried genuine inbound block that is the snapshot's inbound head, absent from local storage, is not flagged
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37` — forged-inbound detector: a fabricated inbound block one above the snapshot's inbound head, absent locally and on chain, is flagged and returned
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38` — linked conflict by another author over a block stored above the executed head without moving it: no conflict, no evidence, validation continues
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39` — linked conflict by another author below the executed head: invalid-transition conflict class
 
 ## UNIT-TEST-SM-VALIDATION-1-1GFNNY
 
