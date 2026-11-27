@@ -15,9 +15,9 @@
  * With `ahead` it instead watches a window of `keys` never written slots with
  * the config slots, and every `every` blocks moves it `step` slots on and
  * watches it again in one call, as a participant watches the commitments of
- * the coming heights; with `configEvery` it also watches the config slots
- * again every that many blocks, as a participant's read does once the node
- * released them.
+ * the coming heights. With `configEvery`, in either mode, it also watches the
+ * config slots again every that many blocks, as a participant's read does
+ * once the node released them.
  *
  * Messages from the main thread: `{ type: "add", peers }` opens peers,
  * `{ type: "take" }` answers with what was recorded since the last take and
@@ -55,8 +55,9 @@ export type PeerSpec = {
             keys: number;
             every: number;
             step: number;
-            configEvery?: number;
         };
+        /** Blocks of its channel between two watches of the config slots. */
+        configEvery?: number;
     };
 };
 
@@ -236,7 +237,7 @@ function onPush(peer: Peer, params: unknown): void {
             acceptMs
         });
         void fallbackRead(peer, accepted.block.hash);
-        if (!accepted.sync) void watchFresh(peer, accepted.block.hash);
+        if (!accepted.sync) void watchDue(peer, accepted.block.hash);
     } catch {
         report.refused++;
     }
@@ -289,50 +290,38 @@ async function registerWatchedKeys(peer: Peer): Promise<void> {
     }
 }
 
-/** Watches the window ahead again, or one slot never written, at `blockHash`. */
-async function watchFresh(peer: Peer, blockHash: string): Promise<void> {
-    const ahead = peer.spec.watch?.ahead;
-    if (ahead) return await watchAhead(peer, blockHash, ahead);
-    const freshBase = peer.spec.watch?.freshBase;
-    const freshRate = peer.spec.watch?.freshRate;
-    if (freshBase === undefined || freshRate === undefined) return;
-    if (!peer.watch?.registered || Math.random() >= freshRate) return;
-    const slot = freshBase + peer.watch.nextFresh++;
-    try {
-        report.watchMs.push(
-            await watchKeys(
-                peer,
-                slotKeys(peer.spec.contract, slot, 1),
-                blockHash
-            )
-        );
-    } catch {
-        report.failedWatches++;
-    }
-}
-
-/** Every `every` blocks the window moved `step` slots on, and every `configEvery` the config slots, watched at `blockHash`. */
-async function watchAhead(
-    peer: Peer,
-    blockHash: string,
-    ahead: NonNullable<NonNullable<PeerSpec["watch"]>["ahead"]>
-): Promise<void> {
+/**
+ * The watches due at `blockHash`: the window ahead every `every` blocks moved
+ * `step` slots on, or one slot never written, and every `configEvery` blocks
+ * the config slots.
+ */
+async function watchDue(peer: Peer, blockHash: string): Promise<void> {
     const watch = peer.watch;
-    const spec = peer.spec.watch!;
-    if (!watch?.registered) return;
+    const spec = peer.spec.watch;
+    if (!spec || !watch?.registered) return;
     const blocks = ++watch.blocksWatched;
     const calls: string[][] = [];
-    if (blocks % ahead.every === 0) {
-        watch.nextFresh += ahead.step;
+    const ahead = spec.ahead;
+    if (ahead) {
+        if (blocks % ahead.every === 0) {
+            watch.nextFresh += ahead.step;
+            calls.push(
+                slotKeys(
+                    peer.spec.contract,
+                    spec.freshBase! + watch.nextFresh,
+                    ahead.keys
+                )
+            );
+        }
+    } else if (
+        spec.freshBase !== undefined &&
+        spec.freshRate !== undefined &&
+        Math.random() < spec.freshRate
+    )
         calls.push(
-            slotKeys(
-                peer.spec.contract,
-                spec.freshBase! + watch.nextFresh,
-                ahead.keys
-            )
+            slotKeys(peer.spec.contract, spec.freshBase + watch.nextFresh++, 1)
         );
-    }
-    if (ahead.configEvery && blocks % ahead.configEvery === 0)
+    if (spec.configEvery && blocks % spec.configEvery === 0)
         calls.push(configKeys.get(peer.spec.contract)!);
     for (const keys of calls)
         try {

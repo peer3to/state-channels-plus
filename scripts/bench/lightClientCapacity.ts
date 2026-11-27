@@ -43,9 +43,10 @@
  * the node's 1,024 per subscription); BENCH_WATCH_AHEAD_KEYS (0): instead, a
  * window of that many never written slots each peer watches with the config
  * slots and, every BENCH_WATCH_AHEAD_EVERY (16) blocks, moves
- * BENCH_WATCH_AHEAD_STEP (48) slots on and watches again in one call, with the
- * config slots watched again every BENCH_WATCH_CONFIG_EVERY (0: never) blocks,
- * as participants watch the commitments of the coming heights. With more
+ * BENCH_WATCH_AHEAD_STEP (48) slots on and watches again in one call, as
+ * participants watched the commitments of the coming heights;
+ * BENCH_WATCH_CONFIG_EVERY (0: never): blocks between two watches of the
+ * config slots, as a participant's read once the node released them. With more
  * than one key per partition or per write, or with watched keys, the
  * partitions are written by MULTI_PARTITION_CONTRACT, one transaction per
  * channel. BENCH_BUSY_CHANNELS: channels written each block, in place of
@@ -568,9 +569,11 @@ async function main(): Promise<void> {
                                 ahead: {
                                     keys: WATCH_AHEAD_KEYS,
                                     every: WATCH_AHEAD_EVERY,
-                                    step: WATCH_AHEAD_STEP,
-                                    configEvery: WATCH_CONFIG_EVERY
+                                    step: WATCH_AHEAD_STEP
                                 }
+                            }),
+                            ...(WATCH_CONFIG_EVERY > 0 && {
+                                configEvery: WATCH_CONFIG_EVERY
                             })
                         }
                     })
