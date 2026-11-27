@@ -2899,6 +2899,29 @@ restarts without persistence or switches branches is not slashed.
 (`test_applyFraudProofs_blockDoubleSignByACoSignerSlashesTheCoSignerNotTheAuthor`) shows the chain
 side; the node side has no test yet.
 
+<a id="find-dispute-13-1bw4sw"></a>
+
+### FIND-DISPUTE-13-1BW4SW
+
+**Limit:** a `DisputeFinalPointRegression` kill whose final hop's union U_F holds 64 participants
+can exceed one transaction's gas. Measured (2026-11-27): two disjoint sets of 32 participants swap
+at every hop of F, each hop consumes 32 single-JOIN inbound blocks, so U_F holds 64 addresses; G
+skipped every inbound block F consumed, and all 64 sign G. With the most such hops that fit the
+64 KiB calldata limit next to the side dispute, the kill records 64 slashes and costs 18,315,525
+gas, above the peer3 parachain's 17,916,000. The 32-participant case of
+[`REQ-FP-7-4DD0D7.T11.P12`](../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7.t11.p12)
+still fits. The node checks a kill's calldata size, not its gas, before the send
+(`DisputeManager.encodeKill`), so such a kill reaches its send and cannot land.
+
+**Status:** Open; low. Accepted residual (Ljuba, 2026-11-26): a channel is not expected to reach 32
+participants or more than 3–4 hops in one final proof. No design change; the measuring case is not
+kept in the suite.
+
+**Evidence:** none in the suite. The kept cost case,
+[DisputeFinalPointRegression.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/DisputeFinalPointRegression.t.sol.md)
+(`test_regression_largestKillOfOneParticipantSetWithinTheCalldataLimitFitsTheGasLimit`), covers 32
+participants only.
+
 <a id="find-events-1-3jf8fm"></a>
 
 ### FIND-EVENTS-1-3JF8FM

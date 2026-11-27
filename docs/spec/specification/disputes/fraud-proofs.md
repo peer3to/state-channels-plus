@@ -311,8 +311,11 @@ participant never decides them. Residual risks, accepted for now:
   no skipped run. Residual limits: the regression counter's gas stays linear in the final proof's
   own walk; the conflict counter walks every inbound block above the final point's head, so
   colluders that consume enough top-ups above an honest final point make it exceed one
-  transaction's gas; and a final proof above 4 hops at 32 participants can exceed one kill's
-  64 KiB, so the kill is never sent.
+  transaction's gas; a final proof above 4 hops at 32 participants can exceed one kill's
+  64 KiB, so the kill is never sent; and a regression kill whose final hop's union holds 64
+  participants (two disjoint sets of 32) over a long skipped inbound run can exceed one
+  transaction's gas, so that kill cannot land. Accepted (Ljuba, 2026-11-26): a channel is
+  not expected to reach 32 participants or more than 3–4 hops in one final proof.
 
 Completeness remains an explicit security review item; the invalid-submission
 penalty is decided ([`REQ-FP-6-TS1QAV`](fraud-proofs.md#req-fp-6-ts1qav)), with honest-mistake and preflight-race slashing accepted as residual risk.
