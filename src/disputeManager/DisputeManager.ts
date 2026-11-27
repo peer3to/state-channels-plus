@@ -37,6 +37,7 @@ import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
 import { withGasHeadroom } from "@/utils/gas";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { memoizeRead } from "@/utils/memoizeRead";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
     DisputeStruct,
@@ -89,8 +90,13 @@ class DisputeManager {
     private eventSyncService: EventSyncService;
     private logger: Logger;
     private readonly disputeBuilder: DisputeBuilder;
-    // The manager's getStateTransitionReplayGas, read on the first replaying send.
-    private stateTransitionReplayGas?: Promise<bigint>;
+    // The manager's getStateTransitionReplayGas, read on the first replaying
+    // send. A failed read is retried on the next send.
+    private readonly readStateTransitionReplayGas = memoizeRead(() =>
+        this.stateChannelManagerContract.getStateTransitionReplayGas()
+    );
+    /** the chain's per-transaction calldata limit this peer sends against */
+    maxTransactionBytes = config.MAX_TRANSACTION_BYTES;
 
     constructor(
         channelId: ChannelId,
@@ -175,6 +181,8 @@ class DisputeManager {
         // the refusal the multicall's all-or-nothing estimate reverted with
         let estimatedUploadRefusal: CustomEvmError | undefined;
         let lostEvidenceRace: CustomEvmError | undefined;
+        // the kill sent alone threw: rethrown once our upload was handled
+        let killAloneFailure: { error: unknown } | undefined;
         try {
             await this.mutex.lock({ taskName: "dispute" });
             if (this.storage.disputes.didIDispute(forkId)) {
@@ -259,32 +267,40 @@ class DisputeManager {
                         )
                     ).data
                 );
-            const killCalldata = killProof
-                ? (
-                      await this.stateChannelManagerContract.applyDisputeFraudProofs.populateTransaction(
-                          [killProof]
-                      )
-                  ).data
-                : undefined;
+            const kill = killProof ? this.encodeKill(killProof) : undefined;
             const killDelivery =
-                killCalldata === undefined
+                kill === undefined
                     ? undefined
                     : planKillDelivery(
-                          ethers.dataLength(killCalldata),
+                          kill.killBytes,
                           this.multicallBytes([
-                              killCalldata,
+                              kill.killCalldata,
                               ...calls,
                               uploadDisputeCalldata
                           ]),
-                          config.MAX_TRANSACTION_BYTES
+                          this.maxTransactionBytes
                       );
             const isKillInMulticall = killDelivery === KillDelivery.InMulticall;
-            if (isKillInMulticall) calls.unshift(killCalldata!);
+            if (isKillInMulticall) calls.unshift(kill!.killCalldata);
             if (killDelivery === KillDelivery.Alone) {
                 // the kill and our upload do not fit one transaction: the
                 // kill goes alone first, then the upload without it
                 killSentAlone = true;
-                await this.killDispute(options!.kill!);
+                try {
+                    await this.killDispute(options!.kill!);
+                } catch (error) {
+                    // our upload never depends on the kill: it still goes,
+                    // and the kill's failure is rethrown after it
+                    this.logger.warn(
+                        "dispute: the kill sent alone failed, our dispute is still uploaded",
+                        {
+                            forkId,
+                            channelId: this.channelId,
+                            error: errorMessage(error)
+                        }
+                    );
+                    killAloneFailure = { error };
+                }
             }
             // a kill too large to send alone stays out: `killDispute` in the
             // finally below logs it and sends nothing
@@ -499,6 +515,7 @@ class DisputeManager {
                 );
         }
         if (rethrow !== undefined) throw rethrow;
+        if (killAloneFailure) throw killAloneFailure.error;
         if (refreshSlashes && this.stateManager.forkId === forkId) {
             const changed = await this.eventSyncService.recoverOnChainSlashes(
                 this.channelId,
@@ -554,6 +571,19 @@ class DisputeManager {
         this.disputeBuilder.clearCache(forkId);
     }
 
+    /**
+     * The kill by `disputeFraudProof` sent alone: its calldata and its size,
+     * which `maxTransactionBytes` bounds.
+     */
+    public encodeKill(disputeFraudProof: DisputeFraudProofStruct) {
+        const killCalldata =
+            this.stateChannelManagerContract.interface.encodeFunctionData(
+                "applyDisputeFraudProofs",
+                [[disputeFraudProof]]
+            );
+        return { killCalldata, killBytes: ethers.dataLength(killCalldata) };
+    }
+
     public async killDispute(dispute: DisputeStruct): Promise<void> {
         const disputeMeta = LoggerUtils.getDisputeMetadata(dispute);
         const formattedHash = LoggerUtils.formatHash(disputeMeta.disputeHash);
@@ -581,22 +611,16 @@ class DisputeManager {
                     killPeriodEnd: Number(killPeriodEnd)
                 })
             });
-            const disputeFraudProofs = [disputeFraudProof];
-            const killCalldata =
-                this.stateChannelManagerContract.interface.encodeFunctionData(
-                    "applyDisputeFraudProofs",
-                    [disputeFraudProofs]
-                );
-            if (
-                ethers.dataLength(killCalldata) > config.MAX_TRANSACTION_BYTES
-            ) {
+            const { killCalldata, killBytes } =
+                this.encodeKill(disputeFraudProof);
+            if (killBytes > this.maxTransactionBytes) {
                 this.logger.warn(
                     "killDispute no-op: the kill exceeds the transaction calldata limit",
                     {
                         disputeMeta,
                         ...LoggerUtils.getTransactionSizeMetadata(
-                            ethers.dataLength(killCalldata),
-                            config.MAX_TRANSACTION_BYTES
+                            killBytes,
+                            this.maxTransactionBytes
                         )
                     }
                 );
@@ -610,7 +634,7 @@ class DisputeManager {
             if (replays) replayGasLimit = gasLimit;
             txResponse =
                 await this.stateChannelManagerContract.applyDisputeFraudProofs(
-                    disputeFraudProofs,
+                    [disputeFraudProof],
                     { gasLimit }
                 );
 
@@ -718,20 +742,9 @@ class DisputeManager {
         replays: boolean
     ): Promise<bigint> {
         if (!replays) return withGasHeadroom(await estimate);
-        let replayGas = this.stateTransitionReplayGas;
-        if (!replayGas) {
-            const read =
-                this.stateChannelManagerContract.getStateTransitionReplayGas();
-            replayGas = this.stateTransitionReplayGas = read;
-            // A failed read is retried on the next send.
-            read.catch(() => {
-                if (this.stateTransitionReplayGas === read)
-                    this.stateTransitionReplayGas = undefined;
-            });
-        }
         const [estimated, required, latestBlock] = await Promise.all([
             estimate,
-            replayGas,
+            this.readStateTransitionReplayGas(),
             // a failed read leaves the limit capped only by MAX_TRANSACTION_GAS
             this.stateChannelManagerContract.runner?.provider
                 ?.getBlock("latest")

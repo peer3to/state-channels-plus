@@ -25,7 +25,7 @@ import {
     Signature
 } from "@/types/types";
 import { getChecksumAddress, hash, isSubset, Logger } from "@/utils";
-import { config } from "@/utils/config";
+import { errorMessage } from "@/utils/errorMessage";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -45,6 +45,15 @@ import {
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { type BytesLike, ethers } from "ethers";
+
+enum FinalHistoryOutcome {
+    /** no final-history counter */
+    None,
+    /** a counter is stored */
+    Stored,
+    /** the chosen counter's kill is too large to send: it is not stored yet */
+    Unsendable
+}
 
 enum ReplayOutcome {
     Valid,
@@ -81,7 +90,9 @@ export default class DisputeValidationService {
      * the latest locally finalized state, then the local diamond's anchor,
      * then the chain's anchor; only the chain tier establishes a fault. A
      * dispute that ends below the trusted final point is not replayed
-     * backward. Missing required local data and read errors throw.
+     * backward. Missing required local data and read errors throw, unless a
+     * final-history counter too large to send was found: that counter is then
+     * stored.
      */
     public async validateDispute(
         dispute: DisputeStruct,
@@ -132,13 +143,32 @@ export default class DisputeValidationService {
             return this.rejectStateProof(dispute, evidence, data);
 
         // a conflict with this peer's final history needs no replay state
-        if (await this.tryCreateFinalHistoryProof(dispute, evidence))
-            return false;
+        const finalHistory = await this.tryCreateFinalHistoryProof(
+            dispute,
+            evidence
+        );
+        if (finalHistory.outcome === FinalHistoryOutcome.Stored) return false;
+        if (finalHistory.outcome === FinalHistoryOutcome.None)
+            return await this.runRemainingChecks(dispute, evidence, data);
 
-        const walk = await this.verifyAndReplay(dispute, evidence, data);
-        if (!walk) return false;
-
-        return await this.continueOtherChecks(dispute, walk, data);
+        // that counter's kill is too large to send: the remaining checks may
+        // still find a counter that can be sent. When they find none or cannot
+        // finish, the unsendable counter is stored, though it is never sent,
+        // so this peer still uploads its own dispute
+        try {
+            if (!(await this.runRemainingChecks(dispute, evidence, data)))
+                return false;
+        } catch (error) {
+            this.logger.warn(
+                "Dispute audit failed after an unsendable final-history counter: that counter is stored",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute),
+                    error: errorMessage(error)
+                }
+            );
+        }
+        finalHistory.storeUnsendable();
+        return false;
     }
 
     /** The chain's eligibility of the last milestone's block at `blockIndex` for a block-specific challenge. */
@@ -158,15 +188,25 @@ export default class DisputeValidationService {
      * regresses this peer's final point's inbound. Every counter the chain
      * accepts is measured; the one stored is the one whose kill fits one
      * transaction and slashes the most addresses
-     * (`chooseFinalHistoryCounter`).
+     * (`chooseFinalHistoryCounter`). A counter whose kill is too large to
+     * send is not stored: the caller stores it with `storeUnsendable` once no
+     * other check found a counter.
      */
     private async tryCreateFinalHistoryProof(
         dispute: DisputeStruct,
         evidence: StateProofEvidence
-    ): Promise<boolean> {
+    ): Promise<
+        | { outcome: FinalHistoryOutcome.None }
+        | { outcome: FinalHistoryOutcome.Stored }
+        | {
+              outcome: FinalHistoryOutcome.Unsendable;
+              storeUnsendable: () => void;
+          }
+    > {
         // the snapshot the first block of the last milestone commits
         const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
-        if (!latestFinalizedSnapshot) return false;
+        if (!latestFinalizedSnapshot)
+            return { outcome: FinalHistoryOutcome.None };
         const counters = [
             ...(await this.findConflictsWithFinalStateCounters(
                 dispute,
@@ -177,25 +217,46 @@ export default class DisputeValidationService {
                 latestFinalizedSnapshot
             ))
         ];
-        const chosen = chooseFinalHistoryCounter(
-            counters,
-            config.MAX_TRANSACTION_BYTES
+        const { maxTransactionBytes } = this.stateManager.disputeManager;
+        const chosen = chooseFinalHistoryCounter(counters, maxTransactionBytes);
+        if (!chosen) return { outcome: FinalHistoryOutcome.None };
+        if (chosen.killBytes <= maxTransactionBytes) {
+            chosen.store();
+            return { outcome: FinalHistoryOutcome.Stored };
+        }
+        const sizeMetadata = {
+            dispute: LoggerUtils.getDisputeMetadata(dispute),
+            ...LoggerUtils.getTransactionSizeMetadata(
+                chosen.killBytes,
+                maxTransactionBytes
+            ),
+            ...LoggerUtils.getSlashSetMetadata(chosen.slashes)
+        };
+        this.logger.warn(
+            "Final-history kill exceeds the transaction calldata limit: the audit looks for another counter",
+            sizeMetadata
         );
-        if (!chosen) return false;
-        if (chosen.killBytes > config.MAX_TRANSACTION_BYTES)
-            this.logger.warn(
-                "Final-history kill exceeds the transaction calldata limit: it is stored but not sent",
-                {
-                    dispute: LoggerUtils.getDisputeMetadata(dispute),
-                    ...LoggerUtils.getTransactionSizeMetadata(
-                        chosen.killBytes,
-                        config.MAX_TRANSACTION_BYTES
-                    ),
-                    ...LoggerUtils.getSlashSetMetadata(chosen.slashes)
-                }
-            );
-        chosen.store();
-        return true;
+        return {
+            outcome: FinalHistoryOutcome.Unsendable,
+            storeUnsendable: () => {
+                this.logger.warn(
+                    "Final-history kill exceeds the transaction calldata limit and no other counter applies: it is stored but not sent",
+                    sizeMetadata
+                );
+                chosen.store();
+            }
+        };
+    }
+
+    /** The walk and replay of the proof, then the checks of its latest state: false when they store a counter. */
+    private async runRemainingChecks(
+        dispute: DisputeStruct,
+        evidence: StateProofEvidence,
+        data?: DisputeAuditingDataStruct
+    ): Promise<boolean> {
+        const walk = await this.verifyAndReplay(dispute, evidence, data);
+        if (!walk) return false;
+        return await this.continueOtherChecks(dispute, walk, data);
     }
 
     /**
@@ -495,7 +556,10 @@ export default class DisputeValidationService {
                 continue;
             }
             // Another audit may have finalized conflicting history while this walk awaited its verifier.
-            if (await this.tryCreateFinalHistoryProof(dispute, evidence))
+            if (
+                (await this.tryCreateFinalHistoryProof(dispute, evidence))
+                    .outcome === FinalHistoryOutcome.Stored
+            )
                 return false;
             const outcome = await this.replayLastMilestoneTail(
                 dispute,
@@ -522,6 +586,7 @@ export default class DisputeValidationService {
                         data
                     ) &&
                     (await this.tryCreateFinalHistoryProof(dispute, evidence))
+                        .outcome === FinalHistoryOutcome.Stored
                 )
                     return false;
                 return walk;
@@ -1512,18 +1577,11 @@ export default class DisputeValidationService {
             | DisputeConflictsWithFinalStateStruct
             | DisputeFinalPointRegressionStruct
     ): number {
-        return ethers.dataLength(
-            this.stateChannelManagerContract.interface.encodeFunctionData(
-                "applyDisputeFraudProofs",
-                [
-                    [
-                        this.disputeFraudProofService.toDisputeFraudProof(
-                            dispute,
-                            { type, struct: proof }
-                        )
-                    ]
-                ]
-            )
-        );
+        return this.stateManager.disputeManager.encodeKill(
+            this.disputeFraudProofService.toDisputeFraudProof(dispute, {
+                type,
+                struct: proof
+            })
+        ).killBytes;
     }
 }

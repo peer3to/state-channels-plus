@@ -20,6 +20,7 @@ import {
 import { errorMessage } from "@/utils/errorMessage";
 import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
+import { memoizeRead } from "@/utils/memoizeRead";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
     SnapshotDataStruct,
@@ -89,8 +90,10 @@ export default class DisputeBuilder {
     // audited one
     private readonly evidenceChecks = new Map<ForkId, Promise<boolean>>();
     // The manager's getMaxDisputeUploadBytes (a deploy parameter), read on the
-    // first construction.
-    private maxDisputeUploadBytes?: Promise<bigint>;
+    // first construction. A failed read is retried on the next construction.
+    private readonly readMaxDisputeUploadBytes = memoizeRead(() =>
+        this.stateChannelManagerContract.getMaxDisputeUploadBytes()
+    );
 
     constructor(
         public channelId: ChannelId,
@@ -284,21 +287,6 @@ export default class DisputeBuilder {
             })
         );
         return undefined;
-    }
-
-    private readMaxDisputeUploadBytes(): Promise<bigint> {
-        let maxBytes = this.maxDisputeUploadBytes;
-        if (!maxBytes) {
-            const read =
-                this.stateChannelManagerContract.getMaxDisputeUploadBytes();
-            maxBytes = this.maxDisputeUploadBytes = read;
-            // A failed read is retried on the next construction.
-            read.catch(() => {
-                if (this.maxDisputeUploadBytes === read)
-                    this.maxDisputeUploadBytes = undefined;
-            });
-        }
-        return maxBytes;
     }
 
     /**

@@ -36,6 +36,8 @@ import {
 import { getAddress, id, ZeroHash } from "ethers";
 
 const MESSAGE_TYPE_JOIN = id("JOIN_CHANNEL_MESSAGE");
+// the most genesis-hop misses remembered for one fork
+const MAX_GENESIS_HOP_MISSES = 256;
 
 /** Where a proof of a fork starts: its same-fork non-genesis anchor, else its genesis. */
 type ProofStart = {
@@ -131,6 +133,10 @@ class AgreementManager {
         string,
         Promise<StateSnapshot | undefined>
     >();
+    // the upper inbound hashes of hops from `forkId`'s genesis whose run event
+    // recovery could not supply: a later signer on such a hop is stripped
+    // without another chain log scan. Reset on another fork.
+    private genesisHopMisses?: { forkId: ForkId; upperInboundHashes: Set<Hash> };
 
     constructor(
         private storage: Storage,
@@ -857,7 +863,9 @@ class AgreementManager {
      * so the run it carries is never read. Without the previous snapshot the
      * hops end at the resulting one. A run missing on this node's hop defers
      * the signer (unresolved); one missing only on the hop from the genesis
-     * cannot arrive by waiting, so the signer is view-dependent.
+     * cannot arrive by waiting, so the signer is view-dependent. That miss is
+     * remembered per fork and hop end, so a later signer on the same hop is
+     * stripped without another chain log scan.
      */
     public async getSignerAdmission(
         block: Block,
@@ -915,10 +923,13 @@ class AgreementManager {
         }
 
         // the node-independent union: the hop from the fork's genesis
-        const forkUnion = await this.getHopSigners(genesis, hopEnd);
+        const forkUnion = this.isGenesisHopMiss(block.forkId, hopEnd)
+            ? undefined
+            : await this.getHopSigners(genesis, hopEnd);
         if (!forkUnion) {
             // waiting cannot supply a run this hop needs and recovery cannot
             // return: stripped like a view-dependent signer
+            this.recordGenesisHopMiss(block.forkId, hopEnd);
             admission.viewDependent = outside;
             return admission;
         }
@@ -928,6 +939,26 @@ class AgreementManager {
             else admission.foreign.add(signature);
         }
         return admission;
+    }
+
+    /** Whether event recovery already failed the hop from `forkId`'s genesis to `hopEnd`. */
+    private isGenesisHopMiss(forkId: ForkId, hopEnd: StateSnapshot): boolean {
+        return (
+            this.genesisHopMisses?.forkId === forkId &&
+            this.genesisHopMisses.upperInboundHashes.has(
+                hopEnd.snapshotData.latestInboundMessageBlockHash as Hash
+            )
+        );
+    }
+
+    /** Remembers a failed recovery of the hop from `forkId`'s genesis to `hopEnd`; the oldest goes first at the bound. */
+    private recordGenesisHopMiss(forkId: ForkId, hopEnd: StateSnapshot): void {
+        if (this.genesisHopMisses?.forkId !== forkId)
+            this.genesisHopMisses = { forkId, upperInboundHashes: new Set() };
+        const misses = this.genesisHopMisses.upperInboundHashes;
+        misses.add(hopEnd.snapshotData.latestInboundMessageBlockHash as Hash);
+        if (misses.size > MAX_GENESIS_HOP_MISSES)
+            misses.delete(misses.values().next().value!);
     }
 
     private async computeLocalFinalizedSnapshot(
