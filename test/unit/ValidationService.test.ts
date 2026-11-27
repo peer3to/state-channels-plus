@@ -937,7 +937,7 @@ describe("Unit: ValidationService", function () {
             );
         });
 
-        it("the leader's real next block over another author's block a dispute replay persisted above the executed head → no conflict: SUCCESS, no fraud proof, no dispute", async function () {
+        it("the leader's real next block over another author's block a dispute replay persisted above the executed head on the disputed fork → no conflict, the disputed-fork gate discards it: not executed, head unchanged, no fraud proof, no dispute", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2);
             const { leader, observer, authored, startHeight, forkId } =
@@ -980,18 +980,57 @@ describe("Unit: ValidationService", function () {
                         .request()
                 )?.author
             ).to.equal(sideAuthor.address);
+            // a side block exists only after a dispute on its fork; this
+            // peer's own dispute marker makes the fork disputed for the gate
+            const disputed = await h
+                .control(observer)
+                .validation.probeIsDisputedFork(forkId, true)
+                .request();
+            expect(disputed.disputed).to.equal(true);
+            const stateBefore = await h
+                .control(observer)
+                .query.getLiveStateMachineStateHash()
+                .request();
 
             const r = await h
                 .control(observer)
-                .validation.runBlockValidation(
-                    authored!.encodedBlockConfirmation
-                )
+                .validation.runBlockIngest(authored!.encodedBlockConfirmation)
                 .request();
 
-            expect(r.resultName).to.equal("SUCCESS");
+            // no conflict hook fired; the disputed-fork gate discarded it
+            expect(r.threw).to.be.null;
+            expect(r.resultName).to.equal("NOT_READY");
+            expect(r.firedHooks).to.deep.equal(["blockForkIsDisputed"]);
             expect(r.disputedForkIds).to.deep.equal([]);
             expect(r.fraudProofType).to.be.null;
-            expect(r.firedHooks).to.deep.equal([]);
+            // not executed: the VM state and the head did not move, and the
+            // side block still holds the coordinate
+            expect(
+                await h
+                    .control(observer)
+                    .query.getLiveStateMachineStateHash()
+                    .request()
+            ).to.equal(stateBefore);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()
+            ).to.equal(startHeight - 1);
+            expect(
+                (
+                    await h
+                        .control(observer)
+                        .query.getBlockByHeight(forkId, startHeight)
+                        .request()
+                )?.author
+            ).to.equal(sideAuthor.address);
+            expect(
+                await h
+                    .control(observer)
+                    .query.getFraudProofType(leader.address)
+                    .request()
+            ).to.be.null;
         });
 
         it("conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof", async function () {

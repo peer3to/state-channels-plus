@@ -82,7 +82,7 @@ once the chain is past genesis, does not abort and stores no proof.
 - `second block at a taken height by the same author → doubleSignDetected → DISPUTE + DoubleSign proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P3, UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P9, UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P10, REQ-BLOCK-PIPE-3-WW2SB7.T1.P1
 - `linked conflict at a taken height by a different author → invalidStateTransitionDetected → DISPUTE`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P15
 - `linked conflict below the executed head by a different author → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39, REQ-BLOCK-PIPE-2-PCXNT6.T2.P5
-- `the leader's real next block over another author's block a dispute replay persisted above the executed head → no conflict: SUCCESS, no fraud proof, no dispute`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38, REQ-BLOCK-PIPE-2-PCXNT6.T2.P4
+- `the leader's real next block over another author's block a dispute replay persisted above the executed head on the disputed fork → no conflict, the disputed-fork gate discards it: not executed, head unchanged, no fraud proof, no dispute`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38, REQ-BLOCK-PIPE-2-PCXNT6.T2.P4
 - `conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16
 - `the peer's own stored block replayed verbatim → no conflict, never a double-sign of its honest author`: none
 - `conflict at a taken height, not linked, different author → conflictingButNotLinkedBlockDetected → DISCONNECT`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18

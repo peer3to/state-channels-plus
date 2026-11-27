@@ -606,11 +606,15 @@ the stored block before it then yields invalid-transition evidence against its h
 (`ValidationService.checkConflictingBlock` → `strategy.invalidStateTransitionDetected`): the chain
 rejects that proof and slashes the submitter. Code-traced, not executed.
 
-Related, code-traced: above the head the honest block now passes validation, but its commit store
-is refused because the side block holds the coordinate (`BlockCommitService` → `BlockStorage.storeBlock`
-returns `undefined`, the result is ignored); the live head then does not move past that height.
+Above the head there is no live defect. The conflict check raises no conflict there, and the
+disputed-fork gate that follows it (`ValidationService.validateBlockConfirmation`, every live
+strategy) discards the honest block: a side block exists only after a dispute on that fork was
+mirrored, and the fork stays disputed until the dispute's resolution ends it. The block is not
+executed and the head does not move on that fork, by design. A dispute replay's refused store is
+harmless: replay chains by block object and snapshot hash, not by the stored coordinate.
 
-**Status:** Open (2026-11-27). Recorded for the pruning part of card #397. No remedy is selected.
+**Status:** Open (2026-11-27), only for the side block in a gap below the head. Recorded for the
+pruning part of card #397. No remedy is selected.
 
 ## Atomic state updates across the VM and storage
 
