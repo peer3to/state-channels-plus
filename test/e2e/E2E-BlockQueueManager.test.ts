@@ -1889,13 +1889,14 @@ describe("E2E: BlockQueueManager", function () {
             ).to.equal(observerStatus);
         });
 
-        it("a later spectator asks only the sender of a replayed old-fork block: its genuine author is never asked and does not blacklist the spectator", async function () {
+        it("a later spectator drops a replayed old-fork block the chain shows as disputed: nobody is asked to sync, nobody is struck or blacklisted, and the spectator stays connected", async function () {
             const h = TestSession.getHarness();
             const { originalForkId, newForkId, honestPeers } =
                 await h.scenario.fourPeersDisputeResolution();
             const honestIndices = honestPeers.map((peer) => peer.index);
             // a snapshot on the successor -> a later sync starts after the
-            // dispute, so the spectator never learns the old fork was disputed
+            // dispute, so the spectator has no local record of it; only the
+            // chain still shows the old fork as disputed
             await h.transition.advanceState({
                 count: 2,
                 waitForPeers: honestIndices,
@@ -1933,52 +1934,61 @@ describe("E2E: BlockQueueManager", function () {
             expect(oldBlock, "author signed no old-fork block").to.not.equal(
                 null
             );
+            const probe = await h
+                .control(spectator)
+                .validation.probeIsDisputedFork(originalForkId, false)
+                .request();
             expect(
-                (
-                    await h
-                        .control(spectator)
-                        .validation.probeIsDisputedFork(originalForkId, false)
-                        .request()
-                ).disputed,
-                "premise: the spectator's mirror does not know the old fork was disputed"
-            ).to.equal(false);
+                probe.disputed,
+                "the spectator's answer comes from the chain: the old fork is disputed"
+            ).to.equal(true);
+            expect(probe.onChainQueries).to.be.greaterThan(0);
 
             const restoreSync = await h.rpcStub.recordSpectateSync(
                 spectator.index,
                 { forward: true }
             );
-            await h
-                .control(replayer)
-                .byzantine.sendBlockConfirmation(
-                    oldBlock!.encodedBlockConfirmation,
-                    spectator.address
-                )
-                .request();
-            await waitFor(
-                async () =>
-                    await h
-                        .control(spectator)
-                        .query.isBlockQueued(oldBlock!.hash)
-                        .request()
-            );
-            // the queue timeout asks the sender, the replayer, and nobody else:
-            // the failed sync is its counted close
+            // the spectator answers once it has handled the block
             expect(
-                await h.rpcStub.spectateSyncTargetsWait(spectator.index, 1)
-            ).to.deep.equal([replayer.address]);
-            await h.assert.rpc.peerStruckWithoutBlacklist({
-                observer: spectator,
-                target: replayer
-            });
-            expect(
-                await h.rpcStub.spectateSyncCallCount(spectator.index)
-            ).to.equal(1);
+                await h
+                    .control(replayer)
+                    .byzantine.requestBlockConfirmation(
+                        oldBlock!.encodedBlockConfirmation,
+                        spectator.address
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() })
+            ).to.deep.equal({ ok: true });
+            // the disputed-fork check drops the block before it is queued
+            // (a replayed block that did reach the queue would hit the same
+            // check first at its timeout): no sync probe to the replayer or
+            // to the author
             expect(
                 await h
                     .control(spectator)
                     .query.isBlockQueued(oldBlock!.hash)
                     .request()
             ).to.equal(false);
+            expect(
+                await h.rpcStub.spectateSyncCallCount(spectator.index)
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.getStrikes(replayer.address)
+                    .request()
+            ).to.equal(0);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.isBlacklisted(replayer.address)
+                    .request()
+            ).to.equal(false);
+            expect(
+                await h
+                    .control(spectator)
+                    .query.isConnectedTo(replayer.address)
+                    .request()
+            ).to.equal(true);
             expect(
                 await h
                     .control(spectator)

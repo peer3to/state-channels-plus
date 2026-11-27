@@ -605,7 +605,7 @@ describe("E2E: Timeouts", function () {
             ]);
             // park the observer's check right after it computed its deadline
             // from the still-unposted parent
-            await h.control(observer).stub.holdTimeoutBuild("mirror").request();
+            await h.control(observer).stub.holdTimeoutBuild("slot").request();
             const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
             const uploads = await h.rpcStub.recordDisputeSubmissions(
                 observer.index,
@@ -677,7 +677,7 @@ describe("E2E: Timeouts", function () {
             // the parent author must stay free to open the window below
             await h.dispute.suppressDisputeInitiation([author.index]);
             // park the observer's check at the parent-based deadline
-            await h.control(observer).stub.holdTimeoutBuild("mirror").request();
+            await h.control(observer).stub.holdTimeoutBuild("slot").request();
             const tasks = await h.rpcStub.recordScheduledTasks(observer.index);
             // the window's event never reaches the observer, so its local
             // mirror reads no window: only the chain knows it opened

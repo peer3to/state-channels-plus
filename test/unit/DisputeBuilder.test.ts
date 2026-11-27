@@ -300,7 +300,7 @@ describe("Unit: DisputeBuilder", function () {
         it("a cached dispute that omits its auditing data, then the chain no longer allows the omission → the next construction builds again and posts the data", async function () {
             const h = TestSession.getHarness();
             // the chain has a join the head milestone waits on; peer 0's
-            // mirror missed it, so locally the omission stays allowed
+            // mirror missed it
             await stageMirrorMissingJoin(h, 0);
             const peer = h.getPeer(0);
             const forkId = h.activeForkId!;
@@ -361,7 +361,7 @@ describe("Unit: DisputeBuilder", function () {
             // posted dispute is reused with no read
             const { local, chain } = await after.observation();
             expect(chain.answers).to.deep.equal([false, false]);
-            expect(local.answers).to.deep.equal([true]);
+            expect(local.reads).to.equal(0);
         });
 
         it("the fork's reduced result committed after a cached construction → the built dispute is dropped", async function () {

@@ -234,4 +234,4 @@ author is added.
 - `WrongGenesis proof stored, then the chain passes genesis before dispute() → the empty dispute is refused, nobody slashed`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P23
 - `RaceConditionBlockHeightTooOld on the wait → no rejection, one rebuilt dispute is sent`: UNIT-TEST-DISPUTE-MANAGER-1-SQV6ZD.P56
 - `RaceConditionBlockHeightTooOld on the apply → consumed, no rejection, no detached error`: UNIT-TEST-DISPUTE-MANAGER-4-HC8ZRB.P14
-- `chain reads proven on a participant observing the kill's slash → its slash handler asks the chain whether the fork is disputed, not its mirror`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P32, REQ-MIRROR-5-N5SZC9.T4.P10
+- `chain reads proven on a participant observing the kill's slash → its slash handler asks the chain whether the fork is disputed, not its mirror`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P32, REQ-MIRROR-6-0WSB4V.T1.P21

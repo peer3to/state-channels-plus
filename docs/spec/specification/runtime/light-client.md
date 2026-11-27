@@ -32,9 +32,9 @@ hold, it has the endpoint prove at the same block. From its start the participan
 subscription of its state channel manager for itself, and asks the endpoint to keep the keys it had
 proven current on it: from then on they come with the pushes too.
 
-While its reads are proven, the participant also stops answering chain reads from its event-built
-mirror: the chain answers them alone ([local-mirror.md](../enforcement/local-mirror.md),
-[`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../enforcement/local-mirror.md#req-mirror-5-n5szc9)).
+The participant answers no chain read of replicated channel state from its event-built mirror: the
+chain answers them, proven while the light client serves ([local-mirror.md](../enforcement/local-mirror.md),
+[`REQ-MIRROR-6-0WSB4V`](../enforcement/local-mirror.md#req-mirror-6-0wsb4v)).
 
 ## Requirements and invariants
 
@@ -230,8 +230,8 @@ with several endpoints, a made-up header or new head from an endpoint that does 
 participant's requests cannot move the block reads are made at, nor keep reads off the pushed state.
 an endpoint that names a key released, or lets a watched key expire, makes the participant prove it again and decides nothing by it, since every key still held is checked under the new state root;
 Residual risks: an endpoint that makes up a consistent header and the state under it, an endpoint that
-lies consistently about which block is the best one, and a participant that ignores the counts. While
-reads are proven the event-built mirror no longer answers them, so a participant's protocol checks
+lies consistently about which block is the best one, and a participant that ignores the counts. The
+event-built mirror does not answer the reads of replicated channel state, so a participant's protocol checks
 wait on the endpoint, and a read that fails reaches the check that asked
 ([local-mirror.md](../enforcement/local-mirror.md), security considerations).
 

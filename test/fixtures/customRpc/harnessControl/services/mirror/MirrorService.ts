@@ -17,9 +17,8 @@ import {
 } from "ethers";
 
 /**
- * The local-first reads: each runs on the local diamond first and may be
- * confirmed by the same read on the chain (see `preferLocal`), plus the
- * state-proof walk that the tiers run on the local diamond, then on the chain
+ * The chain reads the validators make (the mirror is not read for them), plus
+ * the state-proof walk the chain tier runs
  * (`AgreementManager.walkStateProofTiers`).
  */
 export const MIRROR_READS = [

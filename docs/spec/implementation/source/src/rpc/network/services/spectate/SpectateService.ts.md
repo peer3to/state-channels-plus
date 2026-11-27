@@ -6,7 +6,7 @@
 
 - [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
   Contradicts: the genesis timestamp is bound to chain values read in the sync (step-1 chain genesis on the same fork, the origin window's chain-expired kill-period end for a successor), and a self-reduced genesis-case window's snapshot to its disputes' signed `latestStateSnapshotHash` once the chain's kill period ended ([`FIND-SECURITY-6-884TAJ`](../../../../../../../audit/open-findings.md#find-security-6-884taj)); past genesis on chain the payload's timestamp is accepted unverified unless a genesis is held, and the chain no longer judges that fork's block 0 ([`FIND-FRAUD-1-TRWDPS`](../../../../../../../audit/open-findings.md#find-fraud-1-trwdps)). The former chain-final reduction-input persistence path is removed; its broader regression assessment remains pending.
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
@@ -68,17 +68,16 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P41` — An injected internal failure on the second sync-replay tail block throws, preserves the first replayed full state, stores no failed block, and does not blacklist the responder
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P42` — An unpinned latest request with missing local fork installation uses the chain-derived target, refuses without blacklisting the requester
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P43` — An unpinned request to a responder on an old local fork installs the verified chain-derived successor without blacklisting either peer
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P44` — A participant sync accepts its local finalized tier without mirror or chain walks or responder penalty
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P44` — A participant sync accepts its local finalized tier without a chain walk or responder penalty
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P45` — After local-final proof verification succeeds, a forged latest-fork outbound block still fails the independent sync check
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P46` — A fresh requester skips absent private finality, accepts the mirror proof walk and does not query the chain
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P47` — A fresh requester missing a consumed top-up accepts canonical proof verification after the mirror returns false, with no penalty
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P48` — A conflicting proof fails the private-final walk but passes the mirror walk without chain query; subsequent block replay rejects sync and blacklists the responder
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P49` — A requester whose mirror lacks the newer anchor accepts sync through chain-anchor fallback after genesis-start verification fails
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P50` — A requester whose mirror has the anchor but lacks later consumed inbound evidence accepts chain fallback without penalty
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P51` — Undecodable retained last-block bytes return false at all three proof tiers; sync rejects as invalid milestones and blacklists the responder without throwing
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P46` — A fresh requester skips absent private finality, accepts the chain proof walk and does not read the mirror
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P47` — A fresh requester whose mirror missed a consumed top-up accepts canonical proof verification, with no penalty
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P48` — A conflicting proof fails the private-final walk but passes the chain walk; subsequent block replay rejects sync and blacklists the responder
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P49` — A requester whose mirror lacks the newer anchor accepts sync through chain-anchor verification
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P50` — A requester whose mirror has the anchor but lacks later consumed inbound evidence accepts chain-anchor verification without penalty
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P51` — Undecodable retained last-block bytes return false at both proof tiers; sync rejects as invalid milestones and blacklists the responder without throwing
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P52` — Local-final executor failure during sync throws with no later walk, proof-rejection reason or blacklist
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P53` — Mirror executor failure during fresh sync throws with no chain walk, installed head, proof rejection or blacklist
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P54` — Node RPC failure after mirror false during fresh sync throws without installing a head or penalizing the responder
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P54` — Node RPC failure during the chain walk of a fresh sync throws without installing a head or penalizing the responder
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P55` — A checked block signed by a real participant other than its author makes sync reject/blacklist without storing proof blocks
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P56` — An unrecoverable required confirmation makes sync reject/blacklist as invalid proof, without throwing or storing proof blocks
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P57` — Undecodable material inside a wholly skipped pre-anchor milestone does not prevent sync; planted historical block and snapshot are not stored
@@ -100,7 +99,7 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P73` — After installing the anchor state, receiving a valid run with earlier genuine supplied state still accepts and replays using held state to reach the responder tip without blacklist
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P74` — Receiving a proof rooted before a newly adopted anchor retains the observed anchor and suffix, and reconstructs a chain-valid proof whose material starts no earlier than that anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P75` — Syncing past an unposted finalized departure stores its participant-change point and reconstructs a valid multi-milestone proof including the departure hop
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P76` — After a first sync, a newer proof verifies from private finality without another mirror-anchor or chain walk, while reconstruction still starts at the original mirrored anchor
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P76` — After a first sync, a newer proof verifies from private finality without another chain walk, while reconstruction still starts at the original chain anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P77` — Applying known proof data twice then new data produces state-install counts 1/0/1, zero replay on repetition, preserves earlier block hashes, and yields the new state and a chain-valid reconstruction
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P78` — A synced unfinalized tail persists both replayed blocks, their snapshots and full states and advances the active head through the tail
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P79` — A wholly pre-anchor milestone with forged participant snapshot is skipped without storing its block/snapshot/change point; retained proof syncs and reconstructs from the anchor
@@ -156,8 +155,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126` — block 0's snapshot on chain, height 0 but not a genesis, unaltered payload: accepted with no rejection and the responder not blacklisted
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P130` — a fresh requester whose RPC node lags one block behind the newer exit snapshot its local diamond already applied from the chain's log: the sync waits for the responder's `chainBlock` and ends with no verdict, no rejection, the responder not blacklisted, and the local diamond keeps the newer anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P131` — the same lagging node under the opened-status refresh (`StateManager.refreshOpenedStatusFromChain`): its pinned `isChannelOpen` read at the lagged head loses the event ordering and the local anchor keeps the newer exit snapshot
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P132` — chain reads proven on a fresh requester with no local finalized state: the local diamond's walk is skipped, the chain walk accepts, and the sync completes
-- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P133` — a responder whose chain reads are proven reads the on-chain snapshot from the chain, not its mirror, and the payload is accepted
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P132` — with the light client stubbed in, a fresh requester with no local finalized state: the chain walk accepts, and the sync completes
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P133` — a responder reads the on-chain snapshot from the chain, not its mirror, and the payload is accepted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

@@ -585,7 +585,7 @@ Specification cases tested: 0/4.
 Specification cases tested: 0/6.
 
 [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
-Specification cases tested: 29/30. Untested: T1.P4.
+Specification cases tested: 28/29. Untested: T1.P4.
 
 [`REQ-JOINSIG-2-RR2G4Q` (All-or-nothing unanimity)](../specification/peer-communication/join-authorization.md#req-joinsig-2-rr2g4q)
 Specification cases tested: 9/9.
@@ -722,11 +722,11 @@ Specification cases tested: 5/7. Untested: T1.P2, T1.P3.
 [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)
 Specification cases tested: 0/4.
 
-[`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
-Specification cases tested: 10/14. Untested: T1.P1, T1.P2, T1.P8, T1.P12.
+[`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+Specification cases tested: 2/3. Untested: T1.P8.
 
-[`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
-Specification cases tested: 24/25. Untested: T3.P1.
+[`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
+Specification cases tested: 40/41. Untested: T3.P11.
 
 [`REQ-MSG-1-AY3A77` (Snapshots MUST commit both stream tips + totals)](../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77)
 Specification cases tested: 0/12.
@@ -948,7 +948,7 @@ Specification cases tested: 0/8.
 Specification cases tested: 22/35. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
 
 [`REQ-SP-4-NCSEX4` (An empty milestone list represents fork genesis only)](../specification/disputes/state-proofs.md#req-sp-4-ncsex4)
-Specification cases tested: 14/28. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
+Specification cases tested: 16/30. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-SP-5-MTE4RV` (The final block of the last milestone commits the latest claimed state)](../specification/disputes/state-proofs.md#req-sp-5-mte4rv)
 Specification cases tested: 0/12.
@@ -956,11 +956,11 @@ Specification cases tested: 0/12.
 [`REQ-SP-7-70EMAT` (In the retained region, verification checks consecutive heights, hash links,…)](../specification/disputes/state-proofs.md#req-sp-7-70emat)
 Specification cases tested: 26/40. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
-[`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
+[`REQ-SP-8-9ZCCEJ` (Construct proofs from the chain's anchor, read on the chain, never from the…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 Specification cases tested: 33/33.
 
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
-Specification cases tested: 80/80.
+Specification cases tested: 75/75.
 
 [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
 Specification cases tested: 45/45.

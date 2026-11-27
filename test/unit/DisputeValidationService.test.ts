@@ -1110,6 +1110,24 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.disputeFraudProofCount).to.equal(0);
         });
 
+        it("a timely timeout -> the window's creation time is read from the chain, not the mirror, and the timeout checks pass, true", async function () {
+            const h = TestSession.getHarness();
+            const posted = await postTimelyNextWriterTimeout(h);
+            const reads = await h.mirror.observe(
+                1,
+                "getDisputeWindowCreationTimestamp"
+            );
+
+            const run = await h.dispute.auditDispute(1, posted.dispute);
+
+            const { local, chain } = await reads.observation();
+            await reads.restore();
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.disputeFraudProofCount).to.equal(0);
+            expect(local.reads).to.equal(0);
+            expect(chain.reads).to.be.greaterThan(0);
+        });
+
         it("chain reads proven, a timely timeout -> the window's creation time is read from the chain, not the mirror, and the timeout checks pass, true", async function () {
             const h = TestSession.getHarness();
             const posted = await postTimelyNextWriterTimeout(h);

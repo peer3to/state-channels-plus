@@ -891,9 +891,9 @@ Where the build departs from it, the card's owner has not accepted the departure
 decided by the engineer on the date given.
 
 1. **The event-built mirror stays.** The card says to replace the mirror and the duplicate remote
-   `eth_call` checks once verified. While reads are proven the mirror answers nothing and the chain
-   answers alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](enforcement/local-mirror.md#req-mirror-5-n5szc9), exceptions
-   removed 2026-11-22), but the mirror keeps replicating, so that a participant whose endpoint does
+   `eth_call` checks once verified. The mirror answers none of the reads of replicated channel state:
+   the chain answers them, proven while the light client serves ([`REQ-MIRROR-6-0WSB4V`](enforcement/local-mirror.md#req-mirror-6-0wsb4v), decided
+   2026-11-27), but the mirror keeps replicating, so that a participant whose endpoint does
    not serve the light client works as before: the light client is optional (2026-11-20). Removing
    the mirror is a later card, after the farm validation.
 2. **Gas stays on the endpoint.** A call with a gas limit or fee fields, and every gas estimate, goes
@@ -927,7 +927,7 @@ decided by the engineer on the date given.
 8. **Channel flows are measured; the synthetic drivers stay for capacity.** Participants run the seven
    channel flows on a peer3 node with the light client off, on and compared (2026-11-23 to 2026-11-26,
    `docs/light-client-report.md`, Channel flows). Capacity ramps use a workload calibrated from those
-   flows, not the flows themselves. The test gaps of [`REQ-MIRROR-5-N5SZC9.T3`](enforcement/local-mirror.md#req-mirror-5-n5szc9.t3)
+   flows, not the flows themselves. The test gaps of [`REQ-MIRROR-6-0WSB4V.T3`](enforcement/local-mirror.md#req-mirror-6-0wsb4v.t3)
    and [`REQ-LC-8-BBYC51.T1`](runtime/light-client.md#req-lc-8-bbyc51.t1) stay open.
 9. **Watched keys go beyond the card.** The card's partitions hold the keys channel transactions
    touch; the reads a participant's own simulations make reach keys no such transaction touches

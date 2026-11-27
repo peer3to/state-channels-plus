@@ -5,7 +5,7 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 describe("E2E: local mirror divergence", function () {
-    it("an auditor whose mirror misses a consumed top-up audits an honest self-removal dispute live → the chain answers its adverse balance check, no proof, no kill, no slash, the auditor keeps participating on the reduced fork", async function () {
+    it("an auditor whose mirror misses a consumed top-up audits an honest self-removal dispute live → the chain answers its balance check, no proof, no kill, no slash, the auditor keeps participating on the reduced fork", async function () {
         const h = TestSession.getHarness();
         const auditorIndex = 1;
         const leaverIndex = 2;
@@ -28,11 +28,11 @@ describe("E2E: local mirror divergence", function () {
             forkId
         });
 
-        // the auditor's live audit reached the balance check: its mirror
-        // answers invalid, the chain answers valid, and the chain wins
+        // the auditor's live audit reached the balance check: the chain
+        // answers valid and the lagging mirror is not read
         await waitFor(async () => (await reads.observation()).chain.reads > 0);
         const { local, chain } = await reads.observation();
-        expect(local.answers).to.deep.equal([false]);
+        expect(local.reads).to.equal(0);
         expect(chain.answers).to.deep.equal([true]);
         await h.event.waitWhileEventCountsStayAtMost(
             "onDisputeKilled",

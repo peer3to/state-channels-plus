@@ -16,7 +16,7 @@
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 - [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../../../../specification/security/data-availability.md#req-da-1-nvv85z)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 
 ## UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN
 
@@ -34,7 +34,7 @@ Dispute construction reuses a built dispute only while its inputs are unchanged 
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P7` — fraud evidence stored by the validation pipeline after a completed construction: the next construction applies that proof and lists the offender's slash
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P8` — fraud evidence stored while the state proof is being built, with the latest block unchanged: the returned dispute applies that proof and lists the offender's slash
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P9` — `reconstructAuditingData` for a dispute naming a snapshot absent from storage rejects with that snapshot's hash and returns no auditing data
-- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P10` — a cached dispute that omits its auditing data, with inputs unchanged and the chain no longer allowing the omission: the next construction builds again and posts the data (the local mirror alone never confirms the omission); a cached dispute that posts its data is reused with no chain read
+- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P10` — a cached dispute that omits its auditing data, with inputs unchanged and the chain no longer allowing the omission: the next construction builds again and posts the data (the local mirror is not read); a cached dispute that posts its data is reused with no chain read
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P11` — the fork's reduced result committed after a cached construction: the fork's built dispute is dropped, so the next construction builds again
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P12` — a state proof built before construction at the latest height is used without building another, and the chain accepts the dispute
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P13` — a state proof built one block below the latest height is not used: construction builds its own, and the chain accepts the dispute
@@ -56,12 +56,10 @@ Construction correctness
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P7` — held timeout struct
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P8` — empty-stream tip defaults
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P9` — finality probe final skips auditing data
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P10` — local probe "not final" posts auditing data with no chain probe
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P11` — local probe "final", chain "not final": auditing data is posted
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P13` — local probe "final", chain "final": exactly one chain read and the auditing data is left out
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P14` — local probe fails outside the EVM (executor transport failure): construction throws it and the chain is never read
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15` — local probe "final", chain read fails with a transport error: construction throws it, no dispute is built
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P16` — the auditing-data omission predicate reverts locally during dispute construction: construction fails without a chain read or a constructed dispute
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P10` — chain probe "not final" (a late joiner's signature is missing): one chain read, no mirror read, and the auditing data is posted
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P11` — mirror missing the join, chain probe "not final": the chain answers with one chain read and no mirror read, and the auditing data is posted
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P13` — chain probe "final": exactly one chain read, no mirror read, and the auditing data is left out
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15` — chain probe fails with a transport error: construction throws it, no mirror read, no dispute is built
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P17` — a stored forged-inbound proof whose inbound block is the snapshot's inbound head at S is left out of `fraudProofsToApply` and its target is not added to `onChainSlashes`
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P18` — a stored forged-inbound proof over a fabricated inbound block above the snapshot's inbound head is bundled into `fraudProofsToApply` and its target added to `onChainSlashes`
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P19` — a stale forged-inbound proof stored before a valid proof against the same participant: the valid proof is applied and the participant is added to `onChainSlashes`
@@ -69,8 +67,8 @@ Construction correctness
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P21` — a stored WrongGenesis proof while the chain holds its fork past genesis is left out and its target is not added
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P22` — a stored WrongGenesis proof while the chain still holds the fork's genesis is bundled and its target is added
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P23` — a stored WrongGenesis proof that was the dispute's only reason, with the chain past genesis before `dispute()`: the proof is left out, the upload asks for an existing window, the chain refuses it `RaceConditionDisputeWindowNotOpen`, nobody is slashed and the fork is not left disputed
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P24` — chain reads proven, mirror missing the join: the auditing-data omission is answered by one chain read and no local read, and the auditing data is posted
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P25` — chain reads proven: the on-chain slashed participants are read from the chain, not the mirror
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P24` — with chain reads proven, mirror missing the join: the auditing-data omission is answered by one chain read and no mirror read, and the auditing data is posted
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P25` — the on-chain slashed participants are read from the chain, not the mirror
 
 ## UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ
 

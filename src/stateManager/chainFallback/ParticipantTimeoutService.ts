@@ -2,7 +2,6 @@ import type { BlockCalldataRecoveryResult } from "../eventSync/EventSyncService"
 import type StateManager from "../StateManager";
 import Clock from "@/Clock";
 
-import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { timeoutWaitTime as timeoutWaitTimeSeconds } from "@/types";
 import { Address, BlockHeight, Bytes, ForkId, Timestamp } from "@/types/types";
 import { Logger } from "@/utils";
@@ -142,7 +141,7 @@ export default class ParticipantTimeoutService {
         // window's original creation time, not the new transaction timestamp.
         // Do not submit if that window opened before this timeout became valid;
         // the on-chain race-condition guard repeats this check authoritatively.
-        const doesWindowPredate = await this.readReplicated(
+        const doesWindowPredate = await this.readChain(
             (contract) =>
                 this.doesWindowPredateTimeout(
                     contract,
@@ -243,10 +242,9 @@ export default class ParticipantTimeoutService {
         }
         // No race condition on previous block on-chain calldata
 
-        // check if the current block's calldata slot is occupied on-chain:
-        // the local diamond's copy, or the chain while its reads are proven
+        // check if the current block's calldata slot is occupied on-chain
         const readCommitment = () =>
-            this.readReplicated(
+            this.readChain(
                 (contract) =>
                     contract.getBlockCallDataCommitment(
                         sm.channelId,
@@ -606,24 +604,18 @@ export default class ParticipantTimeoutService {
     }
 
     /**
-     * `read` of chain state the local diamond replicates, from the chain
-     * while its reads are proven. A failed chain read re-arms the check and
-     * gives `undefined`, so a due timeout survives an RPC outage; a local
-     * diamond read fails as before.
+     * `read` of chain state. A failed chain read re-arms the check and
+     * gives `undefined`, so a due timeout survives an RPC outage.
      */
-    private async readReplicated<T>(
+    private async readChain<T>(
         read: (contract: StateChannelManagerInterface) => Promise<T>,
         forkId: ForkId,
         blockHeight: BlockHeight,
         participantAddress: Address,
         isForced: boolean
     ): Promise<T | undefined> {
-        const sm = this.stateManager;
-        const chain = sm.stateChannelManagerContract;
-        if (!(await isChainProven(chain)))
-            return await read(sm.diamondStateMachine.localDiamondContract);
         try {
-            return await read(chain);
+            return await read(this.stateManager.stateChannelManagerContract);
         } catch (error) {
             this.recheckAfterFailedChainRead(
                 error,

@@ -13,7 +13,7 @@
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
   Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 
 ## UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV
 
@@ -57,7 +57,7 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P35` — Compact sync installs above an already queued gossip block while omitting its history; release drops that block without closing the spectator or blacklisting honest sources, and the spectator then follows a new live head
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36` — forged-inbound detector: a carried genuine inbound block that is the snapshot's inbound head, absent from local storage, is not flagged
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37` — forged-inbound detector: a fabricated inbound block one above the snapshot's inbound head, absent locally and on chain, is flagged and returned
-- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38` — chain reads proven: `isDisputedFork` with no dispute record of its own asks the chain whether the fork is disputed, not the local diamond
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38` — `isDisputedFork` with no dispute record of its own asks the chain whether the fork is disputed, not the local diamond
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39` — on-chain post timing: a block received within `agreementTime` with no stored on-chain timestamp reads nothing from the chain and is accepted
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P40` — on-chain post timing: a block received outside `agreementTime` with no stored on-chain timestamp is recovered from the chain, and an on-time posting is accepted and persisted
 

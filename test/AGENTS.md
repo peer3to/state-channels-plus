@@ -93,7 +93,7 @@ Current services: `query`, `transition`, `balance`, `network`, `byzantine`,
 `validation`, `runtimeRpc`, `mirror`.
 
 `mirror` (`services/mirror/`, driven by `MirrorActions`) controls local mirror
-versus chain for the local-first reads (`preferLocal` callers): record-only
+versus chain for the reads the validators make on the chain: record-only
 observation of each side's reads and answers, a one-shot local or chain read
 fault (`revert` runs the real contract with cut ABI arguments; `transport`
 fails the call without a verdict), serving chain reads just before a named

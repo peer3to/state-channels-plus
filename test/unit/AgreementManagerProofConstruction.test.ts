@@ -344,9 +344,10 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(view.chainWalk.finalized.hash).to.equal(view.finalized.hash);
         });
 
-        it("D6: a hop whose JOIN is consumed and whose joiner exits within it, to the block after the exit → without the joiner's signature neither the SDK nor the walk proves it final; with it both do, and the SDK's set keeps that signature", async function () {
+        it("D6: a hop whose JOIN is consumed after the chain anchor and whose joiner exits within it, to the block after the exit → without the joiner's signature neither the SDK nor the chain walk proves it final; with it both do, and the SDK's set keeps that signature", async function () {
             const h = TestSession.getHarness();
             const {
+                anchor,
                 joinHeight: j,
                 leaveHeight: k,
                 joinerIndex,
@@ -361,8 +362,8 @@ describe("Unit: AgreementManager proof construction", function () {
                 .stub.stripStoredBlockSignature(h.activeForkId!, j, joiner)
                 .request();
             await dropStoredBlock(h, 0, j + 1);
-            // the local diamond's walk of peer 0's stored run k + 1.. as one hop
-            const localDiamondWalk = async () => {
+            // the chain's walk of peer 0's stored run k + 1.. as one hop
+            const chainWalk = async () => {
                 const blockConfirmations = await storedConfirmations(
                     h,
                     0,
@@ -371,20 +372,21 @@ describe("Unit: AgreementManager proof construction", function () {
                 const tiers = await walkAllTiersView(h, 0, {
                     milestones: [{ blockConfirmations }]
                 });
-                return tiers.find((walk) => walk.tier === "localDiamond")!;
+                return tiers.find((walk) => walk.tier === "chain")!;
             };
 
             const without = await buildProofView(h, 0, { finalizedOnly: true });
-            const walkWithout = await localDiamondWalk();
+            const walkWithout = await chainWalk();
             await addStoredSignature(h, 0, k + 1, joinerIndex);
             const withJoiner = await buildProofView(h, 0, {
                 finalizedOnly: true
             });
-            const walkWith = await localDiamondWalk();
+            const walkWith = await chainWalk();
 
-            // the hop starts at the genesis; the joiner is in neither snapshot
-            expect(without.start.hash).to.equal(without.genesisHash);
-            expect(walkWithout.start).to.equal(null);
+            // the hop starts at the chain anchor below the join; the joiner
+            // is in neither snapshot
+            expect(without.start.hash).to.equal(anchor.hash);
+            expect(walkWithout.start!.hash).to.equal(anchor.hash);
             expect(without.startParticipants).to.not.include(joiner);
             expect(withJoiner.milestoneParticipants[0]).to.not.include(joiner);
             // without its signature: no final point above the exit, and the
@@ -505,7 +507,7 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
         });
 
-        it("U24: a local diamond lagging a newer chain anchor → construction starts at the fork genesis, the chain walk still accepts the proof", async function () {
+        it("U24: a local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
             const h = TestSession.getHarness();
             const lagging = 1;
             const { anchor } = await stageFinalBlocks(h, {
@@ -520,12 +522,12 @@ describe("Unit: AgreementManager proof construction", function () {
 
             const view = await buildProofView(h, lagging);
 
-            expect(view.start.hash).to.equal(view.genesisHash);
+            expect(view.start.hash).to.equal(anchor!.hash);
             expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
             expect(view.chainWalk.valid).to.equal(true);
         });
 
-        it("U24: chain reads proven and the local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
+        it("U24: chain reads proven (light client) and the local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
             const h = TestSession.getHarness();
             const lagging = 1;
             const { anchor } = await stageFinalBlocks(h, {
@@ -602,7 +604,7 @@ describe("Unit: AgreementManager proof construction", function () {
     });
 
     describe("successor fork", function () {
-        it("U101: successor fork while the chain anchor is on its ancestor → the empty proof starts at the successor genesis; every tier walks from that genesis", async function () {
+        it("U101: successor fork while the chain anchor is on its ancestor → the empty proof starts at the successor genesis; the chain tier walks from that genesis", async function () {
             const h = TestSession.getHarness();
             const { successorForkId, ancestorAnchor, release } =
                 await stageUnpostedSuccessorFork(h);
@@ -622,12 +624,9 @@ describe("Unit: AgreementManager proof construction", function () {
                 expect(view.start.hash).to.equal(view.genesisHash);
                 expect(view.start.forkId).to.equal(successorForkId);
                 expect(view.finalized.hash).to.equal(view.genesisHash);
-                // no local final state on a fork without blocks; the mirror
-                // and the chain both walk from the successor genesis
-                expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-                    "localDiamond",
-                    "chain"
-                ]);
+                // no local final state on a fork without blocks; the chain
+                // walks from the successor genesis
+                expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
                 for (const walk of tiers) {
                     expect(walk.start, walk.tier).to.equal(null);
                     expect(walk.valid, walk.tier).to.equal(true);
@@ -646,7 +645,7 @@ describe("Unit: AgreementManager proof construction", function () {
             }
         });
 
-        it("U101: successor fork while the chain anchor is on its ancestor → a genesis-linked unfinalized block 0 proof starts at the successor genesis; every tier walks from that genesis", async function () {
+        it("U101: successor fork while the chain anchor is on its ancestor → a genesis-linked unfinalized block 0 proof starts at the successor genesis; the chain tier walks from that genesis", async function () {
             const h = TestSession.getHarness();
             const { successorForkId, ancestorAnchor, writerIndex, release } =
                 await stageSuccessorBlockZero(h);
@@ -670,12 +669,9 @@ describe("Unit: AgreementManager proof construction", function () {
                 expect(view.chainWalk.valid).to.equal(true);
                 expect(view.chainWalk.start).to.equal(null);
                 expect(view.chainWalk.replayBlockIndex).to.equal(0);
-                // nothing is final on the successor; the mirror and the chain
-                // both walk from the successor genesis
-                expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-                    "localDiamond",
-                    "chain"
-                ]);
+                // nothing is final on the successor; the chain walks from the
+                // successor genesis
+                expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
                 for (const walk of tiers) {
                     expect(walk.start, walk.tier).to.equal(null);
                     expect(walk.valid, walk.tier).to.equal(true);
@@ -705,10 +701,7 @@ describe("Unit: AgreementManager proof construction", function () {
                     genesisForkId: sourceForkId
                 });
 
-                expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-                    "localDiamond",
-                    "chain"
-                ]);
+                expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
                 expect(tiers.every((walk) => !walk.valid)).to.equal(true);
             } finally {
                 await release();
@@ -732,10 +725,7 @@ describe("Unit: AgreementManager proof construction", function () {
 
                 // control: the genuine successor genesis verifies
                 expect(control.every((walk) => walk.valid)).to.equal(true);
-                expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-                    "localDiamond",
-                    "chain"
-                ]);
+                expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
                 expect(tiers.every((walk) => !walk.valid)).to.equal(true);
             } finally {
                 await release();

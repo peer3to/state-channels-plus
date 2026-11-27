@@ -122,6 +122,15 @@ contract StateProofFacet is StateChannelCommon {
         return _walkStateProof(input, stateSnapshots[input.channelId]);
     }
 
+    /// The state-proof walk with finality, from a snapshot the caller already trusts instead of the stored anchor.
+    function verifyMilestonesFromTrustedStart(ProofWalkInput memory input, StateSnapshot memory trustedSnapshot)
+        public
+        view
+        returns (ProofWalkResult memory)
+    {
+        return _walkStateProof(input, trustedSnapshot);
+    }
+
     /// The dispute's latest state is strictly below the same-fork non-genesis on-chain anchor, which is already
     /// final. An empty proof claims the fork genesis, which that anchor is past even at equal height zero.
     function isStateProofBelowOnChainAnchor(Dispute memory dispute) public view returns (bool) {

@@ -412,7 +412,7 @@ its transition replay requirement does not establish a bound on all reduction wo
 A local failure on a window the chain has not reduced is no verdict since
 [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa); the verdict on a reduced window
 and the gas bound stay open.
-The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
+The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
 The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
 
 **Evidence limit.** No valid served reduction was reproduced exhausting its local grant in this assessment,
@@ -1260,8 +1260,11 @@ node. The probe now asks only the peers that sent the block, not an author that 
 block before sending it, so an honest one can prove it; a replayer cannot, and takes a counted close
 ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6),
 [`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
-[`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11)).
-Engineer decision (Luke, 2026-10-27).
+[`REQ-BLOCK-PIPE-4-CF52J6.T1.P10`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p10)).
+Engineer decision (Luke, 2026-10-27). Revised 2026-11-27: since the disputed-fork check reads the chain, a replayed block
+of a fork the chain still shows as disputed is dropped at ingest without a probe
+([`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11));
+the probe above still runs once a later snapshot cleared the fork's dispute record.
 
 **Proposed direction:** None.
 

@@ -22,4 +22,4 @@ a lagging mirror that reports an honest dispute invalid while the chain reports 
 
 ## Tests
 
-- `an auditor whose mirror misses a consumed top-up audits an honest self-removal dispute live → the chain answers its adverse balance check, no proof, no kill, no slash, the auditor keeps participating on the reduced fork`: REQ-MIRROR-4-H9C4YS.T1.P3
+- `an auditor whose mirror misses a consumed top-up audits an honest self-removal dispute live → the chain answers its balance check, no proof, no kill, no slash, the auditor keeps participating on the reduced fork`: REQ-MIRROR-6-0WSB4V.T1.P13

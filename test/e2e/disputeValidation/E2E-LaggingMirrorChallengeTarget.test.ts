@@ -51,9 +51,9 @@ describe("E2E: dispute validation / lagging mirror and block-challenge target", 
         });
         expect(await storedChallengeBlockIndex(h, LAGGING, APPLY)).to.equal(1);
         expect(await storedChallengeBlockIndex(h, CURRENT, APPLY)).to.equal(1);
-        // the lagging tiers failed and fell through to the chain's anchor
+        // the walk started from the chain's anchor; the mirror was not read
         const { local, chain } = await walks.observation();
-        expect(local.reads).to.be.greaterThan(0);
+        expect(local.reads).to.equal(0);
         expect(chain.reads).to.be.greaterThan(0);
     });
 
@@ -112,7 +112,7 @@ describe("E2E: dispute validation / lagging mirror and block-challenge target", 
         ).to.equal(3);
     });
 
-    it("E33 ext: forged block below the chain anchor (block 1, so the anchor at the boundary index no longer links) with an honest block after it → the lagging tiers fail, the chain tier replays from the anchor: no false accusation, no kill, the submitter is not slashed", async function () {
+    it("E33 ext: forged block below the chain anchor (block 1, so the anchor at the boundary index no longer links) with an honest block after it → the chain tier replays from the anchor: no false accusation, no kill, the submitter is not slashed", async function () {
         const h = TestSession.getHarness();
         const { forkId } = await stageLaggingAuditorBelowChainAnchor(h, {
             tailBlocks: 1
@@ -135,9 +135,7 @@ describe("E2E: dispute validation / lagging mirror and block-challenge target", 
             auditorIndices: AUDITORS
         });
         const { local, chain } = await walks.observation();
-        expect(local.reads, "the mirror tier must have run").to.be.greaterThan(
-            0
-        );
+        expect(local.reads, "the mirror is not read").to.equal(0);
         expect(
             chain.reads,
             "the chain tier must have decided"
@@ -169,7 +167,7 @@ describe("E2E: dispute validation / lagging mirror and block-challenge target", 
         expect(await storedChallengeBlockIndex(h, LAGGING, APPLY)).to.equal(4);
     });
 
-    it("E33 ext: defect between the mirror anchor (genesis) and the chain anchor (block 2) in a proof ending at the chain anchor → the local failure reaches the chain check, which protects it: no block-specific challenge, no kill", async function () {
+    it("E33 ext: defect between the mirror anchor (genesis) and the chain anchor (block 2) in a proof ending at the chain anchor → the chain check protects it: no block-specific challenge, no kill", async function () {
         const h = TestSession.getHarness();
         const { forkId } = await stageLaggingAuditorBelowChainAnchor(h, {
             tailBlocks: 0
@@ -192,9 +190,7 @@ describe("E2E: dispute validation / lagging mirror and block-challenge target", 
             auditorIndices: AUDITORS
         });
         const { local, chain } = await walks.observation();
-        expect(local.reads, "the mirror tier must have run").to.be.greaterThan(
-            0
-        );
+        expect(local.reads, "the mirror is not read").to.equal(0);
         expect(
             chain.reads,
             "the chain tier must have decided"

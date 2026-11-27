@@ -89,7 +89,7 @@ not stored. The observer's next height and fork stay unchanged.
 - `a queue timeout accepts a proved successor fork without excluding the supplier or author`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P13, REQ-SYNC-1-T2589H.T1.P8
 - `unknown-fork timeout asks only the sender to sync, never the author`: UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P9, REQ-BLOCK-PIPE-4-CF52J6.T1.P10
 - `unknown fork: only the sender is asked and cut; the author keeps the observer`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P19
-- `a later spectator asks only the sender of a replayed old-fork block: its genuine author is never asked and does not blacklist the spectator`: REQ-BLOCK-PIPE-4-CF52J6.T1.P11
+- `a later spectator drops a replayed old-fork block the chain shows as disputed: nobody is asked to sync, nobody is struck or blacklisted, and the spectator stays connected`: REQ-BLOCK-PIPE-4-CF52J6.T1.P11
 - `still recovers via local reduction when the raced block is on yet another unknown fork`: INTEGRATION-TEST-INGEST-ADMISSION-1-EA0C8H.P20
 - `drains an early reduced-fork block once the fork transition catches up`: REQ-BLOCK-PIPE-6-XQ0RTT.T1.P4
 - `missing genesis: no proof to build, sources blacklisted, no dispute`: REQ-BLOCK-PIPE-8-N529VH.T1.P3

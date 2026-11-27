@@ -8,6 +8,8 @@ Calls the milestone verifier with genesis, same-fork anchors, membership changes
 
 ## Tests
 
+- `test_trustedStart_fromTheStoredAnchorMatchesTheWalkFromTheChainsAnchor`: REQ-SP-4-NCSEX4.T2.P9, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P86
+- `test_trustedStart_fromASnapshotTheChainDoesNotHoldFinalizesThatSnapshot`: REQ-SP-4-NCSEX4.T2.P10, UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P87
 - `test_U01_proofCarriesOnlyMilestonesAndItsLastBlockIsTheLatestState`: REQ-SP-1-9YABY1.T2.P1, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P21
 - `test_U02_emptyProofAtGenesisRepresentsTheGenesis`: REQ-SP-4-NCSEX4.T2.P1, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P22
 - `test_U03_emptyProofWithANonGenesisAnchorStillRepresentsTheGenesis`: REQ-SP-4-NCSEX4.T2.P2, UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P23

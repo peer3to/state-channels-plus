@@ -1,5 +1,4 @@
 import type StateManager from "../StateManager";
-import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
@@ -12,7 +11,6 @@ import {
     Codec,
     Type
 } from "@/utils";
-import { preferLocal } from "@/utils/localDiamond";
 import type {
     MessageBlockStruct,
     StateSnapshotStruct
@@ -191,24 +189,15 @@ export default class MembershipService {
 
     /**
      * Whether the chain's pending set (unconsumed JOINs) lists this signer.
-     * The local mirror holds only JOINs the chain processed, so a mirror that
-     * lists the signer answers without a chain read; otherwise the chain
-     * confirms the absence, since the JOIN can land after the mirror's
-     * inbound head. While chain reads are proven the chain answers alone. A
-     * failed read rejects the caller.
+     * A failed read rejects the caller.
      */
     public async isSignerPendingOnChain(
         channelId: ChannelId = this.stateManager.channelId
     ): Promise<boolean> {
-        const chain = this.stateManager.stateChannelManagerContract;
-        return await preferLocal(
-            () => this.isSignerPendingInMirror(channelId),
-            async () =>
-                this.includesSigner(
-                    (await chain.getPendingParticipants(channelId)) as Address[]
-                ),
-            (isListed) => isListed,
-            () => isChainProven(chain)
+        return this.includesSigner(
+            (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                channelId
+            )) as Address[]
         );
     }
 
@@ -234,25 +223,10 @@ export default class MembershipService {
     }
 
     /**
-     * Whether the chain's threshold set lists this signer. A mirror that
-     * lists the signer answers without a chain read; otherwise the chain
-     * answers, since the mirror can lag it. While chain reads are proven the
-     * chain answers alone.
+     * Whether the chain's threshold set lists this signer.
      */
     public async isSignerInThresholdSet(): Promise<boolean> {
-        const sm = this.stateManager;
-        return await preferLocal(
-            async () =>
-                this.includesSigner(
-                    (await sm.diamondStateMachine.localDiamondContract.getOnChainThresholdSet(
-                        sm.channelId
-                    )) as Address[]
-                ),
-            async () =>
-                this.includesSigner(await this.getOnChainThresholdSet()),
-            (isListed) => isListed,
-            () => isChainProven(sm.stateChannelManagerContract)
-        );
+        return this.includesSigner(await this.getOnChainThresholdSet());
     }
 
     /**

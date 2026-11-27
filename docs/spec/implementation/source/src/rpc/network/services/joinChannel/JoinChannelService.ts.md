@@ -56,7 +56,6 @@ Responder validation chain
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P13` — deadline after boundary rejected
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P16` — validation refusal keeps the session usable for retry
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P17` — a join is signed after the snapshot moved away from the joiner's pin
-- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P18` — a threshold member whose chain calls and block reads are all held signs from its local clock and mirror, so the collection gets every threshold signature
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P19` — a threshold member whose mirror misses its own landed join confirms membership on chain and signs
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-32-BQYC6G

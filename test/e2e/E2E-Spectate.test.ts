@@ -2027,9 +2027,9 @@ describe("E2E: Spectate Service", function () {
             );
             try {
                 // the first pass stopped before the milestone walk; the
-                // repeated one reaches it and the local executor fails
+                // repeated one reaches it and the chain read fails
                 await h.mirror.observe(staged.joiner.index, "verifyMilestones");
-                await h.mirror.failNextLocalRead(
+                await h.mirror.failNextChainRead(
                     staged.joiner.index,
                     "verifyMilestones",
                     "transport"

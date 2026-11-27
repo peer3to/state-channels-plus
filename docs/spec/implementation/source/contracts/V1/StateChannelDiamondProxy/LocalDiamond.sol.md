@@ -7,7 +7,7 @@
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
 - [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
-- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+- [`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 
 ## UNIT-TEST-LOCAL-DIAMOND-1-PJE47M
 

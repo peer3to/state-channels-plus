@@ -4093,7 +4093,9 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.startTimeoutConstruction(writer, height);
     }
 
-    public holdTimeoutBuild(seam: "chain" | "mirror" = "chain"): boolean {
+    public holdTimeoutBuild(
+        seam: "predecessor" | "slot" = "predecessor"
+    ): boolean {
         this.service.holdTimeoutBuild(seam);
         return true;
     }

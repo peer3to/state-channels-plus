@@ -278,7 +278,7 @@ describe("Unit: MembershipService", function () {
         expect(observed.membership.isMirroredSnapshotPublished).to.equal(true);
     });
 
-    it("a pending joiner's refresh makes only its pinned multicall chain call", async () => {
+    it("a pending joiner's refresh makes its pinned multicall chain call and one pending-set chain read", async () => {
         const h = TestSession.getHarness();
         const joiner = h.getPeer((await stageMirroredPendingJoin(h)).index);
         const observed = await recordPendingJoinerChainCalls(
@@ -292,11 +292,12 @@ describe("Unit: MembershipService", function () {
             "multicall",
             "multicall:getOnChainSlashedParticipants",
             "multicall:getStateSnapshot",
-            "multicall:getChannelBalance"
+            "multicall:getChannelBalance",
+            "getPendingParticipants"
         ]);
     });
 
-    it("a pending joiner whose local diamond holds its JOIN applies a snapshot without a pending-set chain read", async () => {
+    it("a pending joiner whose local diamond holds its JOIN reads the pending set from the chain when it applies a snapshot", async () => {
         const h = TestSession.getHarness();
         const joiner = await stagePendingJoinMirroredByJoiner(h);
         // the departure check reaches its pending lookup: the joiner is in
@@ -311,7 +312,10 @@ describe("Unit: MembershipService", function () {
             "onChainSnapshot"
         );
         expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
-        expect(observed.calls).to.deep.equal(["getStateSnapshot"]);
+        expect(observed.calls).to.deep.equal([
+            "getStateSnapshot",
+            "getPendingParticipants"
+        ]);
     });
 
     it("a pending joiner with chain reads proven reads the pending set from the chain even while its local diamond holds its JOIN", async () => {

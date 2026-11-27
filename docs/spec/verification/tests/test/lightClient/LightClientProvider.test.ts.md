@@ -46,7 +46,7 @@ best block, or a distributed worker.
 - `fails reads still running at destroy as a plain provider would, without counting or logging them`: REQ-LC-3-W7RRHM.T1.P3
 - `sends the node a pending read and a call with a gas price`: REQ-LC-2-PMY1VG.T1.P4
 - `answers a call with the caller and origin the node gives it`: REQ-LC-1-JT5PKT.T1.P10
-- `says a contract's reads are proven while the serving endpoint lists the light client endpoints, not while that question fails, and reads replicated state from it then`: REQ-LC-11-MTCBF9.T1.P4, REQ-MIRROR-5-N5SZC9.T2.P1
-- `says a contract's reads are not proven over an endpoint without the light client endpoints, or over a plain provider, and reads replicated state from the local diamond then`: REQ-LC-11-MTCBF9.T1.P5, REQ-MIRROR-5-N5SZC9.T2.P2
-- `says a contract's reads are proven while the serving endpoint lists the light client endpoints, and not once it fails over to one that does not`: REQ-LC-11-MTCBF9.T1.P6
-- `says a contract's reads are not proven, without throwing, while no endpoint is connected`: REQ-LC-11-MTCBF9.T1.P7
+- `says the provider's reads are proven while the serving endpoint lists the light client endpoints, and not while that question fails`: REQ-LC-11-MTCBF9.T1.P4
+- `says the provider's reads are not proven over an endpoint without the light client endpoints`: REQ-LC-11-MTCBF9.T1.P5
+- `says the provider's reads are proven while the serving endpoint lists the light client endpoints, and not once it fails over to one that does not`: REQ-LC-11-MTCBF9.T1.P6
+- `says the provider's reads are not proven, without throwing, while no endpoint is connected`: REQ-LC-11-MTCBF9.T1.P7

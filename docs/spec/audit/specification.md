@@ -107,7 +107,7 @@ confirmed are [`OQ-SPEC-LC-1-VKHDPN` (Light client choices the engineer has not 
 
 Two requirements, on the engineer's decisions of 2026-11-21. [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9) adds a compare mode for tests: each
 answer the light client gives is asked of the endpoint at the same block and the two are compared.
-[`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) says that while the chain access answers contract reads from proven state, the chain answers
+The requirement of that day (retired 2026-11-27, see the revision below) said that while the chain access answers contract reads from proven state, the chain answers
 local-first predicates alone, the mirror's state-proof tier is skipped and reads of replicated chain
 state go to the chain. The decisions: replace only the reads of replicated state; the mirror keeps
 replicating; one owner decides whether reads are proven, at each read, and an endpoint that has not
@@ -122,11 +122,13 @@ ingest gate "is this fork disputed" keeps reading the node's own dispute record 
 for every block inside the state mutex, and a chain read there could wait a block time or fail and
 lose the block). Revised 2026-11-22: the engineer removed both exceptions, so while proven the
 threshold-membership check and the ingest gate (after the node's own dispute record) read the chain
-alone, at the availability cost [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) now states. [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej) and
+alone, at the availability cost the local-mirror specification states. [`REQ-SP-8-9ZCCEJ` (Construct proofs from the chain's anchor, read on the chain, never from the…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej) and
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56) now state the chain
 anchor and the skipped mirror tier for proven reads. After the second review of the same day,
 [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) raises the serving endpoint's block floor from the logs it delivers
 and its log-search and block answers, and excepts a pending block, which is not mined.
+
+Revised 2026-11-27, on the engineer's decision to replace the event-built mirror with chain reads: the proven-reads requirement, and the local-first requirement it modified, are retired. [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v) now says that the reads of replicated channel state (the dispute window's creation time, the block calldata commitment, the slashed participants, the proof anchor, the spectator snapshot, the pending and threshold sets, the disputed flag and the dispute-audit predicates) are made on the chain whether or not the light client serves, proven when it does. The state-proof tiers lose the mirror tier whether reads are proven or not ([`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)), and a join countersigner reads its threshold membership on the chain ([`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)). The local-evaluation rules that stay, the loud failure and the bounded gas, remain in [`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys). Reads that stay on the mirror (the event-order checks, slash recovery, the leave probe, the local pending lookup, the window commitments and timestamp check of the event hooks, and local reduction) wait for later steps; their specification is unchanged.
 
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 

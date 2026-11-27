@@ -516,8 +516,8 @@ Splitting replays across transactions is open as
 
 ## Local EVM call gas — 2026-09-26
 
-Local-first evaluation ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) runs dispute predicates on the auditor's own contract
-executor before the chain is asked, and a Byzantine disputer controls the proof those predicates
+Local evaluation ([`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) ran dispute predicates on the auditor's own contract
+executor before the chain was asked (until 2026-11-27, below), and a Byzantine disputer controls the proof those predicates
 verify. The earlier 1e9-gas mirror budget let such a proof spin the executor thread about 60 times
 longer than the chain would run it. The engineer replaced it: each local EVM call is funded with the
 larger of the ethereumjs default call gas (0xffffff, about 16.7M), the manager's dispute-execution
@@ -528,7 +528,7 @@ cost at most about one more budget, so twice the requirement keeps a local trans
 refused where a funded chain replay runs it, within the chain's block gas limit. The rest of a
 dispute call (proof checks, restoring the machine's state) is funded on chain through the sender's
 estimate, and the local call gets no such addition. A local predicate whose work does not fit the
-granted gas fails locally; the error propagates without a chain fallback ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is failed local audit work, not a false verdict. A local state transition has no chain answer to fall back to. Until
+granted gas fails locally; the error propagates without a chain fallback ([`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)), so the consequence is failed local audit work, not a false verdict. A local state transition has no chain answer to fall back to. Until
 2026-09-27 every failed local `stateTransition` was read as an invalid transition, so a node whose
 local call was under-funded, whose call frame ran out of gas outside the transition, or whose
 executor failed would build a fraud proof against an honest author, and could start a dispute on
@@ -543,12 +543,17 @@ Byzantine dispute can make an auditor spend up to 16.7M gas of local work per ev
 before the chain is asked. This is bounded, independent of the attacker, and the ethereumjs default
 that applied before the local-first change.
 
-While chain reads are proven ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)) the chain's proven answer is used alone, so none of this local
-work runs for those predicates; the cost moves to endpoint availability, and the ingest gate and the
-join countersigner's membership check stay local so a slow endpoint cannot lose a block or stall a
-countersignature. Revised 2026-11-22: the engineer removed both exceptions, so while proven a slow
-endpoint delays block ingest and countersignatures; a failed ingest-gate read drops a gossiped copy,
-which gossip delivers again, and puts queued blocks back under their queue timeouts.
+While chain reads were proven the chain's proven answer was used alone, so none of this local
+work ran for those predicates; the cost moved to endpoint availability. Revised 2026-11-22: the
+engineer removed the two local exceptions (the ingest gate and the join countersigner's membership
+check), so a slow endpoint delays block ingest and countersignatures; a failed ingest-gate read drops
+a gossiped copy, which gossip delivers again, and puts queued blocks back under their queue timeouts.
+Revised 2026-11-27, on the engineer's decision to replace the mirror with chain reads ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)):
+the dispute predicates and the other reads of replicated channel state go to the chain whether or not the
+light client serves, so none of this local work runs for them and the accepted floor residual above
+applies only to the evaluations that stay local. Without the light client the chain's answer is the
+endpoint's word (assumption A6); with it the answer is proven. The availability cost above now holds
+for every participant, and a lagging mirror can no longer make a node miss a challenge.
 
 ## Client-side authenticity parity — 2026-09-26, decoding scope revised 2026-09-27
 

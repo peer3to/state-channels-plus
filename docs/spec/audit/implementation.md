@@ -168,9 +168,9 @@ the endpoints, the question is kept once answered or refused as not served (-326
 counts are logged once at destroy. The sidecar, `proveFrontierStorageBlock.ts`, the re-proof interval and
 the `LIGHT_CLIENT` and `LIGHT_CLIENT_REPROOF_BLOCKS` keys are removed.
 
-S4 on 2026-11-21, for [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) and [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9). `isChainProven` and `replicatedStateSource` in
-[provenChainReads.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/provenChainReads.ts.md)
-are the one owner of the switch: the first asks the chain access's `answersFromProvenState` at each
+S4 on 2026-11-21, for the proven-reads requirement of that day (retired 2026-11-27, see the revision at the end of this entry) and [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9). `isChainProven` and `replicatedStateSource` in
+`provenChainReads.ts` (deleted 2026-11-27)
+were the one owner of the switch: the first asks the chain access's `answersFromProvenState` at each
 read (an endpoint that has not answered whether it serves the light client counts as not proven), the
 second returns the chain contract while proven and the local one otherwise.
 `MultiRpcProvider.answersFromProvenState` is false by default and its
@@ -196,6 +196,8 @@ the exceptions: `MembershipService.isSignerInThresholdSet` asks the chain alone 
 own dispute record does not answer. A failed read of that gate no longer loses queued blocks:
 `BlockQueueManager.tryExecuteFromQueue` puts the dequeued entries back through `restoreQueuedEntry`,
 and `queueTimeout` puts its entry back and runs again after `TIMEOUT_RECHECK_DELAY_MS`.
+
+Revised 2026-11-27, step 2 of replacing the event-built mirror with chain reads ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)). `provenChainReads.ts`, `preferLocal`, `DisputeValidationService.localFirst` and `ProofTier.LocalDiamond` are deleted, and the sites above read the chain directly whether or not it is proven: `DisputeBuilder` (slashes, the auditing-data omission), `AgreementManager` (the construction start and the chain anchor share `readAnchor`), `ValidationService` (`isDisputedFork`, `isForkDisputedOnChain`), `DisputeValidationService` (header mismatch, slashes, the calldata-posted proof, the omission, the latest state, the balance invariant, the inbound hash, the window time), `ChannelJoinService` (window time), `SpectateService` (the snapshot), `MembershipService` (`isSignerPendingOnChain`, `isSignerInThresholdSet`) and `ParticipantTimeoutService` (`readReplicated` is now `readChain`, its failure path unchanged). `MultiRpcProvider.answersFromProvenState` and its light client override have no caller in `src` any more; only the provider tests read them. Still on the mirror, for later steps: the event ordering check in `EventHandler`, slash recovery in `EventSyncService`, the `LeaveChannelService` probe, `isSignerPendingInMirror`, the window commitments of the event hooks, local reduction, `hasInvalidTimestamp`, the trusted-start walks of `AgreementManager` on the local diamond, and every mirror write.
 
 ## Discovery joins after the dispose cut — 2026-11-02
 
@@ -1581,7 +1583,7 @@ rethrows it (`isInvalidStateTransitionError` in
 [evmErrorHandler.ts](../implementation/source/src/utils/evmErrorHandler.ts.md)) and
 [BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md)
 restores the state with no fraud proof and no dispute. The accepted residual (the 16.7M
-floor) is recorded under [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+floor) is recorded under [`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 and in [security-assessment.md](security-assessment.md#local-evm-call-gas--2026-09-26).
 
 **Evidence memo.** [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) owns it
@@ -1709,7 +1711,7 @@ state; the existing forge reduction and fraud-proof suites passed on the new cod
 the gas it was forwarded and returned no data, and re-throws every other failure unchanged
 ([LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md)).
 The error stays an error, never an answer
-([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)). The
+([`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)). The
 detection counts the 1/64 that the facet keeps when a nested call runs out of gas
 ([LocalDiamond.sol](../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L414):
 `returnData.length == 0 && gasUsed + forwarded / 64 + 5_000 >= forwarded`), so an exhausted budget

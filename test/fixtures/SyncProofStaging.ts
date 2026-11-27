@@ -37,8 +37,6 @@ export type SyncInspection = {
 export type TierWalkFault =
     /** the local finalized tier: the trusted-start walk on the local diamond */
     | "localFinalized"
-    /** the local diamond tier: `verifyMilestones` on the local diamond */
-    | "localDiamond"
     /** the chain tier: `verifyMilestones` sent to a refusing RPC endpoint */
     | "chain";
 
@@ -335,12 +333,6 @@ export async function applyPayloads(
             await h.mirror.failNextLocalRead(
                 requester.index,
                 LOCAL_WALK,
-                "transport"
-            );
-        if (options.walkFault === "localDiamond")
-            await h.mirror.failNextLocalRead(
-                requester.index,
-                "verifyMilestones",
                 "transport"
             );
         if (options.walkFault === "chain")

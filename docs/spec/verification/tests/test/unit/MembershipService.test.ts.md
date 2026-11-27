@@ -83,8 +83,8 @@ dispute it constructs declares no self-removal.
 - `the refresh's application of an inbound block, then the live log's, stores it once without a revert`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P14
 - `a refresh fills an inbound block the local diamond misses below its head without moving the head back`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P15, REQ-GOSSIP-4-J5Z4DF.T1.P42
 - `a refresh read before a live snapshot update does not overwrite that newer snapshot in the local diamond or in membership`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P16, REQ-GOSSIP-4-J5Z4DF.T1.P43, REQ-MIRROR-2-E9F3TM.T1.P6, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P21
-- `a pending joiner's refresh makes only its pinned multicall chain call`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P17, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19, REQ-GOSSIP-4-J5Z4DF.T1.P44
-- `a pending joiner whose local diamond holds its JOIN applies a snapshot without a pending-set chain read`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P72, REQ-SDK-ARCH-1-7H14H6.T1.P9
+- `a pending joiner's refresh makes its pinned multicall chain call and one pending-set chain read`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P17, UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19, REQ-GOSSIP-4-J5Z4DF.T1.P44
+- `a pending joiner whose local diamond holds its JOIN reads the pending set from the chain when it applies a snapshot`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P72, REQ-SDK-ARCH-1-7H14H6.T1.P9, REQ-MIRROR-6-0WSB4V.T1.P18
 - `a pending joiner whose local diamond misses its JOIN reads the pending set from the chain once`: UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P20, UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P73, REQ-SDK-ARCH-1-7H14H6.T1.P10
 - `a pending JOIN the chain lists but the joiner's local mirror misses is not observed locally and starts no force-join counters`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P70, REQ-SDK-ARCH-1-7H14H6.T1.P7
 - `a seated participant absent from the mirror's and the chain's pending sets is not pending on chain`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P74
@@ -117,4 +117,4 @@ dispute it constructs declares no self-removal.
 - `U77: after the agreementTime grace, fires exactly at the first counted block + participants + 1`: INV-TJOIN-2-H7JSQM.T2.P7, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P41
 - `a clean leave everyone signed → snapshot path, force-exit flag kept`: none
 - `a leaver whose membership ended joins again on the same runtime → the new membership clears the force-exit flag and its dispute carries no self-removal`: UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P52, REQ-RMSTORE-2-Y2T1PG.T1.P5, REQ-LIF-10-QR8NQ9.T1.P36
-- `a pending joiner with chain reads proven reads the pending set from the chain even while its local diamond holds its JOIN`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P80, REQ-MIRROR-5-N5SZC9.T4.P6
+- `a pending joiner with chain reads proven reads the pending set from the chain even while its local diamond holds its JOIN`: UNIT-TEST-MEMBERSHIP-SERVICE-1-EDFKZF.P80

@@ -196,11 +196,10 @@ counted and logged, and a failed one was counted as not compared. The declaratio
 block named by its Substrate hash and with every answer taken as alike. With the chain's reads proven,
 the local-first reads, the mirror's state-proof tier and the eight plain mirror read sites (window
 time three times, commitment twice, slashed participants once, the proof anchor once, the spectator's
-snapshot once) go to the chain alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)). After the bot's first review round the evidence is:
-`preferLocal`'s unit suite with 11 declarations ([`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P13`](../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)-`P15` for
-proven reads); [`REQ-LC-11-MTCBF9.T1.P6`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p6)-`P13` for failover, a lost connection, the proving block's
+snapshot once) go to the chain alone (the proven-reads requirement of that day, retired 2026-11-27, see the revision at the end of this entry). After the bot's first review round the evidence was:
+`preferLocal`'s unit suite with 11 declarations (deleted 2026-11-27); [`REQ-LC-11-MTCBF9.T1.P6`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p6)-`P13` for failover, a lost connection, the proving block's
 hash after the chain moved, and each kind of differing answer; and
-[`REQ-MIRROR-5-N5SZC9.T4`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4), run on the test chain with a harness stub that makes a runtime's chain
+the plan item of the proven-reads requirement that ran on the test chain with a harness stub that makes a runtime's chain
 reads count as proven (`stubProvenChainReads`): the timeout check's reads
 ([`UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md#unit-test-participant-timeout-service-1-q0paf5)-`P45`), construction and verification
 ([`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d), `P68`), the pending-set check and the countersigner's
@@ -210,13 +209,13 @@ of 83 against the node built from peer3-parachain PR #3. A first full run found 
 which had imported the chain provider) that failed `InternalTransport.test.ts` 11 of 11; the helpers
 moved to `provenChainReads.ts` and the file passed 11 of 11. Not run: participants on a peer3 node
 with the light client on and the reads compared
-([`REQ-MIRROR-5-N5SZC9.T3.P1`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t3.p1), a gap), because the test harness runs participants on Hardhat nodes only; running them on a peer3 node with
+(the flows on a peer3 node, a gap that stays open as the last permutation of the third chain-reads plan item of [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)), because the test harness runs participants on Hardhat nodes only; running them on a peer3 node with
 the channel contracts deployed is planned with the farm workers step. The engineer's two exceptions
 stay local while proven, the join countersigner's membership check and the ingest gate's disputed
 flag, and neither goes to the chain while proven. Revised 2026-11-22, when the engineer removed both
 exceptions: the countersigner declaration now shows the threshold read on the chain and none on the
-mirror ([`REQ-MIRROR-5-N5SZC9.T4.P5`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p5)), and a new unit declaration shows the ingest gate asking the
-chain ([`REQ-MIRROR-5-N5SZC9.T4.P18`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p18)), and two unit declarations show a failed gate read
+mirror (now [`REQ-MIRROR-6-0WSB4V.T1.P19`](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v.t1.p19)), and a new unit declaration shows the ingest gate asking the
+chain (now [`REQ-MIRROR-6-0WSB4V.T1.P20`](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v.t1.p20)), and two unit declarations show a failed gate read
 putting queued blocks back ([`UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P62`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md#unit-test-block-queue-manager-1-yws2d2) and [`UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P63`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md#unit-test-block-queue-manager-1-yws2d2)); each failed with its source change
 reverted.
 
@@ -231,8 +230,7 @@ end it ([`REQ-LC-7-W8WDN3.T1.P6`](../specification/runtime/light-client.md#req-l
 counted by what the read used ([`REQ-LC-9-KWXV43.T1.P7`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t1.p7)), and a compared call at a block the
 endpoint no longer has is not compared ([`REQ-LC-11-MTCBF9.T1.P14`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p14)); nine declarations, nine
 faults, all caught. Every mirror read site now has a declaration with the chain's reads proven
-([`REQ-MIRROR-5-N5SZC9.T4.P10`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p10)-`P17`, and
-[`P8`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p8) for the spectate requester): the slash handler, the acknowledgment responder,
+(the first chain-reads plan item of [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)): the slash handler, the acknowledgment responder,
 dispute construction (the omission answer and the slashed participants), the spectate responder's
 snapshot, the audit's local-first predicate and window time, and the force-join deadline. Thirteen
 faults switched a site back to the mirror, or skipped the chain's anchor and tier at construction and
@@ -247,6 +245,8 @@ log-search answer and a block answered by number raise the floor
 caught. The peer3 node numbers its pending block at its best block, so P26 has the endpoint number it
 one above, as geth and Hardhat do. On 8a9a0178f the light client suites passed 94 of 94 against the
 node built from 42e5e80.
+
+Revised 2026-11-27, step 2 of replacing the event-built mirror with chain reads ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)). The mirror-or-chain switch is gone from `src`, so its evidence went with it: the `preferLocal` suite, the mirror-tier cases of the spectate, sync-verification and audit-tier suites, the local-revert and local-executor-failure cases of the audit and construction suites, the local-diamond-tier executor failure cases, the `D6` hop whose JOIN is consumed (its only test, which ran the local-diamond tier; the permutation it covered is untested again), and the countersigner case that answered from the local clock and mirror. The remaining declarations now assert the chain as the source: each audit read, construction read, membership read and window read asserts one chain read and no mirror read, and the light-client-stubbed groups run the same reads with the chain access reporting proven reads. Two end-to-end declarations still describe a lagging mirror driving the builder or auditor: `E06` in the milestone-sync reconstruction suite asserts a genesis-start proof from a lagging mirror, which construction no longer builds, so it is mapped to no permutation until it is rewritten; the lagging-mirror challenge-target declarations that were not renamed were not re-read in this pass. This documentation pass ran no tests.
 
 ## Gas estimates at the pending block, genesis-free block time, parachain test runs — 2026-11-20
 

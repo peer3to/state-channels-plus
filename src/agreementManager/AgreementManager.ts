@@ -1,7 +1,3 @@
-import {
-    isChainProven,
-    replicatedStateSource
-} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot, StateProof } from "@/models";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage, { SortOrder } from "@/storage";
@@ -58,7 +54,7 @@ export type BuiltStateProof = {
     /** the latest block the proof reaches; -1 for the fork genesis */
     blockHeight: BlockHeight;
     stateProof: StateProofStruct;
-    /** the construction anchor: the local diamond's same-fork anchor, else the fork genesis */
+    /** the construction anchor: the chain's same-fork anchor, else the fork genesis */
     startSnapshot: StateSnapshot;
     evidence: StateProofEvidence;
     /** the walk's final point: the anchor or the last threshold-proven snapshot */
@@ -69,8 +65,6 @@ export type BuiltStateProof = {
 export enum ProofTier {
     /** the latest locally finalized state in storage */
     LocalFinalized = "localFinalized",
-    /** the local diamond's mirrored anchor */
-    LocalDiamond = "localDiamond",
     /** the chain's anchor */
     Chain = "chain"
 }
@@ -336,11 +330,9 @@ class AgreementManager {
 
     /**
      * Walks `stateProof` from each trusted start in order: the latest locally
-     * finalized state, the local diamond's anchor, the chain's anchor. A tier
-     * without a start is skipped, and so is the local diamond's while the
-     * chain's answers are proven: it would repeat the chain's walk. The
-     * caller stops at the first tier it accepts. Any read error throws: it is
-     * no verdict.
+     * finalized state, then the chain's anchor. A tier without a start is
+     * skipped. The caller stops at the first tier it accepts. Any read error
+     * throws: it is no verdict.
      */
     public async *walkStateProofTiers(
         forkId: ForkId,
@@ -360,14 +352,6 @@ class AgreementManager {
                 ),
                 localFinalized
             };
-        if (!(await isChainProven(this.stateChannelManagerContract))) {
-            const local = this.localDiamondContract;
-            const result = await local.verifyMilestones.staticCall(input);
-            yield {
-                ...this.toTierWalk(ProofTier.LocalDiamond, result),
-                localFinalized
-            };
-        }
         yield {
             ...(await this.walkFromChainAnchor(forkId, stateProof, evidence)),
             localFinalized
@@ -434,7 +418,7 @@ class AgreementManager {
 
     /** The same-fork anchor the chain holds, else undefined. */
     public getChainAnchor(forkId: ForkId): Promise<StateSnapshot | undefined> {
-        return this.readAnchor(this.stateChannelManagerContract, forkId);
+        return this.readAnchor(forkId);
     }
 
     /**
@@ -732,11 +716,13 @@ class AgreementManager {
     }
 
     private async readAnchor(
-        contract: StateChannelManagerInterface,
         forkId: ForkId
     ): Promise<StateSnapshot | undefined> {
         const { canUseOnChainSnapshot, onChainSnapshot } =
-            await contract.getAnchorSnapshot.staticCall(this.channelId, forkId);
+            await this.stateChannelManagerContract.getAnchorSnapshot.staticCall(
+                this.channelId,
+                forkId
+            );
         return canUseOnChainSnapshot
             ? StateSnapshot.from(onChainSnapshot)
             : undefined;
@@ -763,17 +749,11 @@ class AgreementManager {
     }
 
     /**
-     * The anchor of `forkId` the local diamond holds, or the chain's while
-     * its answers are proven, else the fork genesis; one read per operation.
+     * The anchor of `forkId` the chain holds, else the fork genesis; one read
+     * per operation.
      */
     private async getConstructionStart(forkId: ForkId): Promise<ProofStart> {
-        const anchor = await this.readAnchor(
-            await replicatedStateSource(
-                this.localDiamondContract,
-                this.stateChannelManagerContract
-            ),
-            forkId
-        );
+        const anchor = await this.readAnchor(forkId);
         return {
             canUseOnChainSnapshot: !!anchor,
             snapshot: anchor ?? this.getGenesisSnapshot(forkId)

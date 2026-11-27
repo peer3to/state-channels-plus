@@ -58,7 +58,7 @@ one, and escalate.
 
 ### Stage 2 — Construction and submission (disputer role)
 
-1. **State proof:** construct milestones from the mirrored chain anchor through finalized membership changes and the latest provable final point. The last milestone includes any later evidence and unfinalized tail ([state-proofs.md](./state-proofs.md)).
+1. **State proof:** construct milestones from the chain's anchor through finalized membership changes and the latest provable final point. The last milestone includes any later evidence and unfinalized tail ([state-proofs.md](./state-proofs.md)).
 
 2. **Slash set:** the on-chain set intersected with participants, plus — for offenders the node
    holds unapplied evidence against — the fraud proofs themselves, ordered _before_ the upload in

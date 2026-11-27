@@ -16,20 +16,11 @@ import { expect } from "chai";
 describe("Unit: AgreementManager verification tiers", function () {
     it("RR1: a chain anchor advance during verification returns the checked start and skips malformed old history in persistence", async function () {
         expect(
-            await walkAcrossAnchorAdvance(TestSession.getHarness(), "chain")
+            await walkAcrossAnchorAdvance(TestSession.getHarness())
         ).to.deep.equal({ valid: true, start: 3, final: 3, persisted: true });
     });
 
-    it("RR1: a mirror anchor advance during verification returns the checked start and skips malformed old history in persistence", async function () {
-        expect(
-            await walkAcrossAnchorAdvance(
-                TestSession.getHarness(),
-                "localDiamond"
-            )
-        ).to.deep.equal({ valid: true, start: 3, final: 3, persisted: true });
-    });
-
-    it("U26: the latest local finalized state verifies the proof → accepted there, the mirror and chain walks never run", async function () {
+    it("U26: the latest local finalized state verifies the proof → accepted there, the chain walk never runs", async function () {
         const h = TestSession.getHarness();
         await stageFinalBlocks(h, { postAnchor: true, finalBlocks: 2 });
         const localFinalized = await localFinalizedView(h, 0);
@@ -48,7 +39,7 @@ describe("Unit: AgreementManager verification tiers", function () {
         expect(observation.chain.reads).to.equal(0);
     });
 
-    it("U27: no local finalized state above the anchor → the mirror's walk accepts the proof, the chain walk never runs", async function () {
+    it("U27: no local finalized state above the anchor → the chain's walk alone accepts the proof, the mirror is never read", async function () {
         const h = TestSession.getHarness();
         const { anchor, observerIndex } = await stageFinalThenUnfinalizedTail(
             h,
@@ -73,18 +64,15 @@ describe("Unit: AgreementManager verification tiers", function () {
         const observation = await observed.observation();
         await observed.restore();
 
-        expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-            "localDiamond",
-            "chain"
-        ]);
-        expect(verified.walk!.tier).to.equal("localDiamond");
+        expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
+        expect(verified.walk!.tier).to.equal("chain");
         expect(verified.walk!.valid).to.equal(true);
         expect(verified.walk!.start!.hash).to.equal(anchor!.hash);
-        expect(observation.local.reads).to.equal(1);
-        expect(observation.chain.reads).to.equal(0);
+        expect(observation.local.reads).to.equal(0);
+        expect(observation.chain.reads).to.equal(1);
     });
 
-    it("U27: chain reads proven and no local finalized state above the anchor → the mirror's walk is skipped, the chain's walk accepts the proof", async function () {
+    it("U27: chain reads proven (light client) and no local finalized state above the anchor → the chain's walk accepts the proof", async function () {
         const h = TestSession.getHarness();
         const { anchor, observerIndex } = await stageFinalThenUnfinalizedTail(
             h,
@@ -122,7 +110,7 @@ describe("Unit: AgreementManager verification tiers", function () {
         }
     });
 
-    it("U27: the local finalized walk returns false (a conflicting block at its height) → the mirror's walk accepts the proof", async function () {
+    it("U27: the local finalized walk returns false (a conflicting block at its height) → the chain's walk accepts the proof", async function () {
         const h = TestSession.getHarness();
         const { anchor } = await stageFinalBlocks(h, {
             postAnchor: true,
@@ -142,15 +130,14 @@ describe("Unit: AgreementManager verification tiers", function () {
 
         expect(tiers.map((walk) => [walk.tier, walk.valid])).to.deep.equal([
             ["localFinalized", false],
-            ["localDiamond", true],
             ["chain", true]
         ]);
-        expect(verified.walk!.tier).to.equal("localDiamond");
+        expect(verified.walk!.tier).to.equal("chain");
         expect(verified.walk!.valid).to.equal(true);
         expect(verified.walk!.start!.hash).to.equal(anchor!.hash);
     });
 
-    it("U28: the mirror holds no same-fork anchor (it walks from the genesis) and its walk fails → the chain's anchor walk accepts the proof", async function () {
+    it("U28: the mirror holds no same-fork anchor → the chain's anchor walk accepts the proof", async function () {
         const h = TestSession.getHarness();
         const lagging = 2;
         const { anchor } = await stageMirrorMissingTopUp(h, {
@@ -168,41 +155,10 @@ describe("Unit: AgreementManager verification tiers", function () {
         const tiers = await walkAllTiersView(h, lagging, view.stateProof);
         const verified = await verifyProofView(h, lagging, view.stateProof);
 
-        expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-            "localDiamond",
-            "chain"
-        ]);
-        expect(tiers[0].start).to.equal(null);
-        expect(tiers[0].valid).to.equal(false);
+        expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
         expect(verified.walk!.tier).to.equal("chain");
         expect(verified.walk!.valid).to.equal(true);
         expect(verified.walk!.start!.hash).to.equal(anchor!.hash);
-    });
-
-    it("U28: the mirror's anchor walk returns false (it lacks a consumed inbound block) → the chain's walk accepts the proof", async function () {
-        const h = TestSession.getHarness();
-        const lagging = 2;
-        const { anchor } = await stageMirrorMissingTopUp(h, {
-            laggingIndex: lagging,
-            anchorBeforeTopUp: true
-        });
-        const view = await buildProofView(h, 0);
-        expect(
-            await localFinalizedView(h, lagging),
-            "the lagging peer cannot prove a final point"
-        ).to.equal(null);
-
-        const tiers = await walkAllTiersView(h, lagging, view.stateProof);
-        const verified = await verifyProofView(h, lagging, view.stateProof);
-
-        expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-            "localDiamond",
-            "chain"
-        ]);
-        expect(tiers[0].start!.hash).to.equal(anchor!.hash);
-        expect(tiers[0].valid).to.equal(false);
-        expect(verified.walk!.tier).to.equal("chain");
-        expect(verified.walk!.valid).to.equal(true);
     });
 
     it("U29: a proof every tier rejects (an unlinked block after the anchor) → verification returns the chain's invalid walk", async function () {
@@ -222,7 +178,6 @@ describe("Unit: AgreementManager verification tiers", function () {
 
         expect(tiers.map((walk) => [walk.tier, walk.valid])).to.deep.equal([
             ["localFinalized", false],
-            ["localDiamond", false],
             ["chain", false]
         ]);
         expect(verified.thrown).to.equal(null);
@@ -260,36 +215,6 @@ describe("Unit: AgreementManager verification tiers", function () {
         expect(observation.chain.reads).to.equal(0);
     });
 
-    it("U30: the mirror's walk fails on the local EVM connection → verification throws, the chain walk never runs", async function () {
-        const h = TestSession.getHarness();
-        const { observerIndex } = await stageFinalThenUnfinalizedTail(h, {
-            postAnchor: true
-        });
-        const view = await buildProofView(h, observerIndex);
-        const observed = await h.mirror.observe(
-            observerIndex,
-            "verifyMilestones"
-        );
-        await h.mirror.failNextLocalRead(
-            observerIndex,
-            "verifyMilestones",
-            "transport"
-        );
-
-        const verified = await verifyProofView(
-            h,
-            observerIndex,
-            view.stateProof
-        );
-        const observation = await observed.observation();
-        await observed.restore();
-
-        expect(verified.walk).to.equal(null);
-        expect(verified.thrown).to.match(/Malformed RPC request/);
-        expect(observation.local.failures).to.have.length(1);
-        expect(observation.chain.reads).to.equal(0);
-    });
-
     it("U30: the chain walk fails on the node RPC connection → verification throws instead of returning an invalid verdict", async function () {
         const h = TestSession.getHarness();
         const lagging = 2;
@@ -311,8 +236,7 @@ describe("Unit: AgreementManager verification tiers", function () {
 
         expect(verified.walk).to.equal(null);
         expect(verified.thrown).to.match(/ECONNREFUSED/);
-        // the mirror's walk ran and failed; then the chain read failed
-        expect(observation.local.reads).to.equal(1);
+        expect(observation.local.reads).to.equal(0);
         expect(observation.chain.failures).to.have.length(1);
     });
 });
