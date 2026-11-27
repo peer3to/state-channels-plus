@@ -208,6 +208,63 @@ describe("SnapshotUpdateService", function () {
         expect((await chainSnapshot(h)).forkID).to.equal(reducedForkId);
     });
 
+    it("a same-fork post for the disputed fork after this peer installed its reduced fork (the install reset the one stored proof) has nothing to send: the preparation returns no calldata and the post resolves undefined without an error", async function () {
+        const h = TestSession.getHarness();
+        const { forkId, release, installedWait } =
+            await stageUninstalledFinalReducedFork(h);
+        await release();
+        await installedWait();
+        const onChain = await chainSnapshot(h);
+        expect(
+            onChain.forkID,
+            "premise: the chain still holds the disputed fork"
+        ).to.equal(forkId);
+
+        const result = await h.execOnHost(
+            h.getPeer(0),
+            async (sm, { forkId }) => {
+                const premise = {
+                    isActive: sm.forkId === forkId,
+                    hasStoredProof:
+                        sm.storage.storedProofs.get(forkId) !== undefined,
+                    latestHeight: sm.storage.blocks.getLatestBlockHeight(forkId)
+                };
+                const prepared =
+                    await sm.snapshotUpdateService[
+                        "prepareUpdateSnapshotSameFork"
+                    ](forkId);
+                const posted =
+                    await sm.snapshotUpdateService.postStateSnapshotWait(
+                        forkId
+                    );
+                return {
+                    ...premise,
+                    canPost: prepared.canPost,
+                    callDataCount: prepared.callData.length,
+                    posted: posted !== undefined
+                };
+            },
+            { forkId }
+        );
+
+        expect(result.isActive, "premise: the peer left the disputed fork").to
+            .be.false;
+        expect(
+            result.hasStoredProof,
+            "premise: no stored proof of the disputed fork"
+        ).to.be.false;
+        expect(
+            result.latestHeight,
+            "premise: the peer holds disputed-fork blocks at or above the chain snapshot"
+        ).to.be.at.least(onChain.blockHeight);
+        expect(result).to.deep.include({
+            canPost: false,
+            callDataCount: 0,
+            posted: false
+        });
+        expect((await chainSnapshot(h)).forkID).to.equal(forkId);
+    });
+
     it("once the channel is closed on chain, the same-fork preparation returns nothing to post without building a state proof or reading local outbound blocks, and the post resolves undefined", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);

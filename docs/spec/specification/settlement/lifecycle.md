@@ -304,7 +304,9 @@ again. A post that runs after the channel's zero-participant close (other leaver
 nothing to send: it ends without error and reads no local history, which a member seated through a sync from a
 later snapshot does not hold in full; the close ends the membership. A post already in flight when the close lands
 (prepared against the open fork, then rejected at its estimate or mined after the close) is refused by the chain
-for its fork mismatch; that is an expected chain refusal, and the close ends the membership. An expected chain refusal of an exit post MUST be recorded through the SDK's internal logger.
+for its fork mismatch; that is an expected chain refusal, and the close ends the membership. A post prepared for a fork
+the node leaves before the post is built (an installed reduction moves it to the next fork and resets its one stored
+proof) has nothing to send: it ends without error. An expected chain refusal of an exit post MUST be recorded through the SDK's internal logger.
 An unexpected error MUST propagate to the runtime's fatal error handling, not be swallowed or treated
 as a normal refusal. RPC infrastructure outages remain subject to the
 [SDK-wide availability assumption](../runtime/sdk.md#assumptions-and-constraints), not a feature-specific

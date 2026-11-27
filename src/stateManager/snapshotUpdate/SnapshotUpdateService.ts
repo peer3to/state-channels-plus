@@ -456,12 +456,39 @@ export default class SnapshotUpdateService {
             // diamond's anchor (a lagging mirror only lengthens it). Its target
             // is the snapshot the last milestone's first block commits to;
             // the unfinalized tail is never the target.
+            const agreementManager = this.stateManager.agreementManager;
+            const tried = await agreementManager.tryBuildStateProof(
+                forkId,
+                latestBlockHeight,
+                { finalizedOnly: true }
+            );
+            // The node keeps one stored proof, for its active fork: a fork
+            // change during this preparation resets it, and a fork this node
+            // left has nothing to send.
+            if (!tried && forkId !== this.stateManager.forkId) {
+                this.logger.debug(
+                    "prepareUpdateSnapshotSameFork - the fork was left during the preparation, nothing to post",
+                    {
+                        requestedForkId: forkId,
+                        activeForkId: this.stateManager.forkId
+                    }
+                );
+                return {
+                    canPost: false,
+                    callData: [],
+                    milestoneProofs: [],
+                    milestoneSnapshots: [],
+                    outboundMessageBlocks: []
+                };
+            }
+            // on the active fork a failed build throws why
             const built =
-                await this.stateManager.agreementManager.buildStateProof(
+                tried ??
+                (await agreementManager.buildStateProof(
                     forkId,
                     latestBlockHeight,
                     { finalizedOnly: true }
-                );
+                ));
             const latestSnapshot = built.finalizedSnapshot;
             const milestoneProofs = built.stateProof.milestones;
             const milestoneSnapshots = built.evidence.milestoneSnapshots.map(
