@@ -143,6 +143,8 @@ export class EventHandler {
         // awaited: the re-root waits for queued proof writes, which can wait
         // for event recovery.
         void this.stateManager.agreementManager.reRootStoredProof(mirrored);
+        // a fork the anchor left keeps no proof evidence
+        this.stateManager.agreementManager.dropLeftForkEvidence(mirrored);
         await this.processStateSnapshotUpdated(channelId, stateSnapshot);
     }
 
@@ -580,7 +582,7 @@ export class EventHandler {
                     return;
                 }
                 const latestStateMachineState =
-                    this.storage.stateMachineStates.getStateMachineState(
+                    this.storage.getStateIncludingEvidence(
                         latestSnapshot.stateMachineStateHash as Hash
                     );
                 if (!latestStateMachineState) {

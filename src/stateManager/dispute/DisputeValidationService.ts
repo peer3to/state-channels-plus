@@ -24,7 +24,14 @@ import {
     Hash,
     Signature
 } from "@/types/types";
-import { getChecksumAddress, hash, isSubset, Logger } from "@/utils";
+import {
+    Codec,
+    getChecksumAddress,
+    hash,
+    isSubset,
+    Logger,
+    Type
+} from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
 import { tryDecodeCustomError } from "@/utils/evmErrorHandler";
 import { preferLocal } from "@/utils/localDiamond";
@@ -264,10 +271,11 @@ export default class DisputeValidationService {
      * threshold-final block this peer verified at that height: its history
      * conflicts with the final history (under one honest peer, two realities
      * cannot both be final). The final blocks are this view's latest final
-     * point and every stored block whose direct or virtual threshold is provable, also one
-     * verified while auditing another dispute (stored without moving the
-     * view). Each conflict is offered to the chain with this peer's proof of
-     * the final block's height; every one the chain accepts is a counter. A
+     * point, every stored block whose direct or virtual threshold is
+     * provable, and the final block of each hop verified while auditing
+     * another dispute (kept as proof evidence, outside block history). Each
+     * conflict is offered to the chain with this peer's proof of the final
+     * block's height; every one the chain accepts is a counter. A
      * block the dispute's walk does not check is no conflict. The chain also
      * compares the final point's inbound height with that of the dispute's
      * latest finalized point, whose snapshot `latestFinalizedSnapshot` comes
@@ -299,9 +307,16 @@ export default class DisputeValidationService {
                 const conflictsWithView =
                     block.height === finalized?.blockHeight &&
                     block.stateSnapshotHash !== finalized.hash;
-                const conflictsWithVerified =
-                    !!stored &&
-                    stored.stateSnapshotHash !== block.stateSnapshotHash;
+                const conflictsWithVerified = [
+                    ...(stored ? [stored] : []),
+                    ...this.agreementManager.getEvidenceFinalBlocks(
+                        forkId,
+                        block.height
+                    )
+                ].some(
+                    (other) =>
+                        other.stateSnapshotHash !== block.stateSnapshotHash
+                );
                 return conflictsWithView || conflictsWithVerified
                     ? [
                           {
@@ -602,11 +617,13 @@ export default class DisputeValidationService {
     }
 
     /**
-     * Stores the proof material the accepted walk verified, and with posted
-     * data its inbound run, the verified outbound run above the chain anchor
-     * (`verifyOutboundRun`) and the finalized state the walk ends at. False
-     * when a verified block conflicts with this peer's stored history (its
-     * blocks are then not stored).
+     * Keeps the proof material the accepted walk verified as this dispute's
+     * audit evidence, outside block history, with the finalized state the
+     * walk ends at and the dispute's latest state (the replayed tail's end).
+     * With posted data it also stores its inbound run and the verified
+     * outbound run above the chain anchor (`verifyOutboundRun`). False when
+     * a final block of the proof conflicts with this peer's stored history
+     * or other evidence (the evidence is then not kept).
      */
     private persistVerifiedProof(
         dispute: DisputeStruct,
@@ -615,27 +632,54 @@ export default class DisputeValidationService {
         outboundRun: MessageBlockStruct[],
         data?: DisputeAuditingDataStruct
     ): boolean {
-        // a verified block conflicting with this peer's history is not stored
-        const isPersisted = this.agreementManager.persistVerifiedProof(
-            dispute.input.stateProof,
+        const { forkId, stateProof } = dispute.input;
+        const finalized = walk.finalizedSnapshot;
+        // the posted finalized state is used only when it is the walk's
+        const posted = data?.latestFinalizedStateStateMachineState as
+            | Bytes
+            | undefined;
+        const encodedFinalizedState =
+            this.storage.getStateIncludingEvidence(
+                finalized.stateMachineStateHash
+            ) ??
+            (posted !== undefined &&
+            hash(posted) === finalized.stateMachineStateHash
+                ? posted
+                : undefined);
+        // the latest point: the replayed tail's end, else the final point
+        const tail = stateProof.milestones.at(-1)?.blockConfirmations ?? [];
+        const latest =
+            walk.replayBlockIndex < tail.length
+                ? this.storage.getPredecessor(
+                      forkId,
+                      Block.fromBlockConfirmation(tail.at(-1)!)
+                  )
+                : { snapshot: finalized, state: encodedFinalizedState };
+        if (!latest)
+            throw new Error(
+                "Dispute audit: the replayed tail left no stored latest snapshot and state"
+            );
+        // a final block conflicting with this peer's history is not kept
+        const isPersisted = this.agreementManager.persistAuditEvidence(
+            hash(Codec.encode(dispute, Type.Dispute)),
+            forkId,
+            stateProof,
             evidence,
-            walk
+            walk,
+            {
+                encodedFinalizedState,
+                latest: {
+                    snapshot: latest.snapshot,
+                    encodedState: latest.state
+                }
+            }
         );
         if (!isPersisted)
             this.logger.warn(
-                "Dispute proof conflicts with stored history: its blocks are not persisted",
+                "Dispute proof conflicts with stored history: its evidence is not kept",
                 { dispute: LoggerUtils.getDisputeMetadata(dispute) }
             );
         if (!data) return isPersisted;
-        // the posted finalized state is used only when it is the walk's
-        const finalizedState = data.latestFinalizedStateStateMachineState;
-        if (
-            hash(finalizedState as Bytes) ===
-            walk.finalizedSnapshot.stateMachineStateHash
-        )
-            this.storage.stateMachineStates.storeStateMachineState(
-                finalizedState
-            );
         for (const messageBlock of data.inboundMessageBlocks) {
             this.storage.inboundMessages.store(messageBlock, {
                 justPersist: true
@@ -761,7 +805,7 @@ export default class DisputeValidationService {
             | Bytes
             | undefined;
         const state =
-            this.storage.stateMachineStates.getStateMachineState(stateHash) ??
+            this.storage.getStateIncludingEvidence(stateHash) ??
             (posted !== undefined && hash(posted) === stateHash
                 ? posted
                 : undefined);
@@ -1082,7 +1126,7 @@ export default class DisputeValidationService {
         const isOlderDispute =
             !!walk.start && latestHeight < walk.start.blockHeight;
         const latestStateSnapshot =
-            this.storage.stateSnapshots.getStateSnapshotByHash(
+            this.storage.getSnapshotIncludingEvidence(
                 dispute.input.latestStateSnapshotHash as Hash
             ) ??
             (data ? StateSnapshot.from(data.latestStateSnapshot) : undefined) ??
@@ -1093,7 +1137,7 @@ export default class DisputeValidationService {
                   ));
         const latestStateMachineState =
             latestStateSnapshot &&
-            this.storage.stateMachineStates.getStateMachineState(
+            this.storage.getStateIncludingEvidence(
                 latestStateSnapshot.stateMachineStateHash
             );
 
@@ -1294,7 +1338,7 @@ export default class DisputeValidationService {
         const latestSnapshotForThreshold =
             latestStateSnapshot ??
             (latestBlock &&
-                this.storage.stateSnapshots.getStateSnapshotByHash(
+                this.storage.getSnapshotIncludingEvidence(
                     latestBlock.stateSnapshotHash
                 ));
         if (

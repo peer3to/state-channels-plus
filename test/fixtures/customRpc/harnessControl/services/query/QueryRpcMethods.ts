@@ -328,6 +328,16 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return block ? this.service.toBlockBundle(block) : null;
     }
 
+    /** The blocks proof evidence holds at the coordinate (verified, not executed history). */
+    public getEvidenceBlocksAt(
+        forkId: ForkId,
+        height: BlockHeight
+    ): BlockBundle[] {
+        return this.service
+            .getEvidenceBlocksAt(forkId, height)
+            .map((block) => this.service.toBlockBundle(block));
+    }
+
     /** Full serializable projection of the block with `blockHash`, or null. */
     public getBlockByHash(blockHash: Hash): BlockBundle | null {
         const block = this.service.storage.blocks.getBlock(blockHash);
@@ -572,6 +582,15 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
     public getStateMachineState(stateHash: Hash): string | null {
         return (
             (this.service.storage.stateMachineStates.getStateMachineState(
+                stateHash
+            ) as string | undefined) ?? null
+        );
+    }
+
+    /** Encoded state for `stateHash` kept as proof evidence, or null. */
+    public getEvidenceState(stateHash: Hash): string | null {
+        return (
+            (this.service.storage.proofEvidence.getStateMachineState(
                 stateHash
             ) as string | undefined) ?? null
         );

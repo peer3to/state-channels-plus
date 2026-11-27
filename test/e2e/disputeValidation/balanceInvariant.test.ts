@@ -1,10 +1,11 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import {
     assertColludersKilledByConflict,
+    evidenceBlockHashesAt,
     postForgedDepositsHead,
     stageBlindPendingAuditor,
     stageParallelHeadAudits,
-    waitUntilAuditorStoredBlockAt
+    waitUntilAuditorKeptBlockAt
 } from "@test/fixtures/DisputeAuditStaging";
 import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
@@ -99,7 +100,7 @@ describe("E2E: dispute validation / balanceInvariant", function () {
             malicious: false
         });
         expect(real.dispute.postedAuditingData).to.equal(true);
-        await waitUntilAuditorStoredBlockAt(h, auditorIndex, forkId, realHead);
+        await waitUntilAuditorKeptBlockAt(h, auditorIndex, forkId, realHead);
 
         await postForgedDepositsHead(h, 2, [auditorIndex]);
 
@@ -150,12 +151,7 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         // the forged audit persists its head first; the real audits, already
         // past their conflict checks, then find the stored forged head
         await walks.release(forgedHead.hash);
-        await waitUntilAuditorStoredBlockAt(
-            h,
-            auditorIndex,
-            forkId,
-            forgedHead
-        );
+        await waitUntilAuditorKeptBlockAt(h, auditorIndex, forkId, forgedHead);
         await walks.release(realHead.hash);
         await walks.release(realHead.hash);
         await walks.restore();
@@ -195,12 +191,14 @@ describe("E2E: dispute validation / balanceInvariant", function () {
             DisputeFraudProofType.DisputeInvalidBalanceInvariant
         ]);
         expect(
-            await h
-                .control(auditor)
-                .query.getBlockHashAt(forkId, staged.headHeight)
-                .request(),
-            "only the forged head is stored"
-        ).to.equal(forgedHead.hash);
+            await evidenceBlockHashesAt(
+                h,
+                auditorIndex,
+                forkId,
+                staged.headHeight
+            ),
+            "only the forged head is kept as evidence"
+        ).to.deep.equal([forgedHead.hash]);
         await staged.restoreGossip();
         // both real-head disputes are killed with DisputeConflictsWithFinalState,
         // no fatal error stops the auditor, and the reduction uses its own dispute
@@ -226,7 +224,7 @@ describe("E2E: dispute validation / balanceInvariant", function () {
         // already past its conflict check, then finds it after its walk
         await walks.release(realHead.hash);
         await walks.release(realHead.hash);
-        await waitUntilAuditorStoredBlockAt(h, auditorIndex, forkId, realHead);
+        await waitUntilAuditorKeptBlockAt(h, auditorIndex, forkId, realHead);
         await walks.release(forgedHead.hash);
         await walks.restore();
 
@@ -239,12 +237,14 @@ describe("E2E: dispute validation / balanceInvariant", function () {
             DisputeFraudProofType.DisputeConflictsWithFinalState
         ]);
         expect(
-            await h
-                .control(auditor)
-                .query.getBlockHashAt(forkId, staged.headHeight)
-                .request(),
-            "only the real head is stored"
-        ).to.equal(realHead.hash);
+            await evidenceBlockHashesAt(
+                h,
+                auditorIndex,
+                forkId,
+                staged.headHeight
+            ),
+            "only the real head is kept as evidence"
+        ).to.deep.equal([realHead.hash]);
         await staged.restoreGossip();
         // the real-head disputes stand; every participant signed the real
         // final head and the forged one, so only the auditor stays

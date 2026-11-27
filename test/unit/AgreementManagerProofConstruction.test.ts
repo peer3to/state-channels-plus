@@ -1,4 +1,4 @@
-import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
+import { stageAuditedHeadAboveView } from "@test/fixtures/DisputeAuditStaging";
 import {
     chainSnapshot,
     freshSpectatorSyncedFrom,
@@ -240,62 +240,48 @@ describe("Unit: AgreementManager proof construction", function () {
         // "latest block missing a signature → one unfinalized genesis-linked
         // milestone, the chain walk accepts it" in AgreementManager.test.ts
 
-        it("a threshold-final block an audit verified above the view → the final proof at its height proves it on chain; the view-bounded construction still ends at the view's final point", async function () {
+        it("a threshold-final block an audit verified above the view → it is kept as evidence, not block history; the exact final proof at its height comes from that evidence and proves it on chain; the view-bounded construction still ends at the view's final point", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup();
-            const forkId = h.activeForkId!;
-            // the pending auditor never finalized the head
-            const { auditorIndex, headHeight } = await stageBlindPendingAuditor(
-                h,
-                [0, 1, 2]
-            );
-            await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
-            const { dispute, auditingData } =
-                await h.dispute.fetchConstructedDispute(0);
-            // its audit verifies the head and stores it without moving the view
-            await h.dispute.auditDispute(
-                auditorIndex,
-                dispute,
-                dispute.postedAuditingData ? auditingData : undefined
-            );
+            const { forkId, auditorIndex, headHeight, run } =
+                await stageAuditedHeadAboveView(h);
+            expect(run).to.include({ outcome: "returned", isValid: true });
             expect(
                 await h
                     .control(h.getPeer(auditorIndex))
                     .query.getBlockHashAt(forkId, headHeight)
                     .request(),
-                "the audit stored the verified head"
-            ).to.not.equal(null);
+                "block history does not hold the verified head"
+            ).to.equal(null);
 
             const built = await h.execOnHost(
                 h.getPeer(auditorIndex),
                 async (sm, args) => {
                     const am = sm.agreementManager;
-                    const above = await am.buildFinalProof(
+                    const above = await am.tryBuildFinalProofAt(
                         args.forkId,
                         args.headHeight
                     );
                     const view = await am.buildFinalProof(args.forkId);
-                    const chainWalk =
-                        await sm.stateChannelManagerContract.verifyMilestones.staticCall(
-                            above.finalProof
-                        );
+                    const chainWalk = above
+                        ? await sm.stateChannelManagerContract.verifyMilestones.staticCall(
+                              above
+                          )
+                        : undefined;
                     return {
                         viewHeight:
                             sm.storage.blocks.getNextBlockHeight(args.forkId) -
                             1,
-                        aboveFinal: above.finalizedSnapshot.blockHeight,
                         viewFinal: view.finalizedSnapshot.blockHeight,
-                        chainValid: chainWalk.valid,
-                        chainFinal: Number(
-                            chainWalk.finalizedSnapshot.blockHeight
-                        )
+                        chainValid: chainWalk?.valid ?? null,
+                        chainFinal: chainWalk
+                            ? Number(chainWalk.finalizedSnapshot.blockHeight)
+                            : null
                     };
                 },
                 { forkId, headHeight }
             );
 
             expect(built.viewHeight).to.be.lessThan(headHeight);
-            expect(built.aboveFinal).to.equal(headHeight);
             expect(built.chainValid).to.equal(true);
             expect(built.chainFinal).to.equal(headHeight);
             expect(built.viewFinal).to.be.at.most(built.viewHeight);

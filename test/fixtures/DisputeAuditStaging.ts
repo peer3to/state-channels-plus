@@ -181,6 +181,19 @@ export async function craftInvalidLinkedBlock(
             peer.address !== options.alsoNotAuthor
     );
     if (!author) throw new Error("No other harness peer can author");
+    return craftLinkedBlockBy(h, { ...options, author: author.address });
+}
+
+/**
+ * An authentic block at `height` linked to `previousBlockHash`, authored by
+ * the harness peer `author`, committing no state transition result.
+ */
+export async function craftLinkedBlockBy(
+    h: MathPeerTestHarness,
+    options: { height: number; previousBlockHash: Hash; author: Address }
+): Promise<BlockConfirmationStruct> {
+    const author = h.peers.find((peer) => peer.address === options.author);
+    if (!author) throw new Error(`No harness peer is ${options.author}`);
     const encoded = await buildAndEncodeBlock(author.signer, {
         header: {
             channelId: h.channelId,
@@ -353,6 +366,35 @@ export async function snapshotAt(
     );
 }
 
+/** Whether `peerIndex` keeps the full application state of `snapshot` as proof evidence. */
+export async function holdsEvidenceState(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    snapshot: StateSnapshot
+): Promise<boolean> {
+    return (
+        (await h
+            .control(h.getPeer(peerIndex))
+            .query.getEvidenceState(snapshot.stateMachineStateHash as Hash)
+            .request()) !== null
+    );
+}
+
+/** The hashes of the blocks `peerIndex` keeps as proof evidence at `height` of `forkId`. */
+export async function evidenceBlockHashesAt(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    forkId: ForkId,
+    height: number
+): Promise<string[]> {
+    return (
+        await h
+            .control(h.getPeer(peerIndex))
+            .query.getEvidenceBlocksAt(forkId, height)
+            .request()
+    ).map((block) => block.hash);
+}
+
 /** Whether `peerIndex` holds the full application state of `snapshot`. */
 export async function holdsState(
     h: MathPeerTestHarness,
@@ -476,6 +518,163 @@ export async function stageFrozenViewBehindDisputeTail(h: MathPeerTestHarness) {
         disputerIndex,
         live,
         ...constructed
+    };
+}
+
+/**
+ * Make `dispute` claim the state of its last milestone's second block (its
+ * auditing data omitted), with an earlier milestone repeating that run plus
+ * an authentic block at the next height by another author than the real
+ * one (`otherAuthor`) or by the real block's own author (`shadowedAuthor`,
+ * a double sign): support the walk checks but never executes, at the height
+ * the real tail replays. Returns the forged block and the real block it
+ * shadows.
+ */
+export async function forgeSupportAboveDisputeTail(
+    h: MathPeerTestHarness,
+    dispute: DisputeStruct,
+    options: { forger: "otherAuthor" | "shadowedAuthor" } = {
+        forger: "otherAuthor"
+    }
+): Promise<{ forged: Block; shadowed: Block }> {
+    const milestones = dispute.input.stateProof.milestones;
+    const run = milestones.at(-1)!.blockConfirmations;
+    expect(
+        run.length,
+        "the last milestone is a final block and a two-block tail"
+    ).to.equal(3);
+    const [, real, shadowed] = run.map((confirmation) =>
+        Block.fromBlockConfirmation(confirmation)
+    );
+    const forged =
+        options.forger === "shadowedAuthor"
+            ? await craftLinkedBlockBy(h, {
+                  height: shadowed.height,
+                  previousBlockHash: real.hash,
+                  author: shadowed.author
+              })
+            : await craftInvalidLinkedBlock(h, {
+                  height: shadowed.height,
+                  previousBlockHash: real.hash,
+                  notAuthor: shadowed.author
+              });
+    replaceStateProof(dispute, [
+        ...milestones.slice(0, -1),
+        { blockConfirmations: [run[0], run[1], forged] },
+        { blockConfirmations: [run[0], run[1]] }
+    ]);
+    return { forged: Block.fromBlockConfirmation(forged), shadowed };
+}
+
+/**
+ * {@link stageFrozenViewBehindDisputeTail} plus a copy of its honest
+ * dispute Y forged by {@link forgeSupportAboveDisputeTail}: dispute X ends
+ * one block above the frozen view and carries, as unexecuted support, a
+ * forged block at the height of Y's last tail block.
+ */
+export async function stageForgedSupportBelowHonestTail(
+    h: MathPeerTestHarness,
+    options: { forger: "otherAuthor" | "shadowedAuthor" } = {
+        forger: "otherAuthor"
+    }
+) {
+    const staged = await stageFrozenViewBehindDisputeTail(h);
+    const forgedDispute = Codec.decode(
+        Codec.encode(staged.dispute, Type.Dispute),
+        Type.Dispute
+    );
+    const { forged, shadowed } = await forgeSupportAboveDisputeTail(
+        h,
+        forgedDispute,
+        options
+    );
+    expect(shadowed.height).to.equal(staged.frozenHeight + 2);
+    return { ...staged, forgedDispute, forged, shadowed };
+}
+
+/**
+ * {@link stageFrozenViewBehindDisputeTail} plus a side dispute X: the honest
+ * dispute Y with its last tail block replaced by the same author's re-signed
+ * copy one second later (a double sign committing the same state at that
+ * timestamp), its auditing data omitted. Auditing X replays that copy at a height the frozen
+ * view leaves free. Returns X, the copy and the real block it shadows.
+ */
+export async function stageSideReplayBelowHonestTail(h: MathPeerTestHarness) {
+    const staged = await stageFrozenViewBehindDisputeTail(h);
+    const run =
+        staged.dispute.input.stateProof.milestones.at(-1)!.blockConfirmations;
+    expect(
+        run.length,
+        "the last milestone is a final block and a two-block tail"
+    ).to.equal(3);
+    const shadowed = Block.fromBlockConfirmation(run[2]!);
+    expect(shadowed.height).to.equal(staged.frozenHeight + 2);
+    const author = h.peers.find((peer) => peer.address === shadowed.author)!;
+    const header = shadowed.blockStruct.transaction.header;
+    const timestamp = BigInt(header.timestamp) + 1n;
+    // the snapshot commits the block timestamp; the block emits no outbound
+    // message, so the timestamp is the only other change
+    const shadowedSnapshot = await snapshotAt(
+        h,
+        staged.disputerIndex,
+        shadowed.height
+    );
+    const copySnapshot = StateSnapshot.from({
+        ...shadowedSnapshot.toStruct(),
+        timestamp
+    });
+    const copy = await Block.fromBlockStruct(
+        {
+            ...shadowed.blockStruct,
+            transaction: {
+                ...shadowed.blockStruct.transaction,
+                header: { ...header, timestamp }
+            },
+            stateSnapshotHash: copySnapshot.hash
+        },
+        author.signer
+    );
+    const sideDispute = Codec.decode(
+        Codec.encode(staged.dispute, Type.Dispute),
+        Type.Dispute
+    );
+    replaceStateProof(sideDispute, [
+        ...staged.dispute.input.stateProof.milestones.slice(0, -1),
+        { blockConfirmations: [run[0]!, run[1]!, copy.blockConfirmationStruct] }
+    ]);
+    return { ...staged, sideDispute, copy, shadowed };
+}
+
+/**
+ * {@link stageBlindPendingAuditor} with authors 0-2 and peer 0's force-exit
+ * dispute (its auditing data posted): the dispute ends at the head, a
+ * threshold-final block the auditor never held. The auditor audits it.
+ * Returns the audit run, the dispute, peer 0's head snapshot and the
+ * auditor's gossip restore.
+ */
+export async function stageAuditedHeadAboveView(h: MathPeerTestHarness) {
+    await h.scenario.preDisputeSetup();
+    const forkId = h.activeForkId!;
+    const { auditorIndex, headHeight, restoreGossip } =
+        await stageBlindPendingAuditor(h, [0, 1, 2]);
+    await h.control(h.getPeer(0)).dispute.setForceExit(true).request();
+    const { dispute, auditingData } =
+        await h.dispute.fetchConstructedDispute(0);
+    dispute.postedAuditingData = true;
+    const headSnapshot = await snapshotAt(h, 0, headHeight);
+    const run = await h.dispute.auditDispute(
+        auditorIndex,
+        dispute,
+        auditingData
+    );
+    return {
+        forkId,
+        auditorIndex,
+        headHeight,
+        headSnapshot,
+        dispute,
+        run,
+        restoreGossip
     };
 }
 
@@ -1683,24 +1882,23 @@ export async function assertColludersKilledByConflict(
     expect(reduction.disputers).to.deep.equal([auditor.address]);
 }
 
-/** Until `auditorIndex` stores `head` (the block a dispute it audits proved), at its height. */
-export async function waitUntilAuditorStoredBlockAt(
+/** Until `auditorIndex` keeps `head` (the block a dispute it audits proved) as proof evidence at its height. */
+export async function waitUntilAuditorKeptBlockAt(
     h: MathPeerTestHarness,
     auditorIndex: number,
     forkId: ForkId,
     head: { hash: string; encodedBlock: string } | null
 ): Promise<void> {
-    if (!head) throw new Error("waitUntilAuditorStoredBlockAt: no head block");
+    if (!head) throw new Error("waitUntilAuditorKeptBlockAt: no head block");
     const height = Number(
         Codec.decode(head.encodedBlock, Type.Block).transaction.header
             .transactionCnt
     );
     await waitFor(
         async () =>
-            (await h
-                .control(h.getPeer(auditorIndex))
-                .query.getBlockHashAt(forkId, height)
-                .request()) === head.hash,
+            (
+                await evidenceBlockHashesAt(h, auditorIndex, forkId, height)
+            ).includes(head.hash),
         h.event.protocolEventTimeoutMs()
     );
 }
@@ -2241,9 +2439,13 @@ export async function runConcurrentVirtualFinalAudits(
         expect(
             await h.control(auditor).query.getNextBlockHeight(forkId).request()
         ).to.equal(2);
+        // the first proof's final block is kept as evidence, not history
         expect(
             await h.control(auditor).query.getBlockHashAt(forkId, 2).request()
-        ).to.equal(
+        ).to.equal(null);
+        expect(
+            await evidenceBlockHashesAt(h, auditor.index, forkId, 2)
+        ).to.include(
             Block.fromBlockConfirmation(
                 (forgedFirst
                     ? forged.dispute

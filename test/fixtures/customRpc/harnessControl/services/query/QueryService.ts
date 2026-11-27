@@ -56,6 +56,19 @@ export class QueryService extends ANetworkRpcService<QueryRpcMethods> {
         };
     }
 
+    /** The distinct blocks at the coordinate that proof evidence of `forkId` holds in its hops (final blocks and their support). */
+    getEvidenceBlocksAt(forkId: ForkId, height: BlockHeight): Block[] {
+        const blocks = this.storage.proofEvidence
+            .getForkEvidence(forkId)
+            .flatMap(({ proof }) => proof.hops)
+            .flatMap(({ milestone }) => milestone.blockConfirmations)
+            .map((confirmation) => Block.fromBlockConfirmation(confirmation))
+            .filter((block) => block.height === height);
+        return [
+            ...new Map(blocks.map((block) => [block.hash, block])).values()
+        ];
+    }
+
     /** Project a live `Block` into a serializable bundle for the harness. */
     toBlockBundle(block: Block): BlockBundle {
         return {

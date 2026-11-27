@@ -1562,10 +1562,13 @@ export async function walkAcrossAnchorAdvance(
                     }
                 if (!walk)
                     throw new Error("The selected walk tier was not reached");
-                const persisted = am.persistVerifiedProof(
+                const persisted = am.persistAuditEvidence(
+                    `0x${"11".repeat(32)}`,
+                    forkId,
                     proof,
                     evidence,
-                    walk
+                    walk,
+                    { latest: { snapshot: walk.finalizedSnapshot } }
                 );
                 return {
                     valid: walk.valid,

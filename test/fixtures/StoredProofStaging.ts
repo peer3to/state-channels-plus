@@ -4,7 +4,10 @@ import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncPayload } from "@/types";
 import type { ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
-import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
+import {
+    evidenceBlockHashesAt,
+    stageBlindPendingAuditor
+} from "@test/fixtures/DisputeAuditStaging";
 import {
     proofHeights,
     servedPayload,
@@ -242,9 +245,9 @@ async function syncWithInstallInterrupted(
 }
 
 /**
- * A pending auditor below the head audits a dispute: the audit verifies and
- * stores the head, a later final point than the auditor's own. The stored
- * proof is unchanged.
+ * A pending auditor below the head audits a dispute: the audit verifies the
+ * head, a later final point than the auditor's own, and keeps it as proof
+ * evidence. The stored proof is unchanged.
  */
 export async function assertAuditKeepsStoredProof(
     h: MathPeerTestHarness
@@ -270,14 +273,11 @@ export async function assertAuditKeepsStoredProof(
     );
     const after = await storedProofView(h, auditorIndex, forkId);
 
-    // premise - the audit verified the head and stored it
+    // premise - the audit verified the head and kept it as evidence
     expect(
-        await h
-            .control(h.getPeer(auditorIndex))
-            .query.getBlockHashAt(forkId, headHeight)
-            .request(),
-        "the audit stored the verified head"
-    ).to.not.equal(null);
+        await evidenceBlockHashesAt(h, auditorIndex, forkId, headHeight),
+        "the audit kept the verified head"
+    ).to.have.length(1);
     expect(after).to.deep.equal(before);
 }
 

@@ -1321,7 +1321,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
     ): SyncReplayBase | undefined {
         const finalized = walk.finalizedSnapshot;
         const ownState =
-            this.p2pManager.stateManager.storage.stateMachineStates.getStateMachineState(
+            this.p2pManager.stateManager.storage.getStateIncludingEvidence(
                 finalized.stateMachineStateHash
             );
         const servedState = syncPayload.latestFinalizedEncodedState as Bytes;
@@ -1400,7 +1400,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                         syncPayload.stateProof,
                         evidence,
                         walk,
-                        { replayFromIndex: base.fromIndex, advanceView: true }
+                        { replayFromIndex: base.fromIndex }
                     );
                 if (!persistProof) return { shouldAbort: true, isStale: false };
                 // the stored proof the walk proves, written with the history

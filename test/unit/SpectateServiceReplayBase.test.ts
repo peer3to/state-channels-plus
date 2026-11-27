@@ -1,3 +1,10 @@
+import StateSnapshot from "@/models/StateSnapshot";
+import { Codec, Type } from "@/utils";
+import {
+    holdsEvidenceState,
+    holdsState,
+    stageAuditedHeadAboveView
+} from "@test/fixtures/DisputeAuditStaging";
 import {
     latestHeight,
     proofHeights,
@@ -64,6 +71,49 @@ describe("Unit: SpectateService replay base", function () {
                 .query.getLatestStateMachineStateHash(forkId)
                 .request()
         );
+    });
+
+    it("requester kept the served base's state only as audit evidence and is served other bytes for it → it replays from the evidence state and syncs, the responder is not blacklisted", async function () {
+        const h = TestSession.getHarness();
+        const staged = await stageAuditedHeadAboveView(h);
+        expect(staged.run).to.include({ outcome: "returned", isValid: true });
+        await staged.restoreGossip();
+        const requester = h.getPeer(staged.auditorIndex);
+        const responder = h.getPeer(0);
+        const payload = await servedPayload(h, responder, staged.forkId);
+        // premise - the served base is the head the audit kept as evidence
+        expect(
+            StateSnapshot.from(payload.milestoneSnapshots.at(-1)!).hash
+        ).to.equal(staged.headSnapshot.hash);
+        expect(
+            await holdsState(h, staged.auditorIndex, staged.headSnapshot)
+        ).to.equal(false);
+        expect(
+            await holdsEvidenceState(
+                h,
+                staged.auditorIndex,
+                staged.headSnapshot
+            )
+        ).to.equal(true);
+        const otherBytes = { ...payload, latestFinalizedEncodedState: "0x01" };
+        await h
+            .control(responder)
+            .stub.stubSpectatePayload(
+                Codec.encode(otherBytes, Type.SyncPayload) as string
+            )
+            .request();
+
+        const result = await syncFromResponder(
+            h,
+            requester,
+            responder,
+            staged.forkId,
+            staged.headHeight
+        );
+        await h.control(responder).stub.restoreSpectateStaleProof().request();
+
+        expect(result).to.include({ synced: true, blacklisted: false });
+        expect(result.rejections).to.deep.equal([]);
     });
 
     it("requester's latest height one below the served base height → the base is installed, then the sync reaches the tip", async function () {

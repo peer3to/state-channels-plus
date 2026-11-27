@@ -102,8 +102,6 @@ export enum ProofTier {
 
 type VerifiedProofOptions = {
     replayFromIndex?: number;
-    /** sync installs final history; a dispute replay only persists */
-    advanceView?: boolean;
 };
 
 /** One tier's walk of a proof. */
@@ -137,6 +135,8 @@ class AgreementManager {
     private storedProofWrites: Promise<void> = Promise.resolve();
     // the queued advance that has not started yet: a later request joins it
     private queuedAdvance?: { forkId: ForkId; done: Promise<void> };
+    // the fork of the latest chain anchor this peer applied
+    private anchorForkId?: ForkId;
     // the upper inbound hashes of hops from `forkId`'s genesis whose run event
     // recovery could not supply: a later signer on such a hop is stripped
     // without another chain log scan. Reset on another fork.
@@ -475,7 +475,11 @@ class AgreementManager {
         return built && this.toFinalProof(forkId, built);
     }
 
-    /** Proves exactly this final point, retaining later stored virtual votes without advancing the view. */
+    /**
+     * Proves exactly this final point, retaining later stored virtual votes
+     * without advancing the view. Without that proof over block history it
+     * comes from evidence of `forkId`.
+     */
     public async tryBuildFinalProofAt(
         forkId: ForkId,
         finalHeight: BlockHeight
@@ -486,35 +490,18 @@ class AgreementManager {
             finalHeight <= start.snapshot.blockHeight
         )
             return undefined;
-        const milestones = await this.buildThresholdMilestones(
-            forkId,
-            finalHeight,
-            start.snapshot,
-            this.getStartHeight(start, 1),
-            true
+        return (
+            (await this.tryBuildHistoryFinalProofAt(
+                forkId,
+                finalHeight,
+                start
+            )) ??
+            (await this.tryBuildEvidenceFinalProofAt(
+                forkId,
+                finalHeight,
+                start
+            ))
         );
-        const last = milestones.at(-1);
-        if (
-            !last ||
-            this.getSnapshotFromMilestone(last)?.blockHeight !== finalHeight
-        )
-            return undefined;
-        const built = await this.completeStateProof(
-            forkId,
-            finalHeight,
-            start,
-            milestones.map((milestone) => ({
-                milestone,
-                snapshot: this.getRequiredMilestoneSnapshot(
-                    forkId,
-                    milestone,
-                    start
-                )
-            }))
-        );
-        if (built.finalizedSnapshot.blockHeight !== finalHeight)
-            return undefined;
-        return this.toWalkInput(forkId, built.stateProof, built.evidence);
     }
 
     /**
@@ -584,8 +571,8 @@ class AgreementManager {
 
     /**
      * The walk evidence for a proof this peer did not build: the fork
-     * genesis and each milestone's snapshot from storage by its first block's
-     * commitment. An entry the walk never reads (a dropped or anchor-holding
+     * genesis and each milestone's snapshot from storage (else from proof
+     * evidence) by its first block's commitment. An entry the walk never reads (a dropped or anchor-holding
      * run) is filled with the genesis when storage lacks it; a read entry
      * that is missing makes that walk report a snapshot mismatch.
      */
@@ -602,7 +589,7 @@ class AgreementManager {
                         first && Block.tryFromBlockConfirmation(first);
                     const snapshot =
                         block &&
-                        this.storage.stateSnapshots.getStateSnapshotByHash(
+                        this.storage.getSnapshotIncludingEvidence(
                             block.stateSnapshotHash
                         );
                     return (snapshot ?? genesis).toStruct();
@@ -617,32 +604,91 @@ class AgreementManager {
     }
 
     /**
-     * Persists what `walk` verified of `stateProof`: the start, and the blocks
-     * the walk checked (each kept milestone from its first block, the run
-     * holding the start from the start block, selected by position as the
-     * walk selects them) with the snapshots its threshold hops prove and a
-     * change point where a hop changes the set. The last milestone's blocks
-     * from `replayFromIndex` (the walk's tail by default), by block identity
-     * also where the proof repeats one earlier, are left to their own replay.
-     * When a verified block conflicts with a stored one nothing is stored
-     * (false). Signatures merge into stored blocks; nothing is overwritten.
+     * Keeps what an audit's accepted `walk` verified of `stateProof` as the
+     * audit evidence of `disputeHash`, outside block history: the start (the
+     * fork genesis without one), each threshold hop above it as received
+     * with the snapshot it proves, the walk's final point with
+     * `encodedFinalizedState` and the dispute's `latest` point with its
+     * state (`0x` when not held). No block, snapshot or change point is
+     * written. When a hop's final block conflicts with the block stored at
+     * its height or with a final block of other evidence of its fork,
+     * nothing is kept (false).
      */
-    public persistVerifiedProof(
+    public persistAuditEvidence(
+        disputeHash: Hash,
+        forkId: ForkId,
         stateProof: StateProofStruct,
         evidence: StateProofEvidence,
         walk: ProofTierWalk,
-        options?: VerifiedProofOptions
+        states: {
+            encodedFinalizedState?: Bytes;
+            latest: { snapshot: StateSnapshot; encodedState?: Bytes };
+        }
     ): boolean {
-        return (
-            this.stageVerifiedProof(stateProof, evidence, walk, options)?.() ??
-            false
-        );
+        const start = walk.start ?? this.getGenesisSnapshot(forkId);
+        const hops = this.selectReceivedHops(stateProof, evidence, walk, start);
+        const conflicts = hops.some(({ milestone }) => {
+            const block = Block.fromBlockConfirmation(
+                milestone.blockConfirmations[0]
+            );
+            const stored = this.storage.blocks.getBlock(forkId, block.height);
+            return [
+                ...(stored ? [stored] : []),
+                ...this.getEvidenceFinalBlocks(forkId, block.height)
+            ].some((other) => other.hash !== block.hash);
+        });
+        if (conflicts) return false;
+        this.storage.proofEvidence.setAuditEvidence(disputeHash, {
+            forkId,
+            proof: {
+                anchorSnapshot: start.toStruct(),
+                hops,
+                finalizedSnapshot: walk.finalizedSnapshot.toStruct(),
+                encodedFinalizedState: states.encodedFinalizedState ?? "0x"
+            },
+            latestSnapshot: states.latest.snapshot.toStruct(),
+            encodedLatestState: states.latest.encodedState ?? "0x"
+        });
+        return true;
     }
 
     /**
-     * `persistVerifiedProof` in two steps: the conflict check now (undefined
-     * on a conflict), and the write for later. The write checks again and
-     * stores nothing on a conflict found then (false).
+     * The chain anchor is now `anchor`: when it left the fork of the anchor
+     * before it, that fork's proof evidence is dropped.
+     */
+    public dropLeftForkEvidence(anchor: StateSnapshot): void {
+        const left = this.anchorForkId;
+        this.anchorForkId = anchor.forkID;
+        if (left !== undefined && left !== anchor.forkID)
+            this.storage.proofEvidence.dropFork(left);
+    }
+
+    /** The final blocks (each hop's first block) at `height` that evidence of `forkId` holds. */
+    public getEvidenceFinalBlocks(
+        forkId: ForkId,
+        height: BlockHeight
+    ): Block[] {
+        return this.storage.proofEvidence
+            .getForkEvidence(forkId)
+            .flatMap(({ proof }) => proof.hops)
+            .map(({ milestone }) =>
+                Block.fromBlockConfirmation(milestone.blockConfirmations[0])
+            )
+            .filter((block) => block.height === height);
+    }
+
+    /**
+     * Persists what `walk` verified of a synced `stateProof`: the start, and
+     * the blocks the walk checked (each kept milestone from its first block,
+     * the run holding the start from the start block, selected by position
+     * as the walk selects them) with the snapshots its threshold hops prove
+     * and a change point where a hop changes the set. The last milestone's
+     * blocks from `replayFromIndex` (the walk's tail by default), by block
+     * identity also where the proof repeats one earlier, are left to their
+     * own replay. Signatures merge into stored blocks; nothing is
+     * overwritten. The conflict check runs now (undefined on a conflict),
+     * the write later. The write checks again and stores nothing on a
+     * conflict found then (false). The final history advances the view.
      */
     public stageVerifiedProof(
         stateProof: StateProofStruct,
@@ -696,8 +742,7 @@ class AgreementManager {
             for (const block of verified)
                 blocks.storeBlock(block, {
                     hash: block.hash,
-                    coordinates: block.coordinates,
-                    justPersist: !options?.advanceView
+                    coordinates: block.coordinates
                 });
             if (start) this.storage.stateSnapshots.storeStateSnapshot(start);
             // each proven hop: its snapshot, and a change point where the set changes
@@ -739,6 +784,7 @@ class AgreementManager {
         );
     }
 
+    /** The snapshot of the proof's latest block (held, else from proof evidence); the fork genesis for an empty proof. */
     public getLatestSnapshotFromStateProof(
         stateProof: StateProofStruct,
         forkId: ForkId
@@ -746,10 +792,9 @@ class AgreementManager {
         const latestBlock = this.getLatestBlockFromStateProof(stateProof);
         if (!latestBlock) return this.getGenesisSnapshot(forkId);
 
-        const latestSnapshot =
-            this.storage.stateSnapshots.getStateSnapshotByHash(
-                latestBlock.stateSnapshotHash
-            );
+        const latestSnapshot = this.storage.getSnapshotIncludingEvidence(
+            latestBlock.stateSnapshotHash
+        );
 
         if (!latestSnapshot) {
             throw new Error(
@@ -801,6 +846,7 @@ class AgreementManager {
         );
     }
 
+    /** The reduced head's snapshot and state (held, else from proof evidence) with the inbound run the reduce applied. */
     public async getReduceData(
         forkId: ForkId,
         reducedOutput: ReduceOutputStruct
@@ -834,13 +880,13 @@ class AgreementManager {
         } else {
             // Normal case - use the block's state snapshot
             reducedLatestStateSnapshot =
-                this.storage.stateSnapshots.getStateSnapshotByHash(
+                this.storage.getSnapshotIncludingEvidence(
                     reducedOutput.latestBlock.stateSnapshotHash
                 );
             // Get the corresponding stateMachineState
             reducedLatestEncodedStateMachineState =
                 reducedLatestStateSnapshot &&
-                this.storage.stateMachineStates.getStateMachineState(
+                this.storage.getStateIncludingEvidence(
                     reducedLatestStateSnapshot.stateMachineStateHash
                 );
             // a node behind a non-genesis reduced head never received its
@@ -1117,21 +1163,7 @@ class AgreementManager {
         walk: ProofTierWalk,
         start: StateSnapshot
     ): Promise<StoredProofHop[] | undefined> {
-        const lastIndex = stateProof.milestones.length - 1;
-        const hops: StoredProofHop[] = [];
-        stateProof.milestones.forEach((milestone, i) => {
-            // the unfinalized run from genesis block zero proves no hop
-            if (i === lastIndex && walk.replayBlockIndex === 0) return;
-            const first = Block.tryFromBlockConfirmation(
-                milestone.blockConfirmations[0]
-            );
-            if (
-                !first ||
-                (!start.isGenesis && first.height <= start.blockHeight)
-            )
-                return;
-            hops.push({ milestone, snapshot: evidence.milestoneSnapshots[i] });
-        });
+        const hops = this.selectReceivedHops(stateProof, evidence, walk, start);
         const last = hops.at(-1);
         if (!last) return hops;
         const previous = hops.at(-2)?.snapshot;
@@ -1154,6 +1186,31 @@ class AgreementManager {
             },
             snapshot: last.snapshot
         };
+        return hops;
+    }
+
+    /** The threshold hops of a verified `stateProof` above `start`, each milestone as received with its snapshot. */
+    private selectReceivedHops(
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        walk: ProofTierWalk,
+        start: StateSnapshot
+    ): StoredProofHop[] {
+        const lastIndex = stateProof.milestones.length - 1;
+        const hops: StoredProofHop[] = [];
+        stateProof.milestones.forEach((milestone, i) => {
+            // the unfinalized run from genesis block zero proves no hop
+            if (i === lastIndex && walk.replayBlockIndex === 0) return;
+            const first = Block.tryFromBlockConfirmation(
+                milestone.blockConfirmations[0]
+            );
+            if (
+                !first ||
+                (!start.isGenesis && first.height <= start.blockHeight)
+            )
+                return;
+            hops.push({ milestone, snapshot: evidence.milestoneSnapshots[i] });
+        });
         return hops;
     }
 
@@ -1214,6 +1271,92 @@ class AgreementManager {
                 )
             }))
         );
+    }
+
+    /** `tryBuildFinalProofAt` over executed block history from `start`. */
+    private async tryBuildHistoryFinalProofAt(
+        forkId: ForkId,
+        finalHeight: BlockHeight,
+        start: ProofStart
+    ): Promise<ProofWalkInputStruct | undefined> {
+        const milestones = await this.buildThresholdMilestones(
+            forkId,
+            finalHeight,
+            start.snapshot,
+            this.getStartHeight(start, 1),
+            true
+        );
+        const last = milestones.at(-1);
+        if (
+            !last ||
+            this.getSnapshotFromMilestone(last)?.blockHeight !== finalHeight
+        )
+            return undefined;
+        const built = await this.completeStateProof(
+            forkId,
+            finalHeight,
+            start,
+            milestones.map((milestone) => ({
+                milestone,
+                snapshot: this.getRequiredMilestoneSnapshot(
+                    forkId,
+                    milestone,
+                    start
+                )
+            }))
+        );
+        if (built.finalizedSnapshot.blockHeight !== finalHeight)
+            return undefined;
+        return this.toWalkInput(forkId, built.stateProof, built.evidence);
+    }
+
+    /**
+     * `tryBuildFinalProofAt` from evidence of `forkId`: a record's hops up to
+     * the one whose final block is at `finalHeight`, those wholly below
+     * `start` left out, when they prove exactly that point from `start`.
+     */
+    private async tryBuildEvidenceFinalProofAt(
+        forkId: ForkId,
+        finalHeight: BlockHeight,
+        start: ProofStart
+    ): Promise<ProofWalkInputStruct | undefined> {
+        const startHeight = this.getStartHeight(start);
+        for (const { proof } of this.storage.proofEvidence.getForkEvidence(
+            forkId
+        )) {
+            const end = proof.hops.findIndex(
+                ({ snapshot }) =>
+                    StateSnapshot.from(snapshot).blockHeight === finalHeight
+            );
+            if (end === -1) continue;
+            const hops = proof.hops
+                .slice(0, end + 1)
+                .filter(
+                    ({ milestone }) =>
+                        !start.canUseOnChainSnapshot ||
+                        this.getLastBlockFromMilestone(milestone)!.height >=
+                            startHeight
+                );
+            const stateProof = { milestones: hops.map((hop) => hop.milestone) };
+            const evidence: StateProofEvidence = {
+                genesisStateSnapshotData:
+                    this.getGenesisSnapshot(forkId).snapshotData,
+                milestoneSnapshots: hops.map((hop) => hop.snapshot)
+            };
+            const walk = await this.walkFromStart(
+                forkId,
+                stateProof,
+                evidence,
+                start.snapshot
+            );
+            if (
+                walk.valid &&
+                StateSnapshot.from(walk.finalizedSnapshot).blockHeight ===
+                    finalHeight
+            )
+                return this.toWalkInput(forkId, stateProof, evidence);
+        }
+        return undefined;
     }
 
     private async belowAnchorError(
@@ -1583,7 +1726,7 @@ class AgreementManager {
         return milestones;
     }
 
-    /** A contiguous stored run, including audit evidence above the active view. */
+    /** A contiguous stored run, including a replayed dispute tail above the active view. */
     private *storedBlocksUp(
         forkId: ForkId,
         height: BlockHeight
@@ -1597,8 +1740,8 @@ class AgreementManager {
 
     /**
      * Stored blocks from `height` down to 0. Unlike the view's iterator it
-     * also starts above the view: a block an audit verified is stored without
-     * moving the view, and it can be the final point a proof proves.
+     * also starts above the view: a dispute replay stores its tail without
+     * moving the view, and a tail block can be the final point a proof proves.
      */
     private *storedBlocksDown(
         forkId: ForkId,

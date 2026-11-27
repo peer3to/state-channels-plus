@@ -1,17 +1,31 @@
 import Block from "@/models/Block";
+import StateSnapshot from "@/models/StateSnapshot";
 import { Status } from "@/types";
-import { DisputeFraudProofType } from "@/types/sol-enums";
+import {
+    DisputeFraudProofType,
+    FraudProofType,
+    toSolidityFraudProofType
+} from "@/types/sol-enums";
 import type { Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { BLOCK_REPLAY_FAULT_MESSAGE } from "@test/fixtures/customRpc/harnessControl/services/stub/StubService";
 import {
     activeView,
+    evidenceBlockHashesAt,
+    holdsEvidenceState,
     holdsState,
     snapshotAt,
+    stageAuditedHeadAboveView,
+    stageBlindPendingAuditor,
+    stageForgedSupportBelowHonestTail,
     stageFrozenViewBehindDisputeTail,
     stageLaggingParticipantBehindTail,
-    stagePendingAuditorBehindJoin
+    stagePendingAuditorBehindJoin,
+    stagePendingJoinerMissingHopBase,
+    stageSideReplayBelowHonestTail,
+    waitUntilAuditorKeptBlockAt
 } from "@test/fixtures/DisputeAuditStaging";
+import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -383,6 +397,351 @@ describe("Unit: DisputeValidationService replay persistence", function () {
         });
     });
 
+    // Support a proof walk checks but does not prove final is never stored as
+    // executed history: a later replay never meets it there.
+    describe("unexecuted support", function () {
+        it("U135: a dispute carrying a forged block above its tail is audited, then the honest dispute whose tail replays the real block there → the honest dispute is valid with no counter, history holds the real block, the forged one is neither history nor evidence", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportBelowHonestTail(h);
+            const auditor = h.control(h.getPeer(staged.frozenIndex)).query;
+
+            await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.forgedDispute
+            );
+            expect(
+                await auditor
+                    .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                    .request(),
+                "the forged support is not executed history"
+            ).to.be.null;
+            // the run holding the auditor's start proves no hop above it
+            expect(
+                await evidenceBlockHashesAt(
+                    h,
+                    staged.frozenIndex,
+                    staged.forkId,
+                    staged.shadowed.height
+                )
+            ).to.deep.equal([]);
+
+            const honest = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+
+            expect(honest).to.include({ outcome: "returned", isValid: true });
+            expect(honest.storedProof).to.equal(undefined);
+            expect(
+                (
+                    await auditor
+                        .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                        .request()
+                )?.hash
+            ).to.equal(staged.shadowed.hash);
+        });
+
+        it("U135: the honest dispute is audited first, then the dispute carrying a forged block at its tail height → history keeps the real block, a second audit of the honest dispute stays valid with no counter", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportBelowHonestTail(h);
+            const auditor = h.control(h.getPeer(staged.frozenIndex)).query;
+            const first = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+            expect(first).to.include({ outcome: "returned", isValid: true });
+
+            await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.forgedDispute
+            );
+
+            expect(
+                (
+                    await auditor
+                        .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                        .request()
+                )?.hash
+            ).to.equal(staged.shadowed.hash);
+            const again = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+            expect(again).to.include({ outcome: "returned", isValid: true });
+            expect(again.storedProof).to.equal(undefined);
+        });
+
+        it("U143: a dispute carrying a block forged by the honest tail block's own author is audited, then the honest dispute → the honest dispute is valid with no dispute counter, history holds the real block, no double-sign proof comes from unexecuted support", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageForgedSupportBelowHonestTail(h, {
+                forger: "shadowedAuthor"
+            });
+            const auditor = h.control(h.getPeer(staged.frozenIndex)).query;
+            expect(staged.forged.author).to.equal(staged.shadowed.author);
+
+            await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.forgedDispute
+            );
+            const honest = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+
+            expect(honest).to.include({ outcome: "returned", isValid: true });
+            expect(honest.storedProof).to.equal(undefined);
+            expect(
+                (
+                    await auditor
+                        .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                        .request()
+                )?.hash
+            ).to.equal(staged.shadowed.hash);
+        });
+    });
+
+    // A replayed dispute tail is executed history: a later replay meets it
+    // at its height.
+    describe("replayed tail of another dispute", function () {
+        it("a side dispute replays a re-signed copy of the honest tail block at a free height, then the honest dispute replays the real block there → the honest dispute is valid with no dispute counter, the copy's author is proven a double signer, and the honest latest state is held for reduction", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageSideReplayBelowHonestTail(h);
+            const auditor = h.control(h.getPeer(staged.frozenIndex)).query;
+            const side = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.sideDispute
+            );
+            // premise - the side replay stored its copy at the free height
+            expect(side).to.include({ outcome: "returned", isValid: true });
+            expect(
+                (
+                    await auditor
+                        .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                        .request()
+                )?.hash
+            ).to.equal(staged.copy.hash);
+
+            const honest = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+
+            expect(honest).to.include({ outcome: "returned", isValid: true });
+            expect(honest.disputeFraudProofCount).to.equal(0);
+            expect(
+                await auditor
+                    .getFraudProofType(staged.shadowed.author)
+                    .request()
+            ).to.equal(
+                String(toSolidityFraudProofType(FraudProofType.BlockDoubleSign))
+            );
+            expect(
+                await holdsState(
+                    h,
+                    staged.frozenIndex,
+                    await snapshotAt(
+                        h,
+                        staged.disputerIndex,
+                        staged.shadowed.height
+                    )
+                ),
+                "the honest dispute's latest state is held for reduction"
+            ).to.equal(true);
+        });
+    });
+
+    // What an audit verifies but does not execute is kept as its dispute's
+    // proof evidence: every reader of that material finds it there.
+    describe("audit evidence readers", function () {
+        it("a threshold-final head an audit verified and never executed → block history holds neither its block, snapshot nor state; the evidence holds the block and the state", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageAuditedHeadAboveView(h);
+            const auditor = h.control(h.getPeer(staged.auditorIndex)).query;
+
+            expect(staged.run).to.include({
+                outcome: "returned",
+                isValid: true
+            });
+            expect(staged.run.disputeFraudProofCount).to.equal(0);
+            expect(
+                await auditor
+                    .getBlockHashAt(staged.forkId, staged.headHeight)
+                    .request()
+            ).to.equal(null);
+            expect(
+                await auditor
+                    .getStateSnapshotStructByHash(
+                        staged.headSnapshot.hash as Hash
+                    )
+                    .request()
+            ).to.equal(null);
+            expect(
+                await holdsState(h, staged.auditorIndex, staged.headSnapshot)
+            ).to.equal(false);
+            expect(
+                await evidenceBlockHashesAt(
+                    h,
+                    staged.auditorIndex,
+                    staged.forkId,
+                    staged.headHeight
+                )
+            ).to.have.length(1);
+            expect(
+                await holdsEvidenceState(
+                    h,
+                    staged.auditorIndex,
+                    staged.headSnapshot
+                )
+            ).to.equal(true);
+        });
+
+        it("a head an audit kept only as evidence → the walk evidence of that dispute's proof ends at the head's snapshot", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageAuditedHeadAboveView(h);
+
+            const encodedSnapshot = await h.execOnHost(
+                h.getPeer(staged.auditorIndex),
+                (sm, args, modules) =>
+                    modules.Codec.encode(
+                        sm.agreementManager
+                            .getStoredEvidence(args.forkId, args.stateProof)
+                            .milestoneSnapshots.at(-1)!,
+                        modules.Type.StateSnapshot
+                    ) as string,
+                {
+                    forkId: staged.forkId,
+                    stateProof: staged.dispute.input.stateProof
+                }
+            );
+
+            expect(
+                StateSnapshot.from(
+                    Codec.decode(encodedSnapshot, Type.StateSnapshot)
+                ).hash
+            ).to.equal(staged.headSnapshot.hash);
+        });
+
+        it("a head an audit kept only as evidence → that dispute's latest snapshot and state for a final dispute are the head's", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageAuditedHeadAboveView(h);
+
+            const latest = await h.execOnHost(
+                h.getPeer(staged.auditorIndex),
+                (sm, args, modules) => {
+                    const snapshot =
+                        sm.agreementManager.getLatestSnapshotFromStateProof(
+                            args.stateProof,
+                            args.forkId
+                        );
+                    return {
+                        encodedSnapshot: modules.Codec.encode(
+                            snapshot.toStruct(),
+                            modules.Type.StateSnapshot
+                        ) as string,
+                        hasState:
+                            sm.storage.getStateIncludingEvidence(
+                                snapshot.stateMachineStateHash
+                            ) !== undefined
+                    };
+                },
+                {
+                    forkId: staged.forkId,
+                    stateProof: staged.dispute.input.stateProof
+                }
+            );
+
+            expect(
+                StateSnapshot.from(
+                    Codec.decode(latest.encodedSnapshot, Type.StateSnapshot)
+                ).hash
+            ).to.equal(staged.headSnapshot.hash);
+            expect(latest.hasState).to.equal(true);
+        });
+
+        it("the same proof audited again with posted data that lacks the finalized state → the replay base state comes from the first audit's evidence: valid, no counter", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stagePendingJoinerMissingHopBase(h);
+            const first = await h.dispute.auditDispute(
+                staged.charlieIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+            expect(first).to.include({ outcome: "returned", isValid: true });
+            // premise - the base state is evidence only
+            expect(
+                await holdsState(h, staged.charlieIndex, staged.baseSnapshot)
+            ).to.equal(false);
+            const auditingData = Codec.decode(
+                Codec.encode(staged.auditingData, Type.DisputeAuditingData),
+                Type.DisputeAuditingData
+            );
+            auditingData.latestFinalizedStateStateMachineState = "0x";
+            const dispute = Codec.decode(
+                Codec.encode(staged.dispute, Type.Dispute),
+                Type.Dispute
+            );
+            dispute.input.disputeAuditingDataHash = hash(
+                Codec.encode(auditingData, Type.DisputeAuditingData)
+            );
+
+            const again = await h.dispute.auditDispute(
+                staged.charlieIndex,
+                dispute,
+                auditingData
+            );
+
+            expect(again).to.include({ outcome: "returned", isValid: true });
+            expect(again.disputeFraudProofCount).to.equal(0);
+        });
+
+        it("the window reduces to a head the auditor kept only as audit evidence → its reduce data is found", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup({
+                timeConfig: { evidenceTime: 15 }
+            });
+            const forkId = h.activeForkId!;
+            const { auditorIndex } = await stageBlindPendingAuditor(
+                h,
+                [0, 1, 2]
+            );
+            await Promise.all(
+                [0, 1, 2].map((index) => h.rpcStub.suppressDisputeKill(index))
+            );
+            await h.dispute.suppressDisputeInitiation([1, 2]);
+            const head = (await h
+                .control(h.getPeer(0))
+                .query.getLatestBlockInfo(forkId)
+                .request())!;
+            await postSelfRemovalDispute(h, 0, () => {}, { malicious: false });
+            await waitUntilAuditorKeptBlockAt(h, auditorIndex, forkId, head);
+            // premise - the auditor holds no snapshot of the head
+            expect(
+                await h
+                    .control(h.getPeer(auditorIndex))
+                    .query.getStateSnapshotStructByHash(
+                        head.stateSnapshotHash as Hash
+                    )
+                    .request()
+            ).to.equal(null);
+
+            const reduce = await h.query.reduceData(forkId, auditorIndex);
+
+            expect(reduce.reducedHeight).to.equal(
+                Number(
+                    Codec.decode(head.encodedBlock, Type.Block).transaction
+                        .header.transactionCnt
+                )
+            );
+            expect(reduce.threw).to.equal("");
+            expect(reduce.blockCount).to.not.equal(null);
+        });
+    });
+
     // An internal failure while replaying is no verdict on the peer's data.
     describe("internal replay failure", function () {
         it("U91: dispute replay fails internally at the second tail block after the first replayed -> the audit throws, no counter; the failed block is not stored, the first stays persisted", async function () {
@@ -580,12 +939,12 @@ describe("Unit: DisputeValidationService replay persistence", function () {
                 before
             );
             expect(
-                await holdsState(
+                await holdsEvidenceState(
                     h,
                     staged.pendingIndex,
                     await snapshotAt(h, 0, head.height)
                 ),
-                "the dispute's latest state is available for reduction"
+                "the dispute's latest state is kept as evidence for reduction"
             ).to.equal(true);
         });
     });

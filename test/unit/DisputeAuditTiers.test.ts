@@ -11,6 +11,7 @@ import {
     craftInvalidLinkedBlock,
     postForgedFinalHopDispute,
     hasLocalAnchor,
+    holdsEvidenceState,
     holdsState,
     localFinalizedHeight,
     postSnapshotPastLaggingMirrors,
@@ -898,9 +899,14 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
             expect(run).to.include({ outcome: "returned", isValid: true });
             expect(run.disputeFraudProofCount).to.equal(0);
-            // the verified posted state is kept and the tail replayed from it
+            // the verified posted state is kept as evidence and the tail
+            // replayed from it
             expect(
-                await holdsState(h, staged.charlieIndex, staged.baseSnapshot)
+                await holdsEvidenceState(
+                    h,
+                    staged.charlieIndex,
+                    staged.baseSnapshot
+                )
             ).to.equal(true);
             expect(
                 await holdsState(
