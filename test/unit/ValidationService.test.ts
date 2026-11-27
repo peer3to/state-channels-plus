@@ -901,6 +901,99 @@ describe("Unit: ValidationService", function () {
             );
         });
 
+        it("linked conflict below the executed head by a different author → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+
+            const [stored, prevBlock, head] = await Promise.all([
+                h.control(observer).query.getBlockByHeight(forkId, 1).request(),
+                h.control(observer).query.getBlockByHeight(forkId, 0).request(),
+                h.control(observer).query.getLatestBlockHeight(forkId).request()
+            ]);
+            // premise - the taken height is below the executed head
+            expect(head).to.be.greaterThan(1);
+            const other = h.peers.find((p) => p.address !== stored!.author)!;
+            const encoded = await factory.buildAndEncodeBlock(other.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: 1,
+                    participant: other.address as Address
+                },
+                previousBlockHash: prevBlock!.hash
+            });
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(encoded)
+                .request();
+
+            expect(r.resultName).to.equal("DISPUTE");
+            expect(r.disputedForkIds).to.deep.equal([forkId]);
+            expect(r.fraudProofType).to.equal(
+                solProofType(FraudProofType.BlockInvalidStateTransition)
+            );
+        });
+
+        it("the leader's real next block over another author's block a dispute replay persisted above the executed head → no conflict: SUCCESS, no fraud proof, no dispute", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const { leader, observer, authored, startHeight, forkId } =
+                await h.transition.authorNextBlockOffWireWait();
+            const head = await h
+                .control(observer)
+                .query.getBlockByHeight(forkId, startHeight - 1)
+                .request();
+            const sideAuthor = h.peers.find(
+                (p) =>
+                    p.address !== leader.address && p.index !== observer.index
+            )!;
+            // another author's block at the next height, linked to the head,
+            // stored without moving the head, as a side dispute's replay does
+            const side = await factory.buildAndEncodeBlock(sideAuthor.signer, {
+                header: {
+                    channelId: h.channelId,
+                    forkId,
+                    transactionCnt: startHeight,
+                    participant: sideAuthor.address as Address
+                },
+                previousBlockHash: head!.hash
+            });
+            await h
+                .control(observer)
+                .validation.storeBlockFixture(side, { justPersist: true })
+                .request();
+            // premise - the side block sits above the executed head
+            expect(
+                await h
+                    .control(observer)
+                    .query.getLatestBlockHeight(forkId)
+                    .request()
+            ).to.equal(startHeight - 1);
+            expect(
+                (
+                    await h
+                        .control(observer)
+                        .query.getBlockByHeight(forkId, startHeight)
+                        .request()
+                )?.author
+            ).to.equal(sideAuthor.address);
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(
+                    authored!.encodedBlockConfirmation
+                )
+                .request();
+
+            expect(r.resultName).to.equal("SUCCESS");
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.fraudProofType).to.be.null;
+            expect(r.firedHooks).to.deep.equal([]);
+        });
+
         it("conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1); // block 0 stored

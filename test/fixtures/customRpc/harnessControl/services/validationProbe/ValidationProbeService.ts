@@ -336,14 +336,18 @@ export class ValidationProbeService extends ANetworkRpcService<
      * Store a block straight into block storage, bypassing validation. Used to
      * build a dispute-replay chain that is deliberately incomplete: a stored
      * parent whose snapshot (or whose snapshot's state) is absent.
+     * `justPersist` leaves the head where it is, as a dispute replay's write.
      */
-    public storeBlockFixture(encodedBlockConfirmation: string): {
+    public storeBlockFixture(
+        encodedBlockConfirmation: string,
+        options?: { justPersist?: boolean }
+    ): {
         hash: string;
     } {
         const block = Block.fromBlockConfirmation(
             Codec.decode(encodedBlockConfirmation, Type.BlockConfirmation)
         );
-        this.sm.storage.blocks.storeBlock(block);
+        this.sm.storage.blocks.storeBlock(block, options);
         return { hash: String(block.hash) };
     }
 

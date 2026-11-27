@@ -646,6 +646,51 @@ export async function stageSideReplayBelowHonestTail(h: MathPeerTestHarness) {
 }
 
 /**
+ * {@link stageFrozenViewBehindDisputeTail} plus, on the frozen peer, an
+ * authentic block at the height of the honest dispute's last tail block, by
+ * neither that block's author nor the frozen peer, linked to the tail block
+ * before it, committing no state transition result, and persisted without moving the frozen view: what a side
+ * dispute's replay leaves at a height the view leaves free. Returns the side
+ * block and the real block it shadows.
+ */
+export async function stagePersistedSideBlockAtHonestTail(
+    h: MathPeerTestHarness
+) {
+    const staged = await stageFrozenViewBehindDisputeTail(h);
+    const run =
+        staged.dispute.input.stateProof.milestones.at(-1)!.blockConfirmations;
+    expect(
+        run.length,
+        "the last milestone is a final block and a two-block tail"
+    ).to.equal(3);
+    const [, real, shadowed] = run.map((confirmation) =>
+        Block.fromBlockConfirmation(confirmation)
+    );
+    const frozen = h.getPeer(staged.frozenIndex);
+    const author = h.peers.find(
+        (peer) =>
+            peer.address !== shadowed.author && peer.index !== frozen.index
+    )!;
+    const encodedSide = await buildAndEncodeBlock(author.signer, {
+        header: {
+            channelId: h.channelId,
+            forkId: staged.forkId,
+            transactionCnt: shadowed.height,
+            participant: author.address
+        },
+        previousBlockHash: real.hash
+    });
+    await h
+        .control(frozen)
+        .validation.storeBlockFixture(encodedSide, { justPersist: true })
+        .request();
+    const side = Block.fromBlockConfirmation(
+        Codec.decode(encodedSide, Type.BlockConfirmation)
+    );
+    return { ...staged, side, shadowed };
+}
+
+/**
  * {@link stageBlindPendingAuditor} with authors 0-2 and peer 0's force-exit
  * dispute (its auditing data posted): the dispute ends at the head, a
  * threshold-final block the auditor never held. The auditor audits it.

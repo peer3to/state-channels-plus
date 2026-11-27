@@ -193,10 +193,16 @@ export class ValidationProbeRpcMethods extends ANetworkRpcMethods<ValidationProb
     }
 
     /** Store a block directly into block storage (dispute-replay fixtures). */
-    public storeBlockFixture(encodedBlockConfirmation: string): {
+    public storeBlockFixture(
+        encodedBlockConfirmation: string,
+        options?: { justPersist?: boolean }
+    ): {
         hash: string;
     } {
-        return this.service.storeBlockFixture(encodedBlockConfirmation);
+        return this.service.storeBlockFixture(
+            encodedBlockConfirmation,
+            options
+        );
     }
 
     /** Store a state snapshot directly into snapshot storage. */

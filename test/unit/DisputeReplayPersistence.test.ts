@@ -22,6 +22,7 @@ import {
     stageLaggingParticipantBehindTail,
     stagePendingAuditorBehindJoin,
     stagePendingJoinerMissingHopBase,
+    stagePersistedSideBlockAtHonestTail,
     stageSideReplayBelowHonestTail,
     waitUntilAuditorKeptBlockAt
 } from "@test/fixtures/DisputeAuditStaging";
@@ -540,6 +541,49 @@ describe("Unit: DisputeValidationService replay persistence", function () {
             ).to.equal(
                 String(toSolidityFraudProofType(FraudProofType.BlockDoubleSign))
             );
+            expect(
+                await holdsState(
+                    h,
+                    staged.frozenIndex,
+                    await snapshotAt(
+                        h,
+                        staged.disputerIndex,
+                        staged.shadowed.height
+                    )
+                ),
+                "the honest dispute's latest state is held for reduction"
+            ).to.equal(true);
+        });
+
+        it("another author's block a side replay persisted at a free height above the view, linked to the honest tail, then the honest dispute replays the real block there → the honest dispute is valid with no dispute counter, no proof against the real block's author, and the honest latest state is held for reduction", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stagePersistedSideBlockAtHonestTail(h);
+            const auditor = h.control(h.getPeer(staged.frozenIndex)).query;
+            // premise - the side block sits above the frozen view
+            expect(
+                (
+                    await auditor
+                        .getBlockByHeight(staged.forkId, staged.shadowed.height)
+                        .request()
+                )?.hash
+            ).to.equal(staged.side.hash);
+            expect(
+                await auditor.getLatestBlockHeight(staged.forkId).request()
+            ).to.equal(staged.frozenHeight);
+
+            const honest = await h.dispute.auditDispute(
+                staged.frozenIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+
+            expect(honest).to.include({ outcome: "returned", isValid: true });
+            expect(honest.disputeFraudProofCount).to.equal(0);
+            expect(
+                await auditor
+                    .getFraudProofType(staged.shadowed.author)
+                    .request()
+            ).to.equal(null);
             expect(
                 await holdsState(
                     h,

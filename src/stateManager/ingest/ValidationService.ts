@@ -463,6 +463,14 @@ export default class ValidationService {
                 this.storage.getPreviousBlockAndSnapshot(block.coordinates)
             )
         ) {
+            // above the executed head the stored block is a dispute replay's
+            // persistence-only write, not our history: no proof against this
+            // block, its own replay judges it
+            if (
+                conflictingBlock.height >
+                this.storage.blocks.getLatestBlockHeight(block.forkId)
+            )
+                return BlockValidationResult.SUCCESS;
             this.logger.warn(
                 "checkConflictingBlock - isLinked but conflict detected",
                 {
