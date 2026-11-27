@@ -4,7 +4,7 @@
 // boots the whole Hardhat runtime — incl. hardhat-foundry's sync `forge config`
 // exec — blocking the worker's event loop for ~800ms.
 import { Block, StateSnapshot } from "@/models";
-import type { ReduceData } from "@/types/disputes";
+import type { ReduceData, StoredProof } from "@/types/disputes";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -710,5 +710,56 @@ export function milestoneProof(
             ],
             ...overrides
         }
+    };
+}
+
+/**
+ * A stored proof of `forkId`: an anchor at `anchorHeight`, then `hopCount`
+ * hops at the next heights. Each hop's block commits to its snapshot, and the
+ * final state hashes to the final snapshot's state hash.
+ */
+export function storedProof(
+    forkId: ForkId,
+    hopCount: number,
+    anchorHeight: number = 0
+): StoredProof {
+    const encodedFinalizedState = hexString(64);
+    const finalStateHash = ethers.keccak256(encodedFinalizedState);
+    // the final point is the last hop, or the anchor when there is none
+    const snapshotAt = (height: number, isFinal: boolean) =>
+        stateSnapshot({
+            forkId,
+            blockHeight: height,
+            ...(isFinal
+                ? { snapshotData: { stateMachineStateHash: finalStateHash } }
+                : {})
+        });
+    const anchorSnapshot = snapshotAt(anchorHeight, hopCount === 0);
+    let finalizedSnapshot = anchorSnapshot;
+    const hops = Array.from({ length: hopCount }, (_, index) => {
+        const height = anchorHeight + index + 1;
+        const snapshot = snapshotAt(height, index === hopCount - 1);
+        finalizedSnapshot = snapshot;
+        const hopBlock = block({
+            header: transactionHeader({ forkId, transactionCnt: height }),
+            stateSnapshotHash: snapshot.hash
+        });
+        return {
+            milestone: {
+                blockConfirmations: [
+                    {
+                        signedBlock: hopBlock.signedBlock,
+                        signatures: [signature()]
+                    }
+                ]
+            },
+            snapshot: snapshot.toStruct()
+        };
+    });
+    return {
+        anchorSnapshot: anchorSnapshot.toStruct(),
+        hops,
+        finalizedSnapshot: finalizedSnapshot.toStruct(),
+        encodedFinalizedState
     };
 }

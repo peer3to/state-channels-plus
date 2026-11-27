@@ -262,6 +262,16 @@ describe("Codec", function () {
         );
     });
 
+    it("round-trips StoredProof", function () {
+        const value = codecValues.storedProof();
+        const encoded = Codec.encode(value, Type.StoredProof);
+        expectCodecRoundTrip(
+            value,
+            encoded,
+            Codec.decode(encoded, Type.StoredProof)
+        );
+    });
+
     it("preserves uint256 values above Number.MAX_SAFE_INTEGER and canonical ABI bytes", function () {
         const value = { amount: ethers.MaxUint256, data: "0x1234" };
         const encoded = Codec.encode(value, Type.Balance);
@@ -712,6 +722,7 @@ describe("Codec", function () {
             [codecValues.signedBlock(), Type.SignedBlock],
             [codecValues.stateProof(), Type.StateProof],
             [codecValues.syncPayload(), Type.SyncPayload],
+            [codecValues.storedProof(), Type.StoredProof],
             [
                 codecValues.blockDoubleSignProof(),
                 FraudProofType.BlockDoubleSign

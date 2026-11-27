@@ -14,6 +14,7 @@ import {
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
 import { ReduceOutputStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 
 export const MilestoneProofEthersType = `tuple(
     ${BlockConfirmationEthersType}[] blockConfirmations
@@ -21,6 +22,18 @@ export const MilestoneProofEthersType = `tuple(
 
 export const StateProofEthersType = `tuple(
     ${MilestoneProofEthersType}[] milestones
+)`;
+
+export const StoredProofHopEthersType = `tuple(
+    ${MilestoneProofEthersType} milestone,
+    ${StateSnapshotEthersType} snapshot
+)`;
+
+export const StoredProofEthersType = `tuple(
+    ${StateSnapshotEthersType} anchorSnapshot,
+    ${StoredProofHopEthersType}[] hops,
+    ${StateSnapshotEthersType} finalizedSnapshot,
+    bytes encodedFinalizedState
 )`;
 
 export const FraudProofEthersType = `tuple(
@@ -136,6 +149,27 @@ export type ReduceData = {
     latestStateSnapshot: StateSnapshotStruct;
     encodedStateMachineState: Bytes;
     inboundMessageBlocks: MessageBlockStruct[];
+};
+
+/** One hop of a stored proof: its milestone run and the snapshot the run's first block commits to. */
+export type StoredProofHop = {
+    milestone: MilestoneProofStruct;
+    snapshot: StateSnapshotStruct;
+};
+
+/**
+ * The state proof a node keeps for its active fork: the anchor it starts
+ * from, its hops in order, and the final point they prove with the full
+ * state there. The tail above the final point is not part of it.
+ */
+export type StoredProof = {
+    /** the same-fork chain anchor, else the fork genesis */
+    anchorSnapshot: StateSnapshotStruct;
+    hops: StoredProofHop[];
+    /** the anchor, or the snapshot of the last proven hop */
+    finalizedSnapshot: StateSnapshotStruct;
+    /** the state machine state at `finalizedSnapshot` */
+    encodedFinalizedState: Bytes;
 };
 
 // DisputeFraudProofs etheres types

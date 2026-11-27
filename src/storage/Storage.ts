@@ -12,6 +12,7 @@ import { ParticipantSetChangeStorage } from "./ParticipantSetChangeStorage";
 import { type BlockPredecessor, QueueStorage } from "./QueueStorage";
 import { StateMachineStateStorage } from "./StateMachineStateStorage";
 import { StateSnapshotStorage } from "./StateSnapshotStorage";
+import { StoredProofStorage } from "./StoredProofStorage";
 
 import { TimeoutStorage } from "./TimeoutStorage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
@@ -36,6 +37,7 @@ export class Storage {
     public readonly blockCalldata: BlockCalldataStorage;
     public readonly eventSync: EventSyncStorage;
     public readonly blacklist: BlacklistStorage;
+    public readonly storedProofs: StoredProofStorage;
 
     // `maxChannelParticipants` comes from the deployed contract, so the queue's
     // retention bound follows the chain instead of restating it.
@@ -58,6 +60,7 @@ export class Storage {
         this.blockCalldata = deepCopyProxy(new BlockCalldataStorage());
         this.eventSync = deepCopyProxy(new EventSyncStorage());
         this.blacklist = deepCopyProxy(new BlacklistStorage());
+        this.storedProofs = deepCopyProxy(new StoredProofStorage());
         return deepCopyProxy(this);
     }
 
