@@ -12,7 +12,10 @@ expected keys are written from the store design (`dispute:<disputeHash>`, `sync:
 refusal warning is read back from a real node logger's log store. The cases set and read audit and sync evidence,
 replace records, fill a fork to its sync bound and set one more sync record, a replacement, another fork's record and
 audit records, use one hash as both a dispute hash and a finalized snapshot hash, scan a fork, drop a fork and refill
-it, and mutate the value set and a value read.
+it, and mutate the value set and a value read. The lookup cases find every snapshot and held state of a record by a
+hash computed from the record itself, miss an unknown hash and a dropped fork's snapshot, never return a `0x` state
+(also for the hash of `0x`), and read a snapshot and state through the `Storage` facade that holds them only as
+evidence.
 
 ## Tests
 
@@ -30,3 +33,8 @@ it, and mutate the value set and a value read.
 - `drops a fork's audit and sync evidence and keeps another fork's`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P12
 - `accepts sync evidence of a dropped fork again up to the bound`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P13
 - `keeps stored evidence unchanged when the caller mutates the value it set or read`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P14
+- `finds each snapshot a record holds by its hash: the anchor, every hop's, the final point and the latest point`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P15
+- `finds no snapshot for a hash no record holds, nor one of a dropped fork`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P16
+- `finds the final and the latest state a record holds by their hashes`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P17
+- `never returns a state a record does not hold (0x), also for the hash of 0x`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P18
+- `storage reads a snapshot and a state kept only as proof evidence`: UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D.P19

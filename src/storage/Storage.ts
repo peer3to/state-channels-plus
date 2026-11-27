@@ -96,6 +96,24 @@ export class Storage {
         return this.stateSnapshots.getStateSnapshotByHash(stateSnapshotHash);
     }
 
+    /** The snapshot of `snapshotHash`: a held one, else one kept as proof evidence. */
+    getSnapshotIncludingEvidence(
+        snapshotHash: Hash
+    ): StateSnapshot | undefined {
+        return (
+            this.stateSnapshots.getStateSnapshotByHash(snapshotHash) ??
+            this.proofEvidence.getSnapshot(snapshotHash)
+        );
+    }
+
+    /** The state of `stateHash`: a held one, else one kept as proof evidence. */
+    getStateIncludingEvidence(stateHash: Hash): Bytes | undefined {
+        return (
+            this.stateMachineStates.getStateMachineState(stateHash) ??
+            this.proofEvidence.getStateMachineState(stateHash)
+        );
+    }
+
     getGenesisStateMachineState(forkId: ForkId): Bytes | undefined {
         const genesisSnapshot =
             this.stateSnapshots.getGenesisSnapshotByForkId(forkId);

@@ -4,6 +4,7 @@ import Storage from "@/storage";
 import type { ProofEvidence } from "@/types/disputes";
 import { recordingLogger } from "@test/fixtures/node/RecordingLogger";
 import { expect } from "chai";
+import { ethers } from "ethers";
 import { describe, it } from "mocha";
 
 // the sync key the evidence store design fixes: `sync:<finalizedSnapshotHash>`
@@ -280,5 +281,83 @@ describe("ProofEvidenceStorage", () => {
         expect(proofEvidence.get(`dispute:${disputeHash}`)).to.deep.equal(
             expected
         );
+    });
+
+    it("finds each snapshot a record holds by its hash: the anchor, every hop's, the final point and the latest point", () => {
+        const proofEvidence = new Storage().proofEvidence;
+        const evidence = factory.proofEvidence(factory.hash(), 2);
+        const held = [
+            evidence.proof.anchorSnapshot,
+            ...evidence.proof.hops.map((hop) => hop.snapshot),
+            evidence.proof.finalizedSnapshot,
+            evidence.latestSnapshot
+        ].map((struct) => StateSnapshot.from(struct));
+
+        proofEvidence.setAuditEvidence(factory.hash(), evidence);
+
+        for (const snapshot of held)
+            expect(
+                proofEvidence.getSnapshot(snapshot.hash)?.toStruct()
+            ).to.deep.equal(snapshot.toStruct());
+    });
+
+    it("finds no snapshot for a hash no record holds, nor one of a dropped fork", () => {
+        const proofEvidence = new Storage().proofEvidence;
+        const forkId = factory.hash();
+        const evidence = factory.proofEvidence(forkId, 1);
+        const latestHash = StateSnapshot.from(evidence.latestSnapshot).hash;
+        proofEvidence.setAuditEvidence(factory.hash(), evidence);
+
+        expect(proofEvidence.getSnapshot(factory.hash())).to.equal(undefined);
+        proofEvidence.dropFork(forkId);
+        expect(proofEvidence.getSnapshot(latestHash)).to.equal(undefined);
+    });
+
+    it("finds the final and the latest state a record holds by their hashes", () => {
+        const proofEvidence = new Storage().proofEvidence;
+        const evidence = factory.proofEvidence(factory.hash(), 2);
+
+        proofEvidence.setSyncEvidence(evidence);
+
+        expect(
+            proofEvidence.getStateMachineState(
+                ethers.keccak256(evidence.proof.encodedFinalizedState)
+            )
+        ).to.equal(evidence.proof.encodedFinalizedState);
+        expect(
+            proofEvidence.getStateMachineState(
+                ethers.keccak256(evidence.encodedLatestState)
+            )
+        ).to.equal(evidence.encodedLatestState);
+    });
+
+    it("never returns a state a record does not hold (0x), also for the hash of 0x", () => {
+        const proofEvidence = new Storage().proofEvidence;
+        const evidence = factory.proofEvidence(factory.hash(), 1);
+        evidence.proof.encodedFinalizedState = "0x";
+
+        proofEvidence.setAuditEvidence(factory.hash(), evidence);
+
+        expect(
+            proofEvidence.getStateMachineState(ethers.keccak256("0x"))
+        ).to.equal(undefined);
+    });
+
+    it("storage reads a snapshot and a state kept only as proof evidence", () => {
+        const storage = new Storage();
+        const evidence = factory.proofEvidence(factory.hash(), 1);
+        const latest = StateSnapshot.from(evidence.latestSnapshot);
+        expect(storage.getSnapshotIncludingEvidence(latest.hash)).to.equal(
+            undefined
+        );
+
+        storage.proofEvidence.setAuditEvidence(factory.hash(), evidence);
+
+        expect(
+            storage.getSnapshotIncludingEvidence(latest.hash)?.toStruct()
+        ).to.deep.equal(latest.toStruct());
+        expect(
+            storage.getStateIncludingEvidence(latest.stateMachineStateHash)
+        ).to.equal(evidence.encodedLatestState);
     });
 });

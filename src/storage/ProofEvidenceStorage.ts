@@ -6,7 +6,8 @@ import {
 } from "./keys";
 import { StateSnapshot } from "@/models";
 import type { ProofEvidence } from "@/types/disputes";
-import type { ForkId, Hash } from "@/types/types";
+import type { Bytes, ForkId, Hash } from "@/types/types";
+import { hash } from "@/utils/hash";
 import type { Logger } from "@/utils/logging/Logger";
 
 /**
@@ -69,6 +70,41 @@ export class ProofEvidenceStorage {
         return [...this.evidenceByKey.values()].filter(
             (evidence) => evidence.forkId === forkId
         );
+    }
+
+    /**
+     * A snapshot some record holds (its anchor, a hop's snapshot, its final
+     * point or its latest point) whose hash is `snapshotHash`.
+     */
+    public getSnapshot(snapshotHash: Hash): StateSnapshot | undefined {
+        for (const { proof, latestSnapshot } of this.evidenceByKey.values()) {
+            for (const struct of [
+                proof.anchorSnapshot,
+                ...proof.hops.map((hop) => hop.snapshot),
+                proof.finalizedSnapshot,
+                latestSnapshot
+            ]) {
+                const snapshot = StateSnapshot.from(struct);
+                if (snapshot.hash === snapshotHash) return snapshot;
+            }
+        }
+        return undefined;
+    }
+
+    /** A held state (final or latest, never `0x`) some record holds whose hash is `stateHash`. */
+    public getStateMachineState(stateHash: Hash): Bytes | undefined {
+        for (const {
+            proof,
+            encodedLatestState
+        } of this.evidenceByKey.values()) {
+            for (const state of [
+                proof.encodedFinalizedState,
+                encodedLatestState
+            ]) {
+                if (state !== "0x" && hash(state) === stateHash) return state;
+            }
+        }
+        return undefined;
     }
 
     /** Drops every record (audit and sync) of `forkId`; other forks keep theirs. */
