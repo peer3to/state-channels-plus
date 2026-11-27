@@ -67,6 +67,19 @@ function encodedDisputeBytesOf({
     );
 }
 
+/** The empty timeout input of a dispute that claims no timeout. */
+export function getEmptyTimeoutStruct(): TimeoutStruct {
+    return {
+        participant: ethers.ZeroAddress,
+        blockHeight: 0,
+        minTimeStamp: 0,
+        isForced: false,
+        previousBlockProducer: ethers.ZeroAddress,
+        previousBlockProducerPostedCalldata: false,
+        participantSignatureOnPreviousBlock: "0x"
+    };
+}
+
 /**
  * Builds this peer's dispute of a fork and decides whether it adds evidence to
  * another peer's dispute. The inputs are its fingerprint: while a fork's
@@ -151,6 +164,11 @@ export default class DisputeBuilder {
     public clearCache(forkId: ForkId): void {
         this.evidenceChecks.delete(forkId);
         this.built.delete(forkId);
+    }
+
+    /** The chain's dispute upload cap (`getMaxDisputeUploadBytes`, a deploy parameter), read once. */
+    public getMaxDisputeUploadBytes(): Promise<bigint> {
+        return this.readMaxDisputeUploadBytes();
     }
 
     /**
@@ -489,7 +507,7 @@ export default class DisputeBuilder {
         const timeoutStruct =
             storedTimeout && BigInt(storedTimeout.blockHeight) === nextHeight
                 ? storedTimeout
-                : this.getEmptyTimeoutStruct();
+                : getEmptyTimeoutStruct();
 
         // latestStateSnapshot proves its own inbound head -> naming anything
         // below it is objective fraud against ourselves
@@ -713,16 +731,4 @@ export default class DisputeBuilder {
         return auditingData;
     }
 
-    /** The empty timeout input of a dispute that claims no timeout. */
-    private getEmptyTimeoutStruct(): TimeoutStruct {
-        return {
-            participant: ethers.ZeroAddress,
-            blockHeight: 0,
-            minTimeStamp: 0,
-            isForced: false,
-            previousBlockProducer: ethers.ZeroAddress,
-            previousBlockProducerPostedCalldata: false,
-            participantSignatureOnPreviousBlock: "0x"
-        };
-    }
 }

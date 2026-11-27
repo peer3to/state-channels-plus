@@ -571,6 +571,11 @@ class DisputeManager {
         this.disputeBuilder.clearCache(forkId);
     }
 
+    /** The chain's dispute upload cap, read once. */
+    public getMaxDisputeUploadBytes(): Promise<bigint> {
+        return this.disputeBuilder.getMaxDisputeUploadBytes();
+    }
+
     /**
      * The kill by `disputeFraudProof` sent alone: its calldata and its size,
      * which `maxTransactionBytes` bounds.

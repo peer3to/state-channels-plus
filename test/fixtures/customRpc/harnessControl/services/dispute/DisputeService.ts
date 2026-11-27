@@ -2,6 +2,7 @@
 import DisputeRpcMethods from "./DisputeRpcMethods";
 import type { SignerService } from "../signer/SignerService";
 import Clock from "@/Clock";
+import { getEmptyTimeoutStruct } from "@/disputeManager/DisputeBuilder";
 
 import type DisputeManager from "@/disputeManager/DisputeManager";
 import type { ConstructDisputeResult } from "@/disputeManager/DisputeManager";
@@ -418,10 +419,7 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
             onChainSlashes: [],
             disputeAuditingDataHash: ZeroHash,
             disputer: this.sm.signerAddress,
-            timeout:
-                this.disputeManager["disputeBuilder"][
-                    "getEmptyTimeoutStruct"
-                ](),
+            timeout: getEmptyTimeoutStruct(),
             selfRemoval: false,
             requireExistingDisputeWindow: false,
             latestInboundMessageBlockHash:
