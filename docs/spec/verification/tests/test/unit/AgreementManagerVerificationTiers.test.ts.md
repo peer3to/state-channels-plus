@@ -14,7 +14,7 @@ Verifies proofs from local final state, the local diamond and the canonical chai
 - `U28: the mirror holds no same-fork anchor (it walks from the genesis) and its walk fails → the chain's anchor walk accepts the proof`: REQ-SP-9-RNXP56.T3.P4, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P40
 - `U28: the mirror's anchor walk returns false (it lacks a consumed inbound block) → the chain's walk accepts the proof`: REQ-SP-9-RNXP56.T3.P5, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P41
 - `U29: a proof every tier rejects (an unlinked block after the anchor) → verification returns the chain's invalid walk`: REQ-SP-9-RNXP56.T3.P6, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P42
-- `U30: storage lacks a participant-change block below the stored final point → the local finalized tier still walks the proof and accepts it, no later tier runs`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P71
+- `U30: storage lacks a participant-change block below the stored final point → the local finalized tier still walks the proof and accepts it, no later tier runs`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P71, REQ-SP-9-RNXP56.T3.P7
 - `U30: the mirror's walk fails on the local EVM connection → verification throws, the chain walk never runs`: REQ-SP-9-RNXP56.T3.P8, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P44
 - `U30: the chain walk fails on the node RPC connection → verification throws instead of returning an invalid verdict`: REQ-SP-9-RNXP56.T3.P9, UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P45
 - `RR1: a chain anchor advance during verification returns the checked start and skips malformed old history in persistence`: UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P60

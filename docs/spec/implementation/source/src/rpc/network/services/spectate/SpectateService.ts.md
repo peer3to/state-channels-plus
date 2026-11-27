@@ -22,6 +22,8 @@
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
   Contradicts: retained, unexecuted proof support can contaminate installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+- [`INV-PROOFSTORE-1-0N80S6` (The proof write and the state install are one step)](../../../../../../../specification/storage/proof-store.md#inv-proofstore-1-0n80s6)
+- [`REQ-PROOFSTORE-3-FDNJYN` (Seeding from a verified synchronization)](../../../../../../../specification/storage/proof-store.md#req-proofstore-3-fdnjyn)
 
 ## UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT
 

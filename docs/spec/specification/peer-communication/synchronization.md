@@ -184,7 +184,13 @@ Ordered verification rejects invalid evidence. Thrown internal or chain-read fai
     executed height on the same fork. Otherwise the installed state and the served history become visible in
     one step. Abort on any conflict with locally stored blocks, whether it is found before the install
     or appears between preparing the install and making it visible; an abort found that late restores
-    the prior state, and nothing of the payload is published. A dispute window's dispute confirmations are
+    the prior state, and nothing of the payload is published. The stored proof that the verified
+    proof yields is written in that same step
+    ([`REQ-PROOFSTORE-3-FDNJYN` (Seeding from a verified synchronization)](../storage/proof-store.md#req-proofstore-3-fdnjyn),
+    [`INV-PROOFSTORE-1-0N80S6` (The proof write and the state install are one step)](../storage/proof-store.md#inv-proofstore-1-0n80s6)). When the stored
+    proof changed after this synchronization prepared its own, the install aborts as stale: that is
+    no fault of the responder, so the requester ends the attempt as not synchronized without
+    rejecting it, and the retry asks again. A dispute window's dispute confirmations are
     never persisted from the payload, since no reduction checks their signatures; the genuine disputes
     arrive through chain observation. Its other reduction inputs (latest snapshot and state, and
     inbound blocks) are persisted only for the window this sync itself reduced, since only that

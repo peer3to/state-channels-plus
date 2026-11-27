@@ -2,7 +2,9 @@
 
 > **Source:** [src/storage/StoredProofStorage.ts](../../../../../../src/storage/StoredProofStorage.ts)
 
-No specified behavior: the stored-proof requirements are not yet in the specification.
+## Requirements
+
+- [`REQ-PROOFSTORE-1-V5KEYP` (One stored proof, for the active fork)](../../../../specification/storage/proof-store.md#req-proofstore-1-v5keyp)
 
 ## UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX
 

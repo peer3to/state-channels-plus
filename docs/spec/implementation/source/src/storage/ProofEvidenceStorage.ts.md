@@ -2,11 +2,9 @@
 
 > **Source:** [src/storage/ProofEvidenceStorage.ts](../../../../../../src/storage/ProofEvidenceStorage.ts)
 
-No specified behavior: the evidence-store requirements are not yet in the specification. The audit writes
-`dispute:<disputeHash>` records ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds));
-`getSnapshot` and `getStateMachineState` find a record's snapshot or state by hash (a `0x` state is not held),
-and `Storage.getSnapshotIncludingEvidence` / `getStateIncludingEvidence` read held data first, else evidence.
-Sync records have no writer yet.
+## Requirements
+
+- [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../../../../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
 
 ## UNIT-TEST-PROOF-EVIDENCE-STORAGE-1-ARHJ8D
 

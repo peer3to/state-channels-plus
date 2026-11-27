@@ -13,5 +13,5 @@ point; the old fork has no stored proof, and a final block on the new fork advan
 
 ## Tests
 
-- `a snapshot update re-roots every peer's stored proof at the posted snapshot, and a later final block advances it above that anchor`: none
-- `a dispute moves the channel to a reduced fork → each honest peer's stored proof is on the new fork with its state, none on the old fork, and a final block advances it`: none
+- `a snapshot update re-roots every peer's stored proof at the posted snapshot, and a later final block advances it above that anchor`: REQ-PROOFSTORE-4-XB8Z9W.T1.P2, REQ-PROOFSTORE-2-DBN7SY.T1.P4
+- `a dispute moves the channel to a reduced fork → each honest peer's stored proof is on the new fork with its state, none on the old fork, and a final block advances it`: REQ-PROOFSTORE-5-ZH56D4.T1.P2

@@ -18,6 +18,13 @@
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
 - [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
+- [`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](../../../../specification/storage/proof-store.md#req-proofstore-2-dbn7sy)
+- [`REQ-PROOFSTORE-3-FDNJYN` (Seeding from a verified synchronization)](../../../../specification/storage/proof-store.md#req-proofstore-3-fdnjyn)
+- [`REQ-PROOFSTORE-4-XB8Z9W` (Re-rooting on a chain anchor advance)](../../../../specification/storage/proof-store.md#req-proofstore-4-xb8z9w)
+- [`REQ-PROOFSTORE-5-ZH56D4` (Reset on a fork change)](../../../../specification/storage/proof-store.md#req-proofstore-5-zh56d4)
+- [`REQ-PROOFSTORE-6-X7FT2K` (Readers use the stored proof)](../../../../specification/storage/proof-store.md#req-proofstore-6-x7ft2k)
+- [`INV-PROOFSTORE-2-4K6815` (The record may lag history but never lead it)](../../../../specification/storage/proof-store.md#inv-proofstore-2-4k6815)
+- [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../../../../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
 
 ## UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D
 

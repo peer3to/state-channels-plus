@@ -128,6 +128,12 @@ Specification cases tested: 1/7. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1
 [`INV-NEG-1-6FW90P` (Negotiated-terms-only signing)](../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p)
 Specification cases tested: 3/11. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
+[`INV-PROOFSTORE-1-0N80S6` (The proof write and the state install are one step)](../specification/storage/proof-store.md#inv-proofstore-1-0n80s6)
+Specification cases tested: 3/3.
+
+[`INV-PROOFSTORE-2-4K6815` (The record may lag history but never lead it)](../specification/storage/proof-store.md#inv-proofstore-2-4k6815)
+Specification cases tested: 2/2.
+
 [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 Specification cases tested: 3/6. Untested: T1.P2, T1.P4, T1.P5.
 
@@ -749,6 +755,27 @@ Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 [`REQ-NEG-4-ZQ0985` (Committed-attempt admission and recovery)](../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985)
 Specification cases tested: 17/18. Untested: T1.P6.
 
+[`REQ-PROOFSTORE-1-V5KEYP` (One stored proof, for the active fork)](../specification/storage/proof-store.md#req-proofstore-1-v5keyp)
+Specification cases tested: 3/3.
+
+[`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](../specification/storage/proof-store.md#req-proofstore-2-dbn7sy)
+Specification cases tested: 3/4. Untested: T1.P3.
+
+[`REQ-PROOFSTORE-3-FDNJYN` (Seeding from a verified synchronization)](../specification/storage/proof-store.md#req-proofstore-3-fdnjyn)
+Specification cases tested: 2/2.
+
+[`REQ-PROOFSTORE-4-XB8Z9W` (Re-rooting on a chain anchor advance)](../specification/storage/proof-store.md#req-proofstore-4-xb8z9w)
+Specification cases tested: 2/2.
+
+[`REQ-PROOFSTORE-5-ZH56D4` (Reset on a fork change)](../specification/storage/proof-store.md#req-proofstore-5-zh56d4)
+Specification cases tested: 2/2.
+
+[`REQ-PROOFSTORE-6-X7FT2K` (Readers use the stored proof)](../specification/storage/proof-store.md#req-proofstore-6-x7ft2k)
+Specification cases tested: 1/1.
+
+[`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
+Specification cases tested: 4/4.
+
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.
 
@@ -927,13 +954,13 @@ Specification cases tested: 0/12.
 Specification cases tested: 34/48. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14.
 
 [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej)
-Specification cases tested: 29/32. Untested: T2.P11, T2.P13, T2.P16.
+Specification cases tested: 32/32.
 
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
-Specification cases tested: 78/79. Untested: T3.P7.
+Specification cases tested: 79/79.
 
 [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
-Specification cases tested: 55/56. Untested: T5.P13.
+Specification cases tested: 56/56.
 
 [`REQ-SPC-3-AZBKR1` (No permanent exclusion for can't-prove-yet)](../specification/peer-communication/synchronization.md#req-spc-3-azbkr1)
 Specification cases tested: 7/8. Untested: T1.P1.

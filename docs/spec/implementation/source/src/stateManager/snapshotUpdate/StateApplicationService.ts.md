@@ -9,6 +9,8 @@
 - [`REQ-DISPUTE-PIPE-4-3YVDSA` (Atomic recovery)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-4-3yvdsa)
   Partial: the staged install writes the candidate into the VM before its commit, so a reader outside the state mutex can see the new VM state together with the old fork ([`FIND-STATE-2-4BH3Y1`](../../../../../audit/open-findings.md#find-state-2-4bh3y1)).
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
+- [`INV-PROOFSTORE-1-0N80S6` (The proof write and the state install are one step)](../../../../../specification/storage/proof-store.md#inv-proofstore-1-0n80s6)
+- [`REQ-PROOFSTORE-5-ZH56D4` (Reset on a fork change)](../../../../../specification/storage/proof-store.md#req-proofstore-5-zh56d4)
 
 ## UNIT-TEST-STATE-APPLICATION-SERVICE-1-B8V3DR
 

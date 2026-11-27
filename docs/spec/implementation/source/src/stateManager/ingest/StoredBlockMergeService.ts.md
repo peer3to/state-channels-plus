@@ -7,6 +7,7 @@
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-BLOCK-PIPE-11-DCHAJ2` (Signature admission by participant union)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-11-dchaj2)
+- [`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](../../../../../specification/storage/proof-store.md#req-proofstore-2-dbn7sy)
 
 ## UNIT-TEST-STORED-BLOCK-MERGE-SERVICE-32-NJ5TZ6
 

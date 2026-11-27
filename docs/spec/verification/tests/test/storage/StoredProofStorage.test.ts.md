@@ -16,8 +16,8 @@ that is not stored, delete a fork's proof and another fork's, and mutate the val
 - `holds no stored proof before one is set`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P1
 - `returns the proof set for its fork`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P2
 - `replaces the proof of the same fork with the later one`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P3
-- `drops the previous fork's proof when a proof of another fork is set`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P4
-- `returns nothing for a fork other than the stored one`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P5
+- `drops the previous fork's proof when a proof of another fork is set`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P4, REQ-PROOFSTORE-1-V5KEYP.T1.P1
+- `returns nothing for a fork other than the stored one`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P5, REQ-PROOFSTORE-1-V5KEYP.T1.P2
 - `keeps the stored proof unchanged when the caller mutates the value it set or read`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P6
 - `holds no stored proof for a fork after its proof is deleted`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P7
 - `keeps the stored proof when another fork's proof is deleted`: UNIT-TEST-STORED-PROOF-STORAGE-1-RZH6SX.P8

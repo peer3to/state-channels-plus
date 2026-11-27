@@ -13,6 +13,7 @@
   Contradicts: audit replay can still run over history that sync persistence contaminated with retained, unexecuted proof support and produce an unsupported accusation. The audit itself keeps what it verifies but does not execute as proof evidence; executed history includes its replayed tail ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
+- [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../../../../../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09
 

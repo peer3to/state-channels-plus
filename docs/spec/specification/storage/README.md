@@ -16,7 +16,8 @@ strength, never observable semantics.
 - **Owned state.** All locally stored protocol data, organized as modules with disjoint key spaces:
   the block store, the pre-execution queue, message-block stores (one inbound, one outbound),
   snapshot and state-machine-state stores, participant-set change points, dispute and fraud-proof
-  evidence, block-calldata records, timeout candidates, and progress/intent markers.
+  evidence, the stored proof of the active fork and proof evidence kept from audits and
+  synchronization, block-calldata records, timeout candidates, and progress/intent markers.
 - **Public inputs.** Store, merge, and update operations from every producing system; every write
   carries data already validated by its producer to the degree the module's contract states —
   storage itself validates keys and merge rules, never protocol semantics.
@@ -69,6 +70,7 @@ what is specific to that module: its key space, data model, merge/update rules, 
 | [message-blocks.md](./message-blocks.md) | Inbound & outbound message-block stores | Hash-linked stream storage, tip pointers, backward range reads. |
 | [snapshots-and-states.md](./snapshots-and-states.md) | Snapshot store, state-machine-state store | Content-addressed snapshots and encoded states, genesis-by-fork index, the derived snapshot/state read paths. |
 | [participant-changes.md](./participant-changes.md) | Participant-set change points | Membership-change heights per fork and ordered range reads for milestone-hop construction. |
+| [proof-store.md](./proof-store.md) | Stored-proof store, proof-evidence store | The one stored proof of the active fork (anchor, hops, final point and its full state) and how it is advanced, seeded, re-rooted and reset; audit and sync proof evidence outside block history, bounded and dropped with its fork. Both are in memory; disk persistence comes with the storage medium change. |
 | [dispute-evidence.md](./dispute-evidence.md) | Dispute store, fraud-proof store, dispute-fraud-proof store | Dispute confirmations with signature merge, disputed-fork and own-dispute flags, content-addressed proofs and their indexes. |
 | [calldata-and-timeouts.md](./calldata-and-timeouts.md) | Block-calldata store, timeout store | Calldata records keyed by fork/height/author with exact-hash matching; newest timeout candidate per fork. |
 | [progress-markers.md](./progress-markers.md) | Event-sync and force-exit markers, force-join record | Monotone chain-observation progress and local intent flags that survive across protocol phases. |

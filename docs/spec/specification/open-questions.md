@@ -51,6 +51,18 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-JOIN-REJOIN-1-D506RT`](open-questions.md#oq-spec-join-rejoin-1-d506rt)           | Rejoin after eviction collects against the disputed snapshot                                                                                                | Shared poker client manager plan (2026-10-26) | [peer-communication/join-authorization.md](./peer-communication/join-authorization.md)                                                                                                                                     | Open (later)                      |
 | [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Resolved                          |
 | [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game (2026-10-27)          | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
+| [`OQ-SPEC-PROOFSTORE-1-H52WPZ`](open-questions.md#oq-spec-proofstore-1-h52wpz)             | Retention rule for pruning below the on-chain snapshot                                                                                                      | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Open                              |
+| [`OQ-SPEC-PROOFSTORE-2-218XFC`](open-questions.md#oq-spec-proofstore-2-218xfc)             | Pruning above the anchor and lost exact-height checks                                                                                                       | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Open                              |
+| [`OQ-SPEC-PROOFSTORE-3-GB6462`](open-questions.md#oq-spec-proofstore-3-gb6462)             | Which membership hops the stored proof keeps                                                                                                                | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [disputes/state-proofs.md](./disputes/state-proofs.md)                                                                                                                 | Resolved                          |
+| [`OQ-SPEC-PROOFSTORE-4-WJWVVW`](open-questions.md#oq-spec-proofstore-4-wjwvvw)             | Merging a received proof into a stored proof it does not extend                                                                                             | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                                       | Open                              |
+| [`OQ-SPEC-PROOFSTORE-5-KCS7YG`](open-questions.md#oq-spec-proofstore-5-kcs7yg)             | Old-fork data after a fork change                                                                                                                           | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md)                                                                                                                                                                         | Resolved                          |
+| [`OQ-SPEC-PROOFSTORE-6-GKNPTT`](open-questions.md#oq-spec-proofstore-6-gknptt)             | Full-state retention                                                                                                                                        | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/snapshots-and-states.md](./storage/snapshots-and-states.md)                                                                                                   | Resolved                          |
+| [`OQ-SPEC-PROOFSTORE-7-SQGB7C`](open-questions.md#oq-spec-proofstore-7-sqgb7c)             | Extending the stored proof on demand or with own finality                                                                                                   | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md)                                                                                                                                                                         | Resolved                          |
+| [`OQ-SPEC-PROOFSTORE-8-07YFKT`](open-questions.md#oq-spec-proofstore-8-07yfkt)             | Re-rooting and base-layer finality of the adoption                                                                                                          | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md)                                                                                                                                                                         | Open                              |
+| [`OQ-SPEC-PROOFSTORE-9-7CNC80`](open-questions.md#oq-spec-proofstore-9-7cnc80)             | Restart durability of the stored proof and proof evidence                                                                                                   | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Open                              |
+| [`OQ-SPEC-PROOFSTORE-10-66ZDB2`](open-questions.md#oq-spec-proofstore-10-66zdb2)           | Snapshot updates that bound the stored proof                                                                                                                | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [disputes/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                                                 | Open                              |
+| [`OQ-SPEC-PROOFSTORE-11-9X8JFG`](open-questions.md#oq-spec-proofstore-11-9x8jfg)           | Missing-evidence policy with pruned storage                                                                                                                 | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [disputes/state-proofs.md](./disputes/state-proofs.md)                                                                                                                 | Open                              |
+| [`OQ-SPEC-PROOFSTORE-12-HVMC6K`](open-questions.md#oq-spec-proofstore-12-hvmc6k)           | Ordering of stored-proof writers and readers                                                                                                                | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                                       | Resolved                          |
 
 ## Register assumptions and constraints
 
@@ -845,3 +857,157 @@ implementation
 ([BlockValidationStrategy](../implementation/source/src/stateManager/validationStrategy/BlockValidationStrategy.ts.md),
 [BlockQueueManager](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
 [CalldataPostingService](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md)).
+
+<a id="oq-spec-proofstore-1-h52wpz"></a>
+
+## OQ-SPEC-PROOFSTORE-1-H52WPZ — Retention rule for pruning below the on-chain snapshot
+
+Open. The stored proof starts at the mirrored chain anchor ([`REQ-PROOFSTORE-1-V5KEYP` (One stored proof, for the active fork)](storage/proof-store.md#req-proofstore-1-v5keyp)), so blocks, snapshots,
+states, message blocks and change points below the anchor are no longer needed by it. Other readers
+may still need them: open dispute and evidence windows, an accepted synchronization duty, the
+participant union of the anchor block (which reads the snapshot of the block below it), a late valid
+confirmation of the anchor block, and the synchronization payload (fork genesis, its state, the
+outbound range to the fork genesis). Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) prune nothing; (2) prune
+strictly below the anchor once every window and duty over it has ended, keeping what the payload
+carries and the anchor block's union input; (3) as (2), with a fixed delay after the adoption.
+Blocking effect: no pruning below the anchor until decided; it is to be decided with pruning below
+the on-chain snapshot. Affected layers: storage durability
+([`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](storage/durability.md#req-stor-4-mf6ft6)).
+
+<a id="oq-spec-proofstore-2-218xfc"></a>
+
+## OQ-SPEC-PROOFSTORE-2-218XFC — Pruning above the anchor and lost exact-height checks
+
+Open. Executed blocks between two hops of the stored proof, which no hop needs, could be pruned.
+At a pruned height the node then loses exact-height checks: same-height conflict detection, a
+not-latest-state check, and an exact final proof. Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) never prune above
+the anchor; (2) prune only gaps between hops, and treat a pruned height as absent, never as
+evidence ([`OQ-SPEC-PROOFSTORE-11-9X8JFG`](open-questions.md#oq-spec-proofstore-11-9x8jfg)); (3) as (2), also between the anchor and the first
+hop. Blocking effect: no pruning above the anchor until decided. Affected layers: storage
+durability, fraud proofs.
+
+<a id="oq-spec-proofstore-3-gb6462"></a>
+
+## OQ-SPEC-PROOFSTORE-3-GB6462 — Which membership hops the stored proof keeps
+
+**Resolved (Ljuba, 2026-11-25, recommendation accepted):** a new final point replaces the last hop
+when that hop changes no membership, and is appended otherwise. "Membership change" is defined on
+the hop's required signer union, not on the participant list: a hop whose union is exactly the
+participant set at both its ends changes nothing, so a joiner that joins and leaves inside the hop
+keeps that hop. Rejected: (b) always append, which grows every proof with each final point; (c)
+rebuild lazily on read, which re-walks history on every read and depends on history the node may
+prune. Consequences: hops that change membership accumulate until the chain anchor passes them
+([`OQ-SPEC-PROOFSTORE-10-66ZDB2`](open-questions.md#oq-spec-proofstore-10-66zdb2)). Recorded as [`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](storage/proof-store.md#req-proofstore-2-dbn7sy); tests [`REQ-PROOFSTORE-2-DBN7SY.T1.P1`](storage/proof-store.md#req-proofstore-2-dbn7sy.t1.p1),
+[`REQ-PROOFSTORE-2-DBN7SY.T1.P2`](storage/proof-store.md#req-proofstore-2-dbn7sy.t1.p2) and [`REQ-PROOFSTORE-2-DBN7SY.T1.P3`](storage/proof-store.md#req-proofstore-2-dbn7sy.t1.p3). Affected layers: state proofs.
+
+<a id="oq-spec-proofstore-4-wjwvvw"></a>
+
+## OQ-SPEC-PROOFSTORE-4-WJWVVW — Merging a received proof into a stored proof it does not extend
+
+Open. Synchronization writes a received proof only when it extends the node's own final point or
+replaces the record from an anchor with a later final point ([`REQ-PROOFSTORE-3-FDNJYN` (Seeding from a verified synchronization)](storage/proof-store.md#req-proofstore-3-fdnjyn)). A received proof can also
+agree with the record below its final point without extending it, carry more hops than the node's
+own fold would keep, or conflict with it. Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) replace only on a later
+final point (current); (2) merge the agreeing prefix and fold the received hops with the rule of
+[`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](storage/proof-store.md#req-proofstore-2-dbn7sy); (3) keep a conflicting proof only as sync evidence ([`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](storage/proof-store.md#req-proofstore-7-b5pw2p)). Blocking effect: received
+hops are kept as received, so they can grow the record toward the dispute size limits. Affected
+layers: synchronization.
+
+<a id="oq-spec-proofstore-5-kcs7yg"></a>
+
+## OQ-SPEC-PROOFSTORE-5-KCS7YG — Old-fork data after a fork change
+
+**Resolved (Ljuba, 2026-11-25 and 2026-11-27, recommendation accepted):** the stored proof is kept
+for the active fork only; a fork change starts the new fork's record at its installed genesis, and
+nothing of the old record enters it ([`REQ-PROOFSTORE-5-ZH56D4` (Reset on a fork change)](storage/proof-store.md#req-proofstore-5-zh56d4), [`REQ-PROOFSTORE-1-V5KEYP` (One stored proof, for the active fork)](storage/proof-store.md#req-proofstore-1-v5keyp)). A proof the node still needs for an old fork
+(a won dispute's reduction, a synchronization of a reduced window, the final-dispute genesis) comes
+from proof evidence, which keeps a fork's records until the chain anchor leaves that fork, not on
+the local fork change ([`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](storage/proof-store.md#req-proofstore-7-b5pw2p)). Rejected: keeping one stored proof per fork, which keeps proofs no
+writer maintains. Recorded as [`REQ-PROOFSTORE-5-ZH56D4` (Reset on a fork change)](storage/proof-store.md#req-proofstore-5-zh56d4) and [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](storage/proof-store.md#req-proofstore-7-b5pw2p); tests [`REQ-PROOFSTORE-5-ZH56D4.T1.P1`](storage/proof-store.md#req-proofstore-5-zh56d4.t1.p1), [`REQ-PROOFSTORE-5-ZH56D4.T1.P2`](storage/proof-store.md#req-proofstore-5-zh56d4.t1.p2),
+[`INV-PROOFSTORE-2-4K6815.T1.P1`](storage/proof-store.md#inv-proofstore-2-4k6815.t1.p1) and [`REQ-PROOFSTORE-7-B5PW2P.T1.P3`](storage/proof-store.md#req-proofstore-7-b5pw2p.t1.p3).
+
+<a id="oq-spec-proofstore-6-gknptt"></a>
+
+## OQ-SPEC-PROOFSTORE-6-GKNPTT — Full-state retention
+
+**Resolved (Ljuba, 2026-11-25 and 2026-11-27, recommendation accepted):** the stored proof keeps the
+full state only at its final point; it is written only when the node holds that state, and a re-root
+restart needs the state at the new anchor ([`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](storage/proof-store.md#req-proofstore-2-dbn7sy), [`REQ-PROOFSTORE-4-XB8Z9W` (Re-rooting on a chain anchor advance)](storage/proof-store.md#req-proofstore-4-xb8z9w)). Proof evidence keeps the state at the
+proof's final point and at the latest point it saw, each as empty bytes when not held; a state is
+used only when its hash matches its snapshot ([`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](storage/proof-store.md#req-proofstore-7-b5pw2p)). The state at an older anchor or hop is not
+kept. Rejected: keeping the full state at every hop, which multiplies storage for no reader.
+Recorded as [`REQ-PROOFSTORE-1-V5KEYP` (One stored proof, for the active fork)](storage/proof-store.md#req-proofstore-1-v5keyp) and [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](storage/proof-store.md#req-proofstore-7-b5pw2p); tests [`REQ-PROOFSTORE-3-FDNJYN.T1.P1`](storage/proof-store.md#req-proofstore-3-fdnjyn.t1.p1), [`REQ-PROOFSTORE-4-XB8Z9W.T1.P1`](storage/proof-store.md#req-proofstore-4-xb8z9w.t1.p1), [`REQ-PROOFSTORE-5-ZH56D4.T1.P1`](storage/proof-store.md#req-proofstore-5-zh56d4.t1.p1) and
+[`REQ-PROOFSTORE-7-B5PW2P.T1.P4`](storage/proof-store.md#req-proofstore-7-b5pw2p.t1.p4).
+
+<a id="oq-spec-proofstore-7-sqgb7c"></a>
+
+## OQ-SPEC-PROOFSTORE-7-SQGB7C — Extending the stored proof on demand or with own finality
+
+**Resolved (Ljuba, 2026-11-25, recommendation accepted):** the stored proof is extended when the
+node's own final point moves: after each block commit and after late signatures merge on the active
+fork, it is advanced over executed history ([`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](storage/proof-store.md#req-proofstore-2-dbn7sy)). It is not rebuilt on read; readers compose
+the stored hops with the tail ([`REQ-PROOFSTORE-6-X7FT2K` (Readers use the stored proof)](storage/proof-store.md#req-proofstore-6-x7ft2k)). Rejected: rebuilding on demand at read time, which re-walks
+history each read and depends on data the node may prune. Recorded as [`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](storage/proof-store.md#req-proofstore-2-dbn7sy) and [`REQ-PROOFSTORE-6-X7FT2K` (Readers use the stored proof)](storage/proof-store.md#req-proofstore-6-x7ft2k); tests
+[`REQ-PROOFSTORE-2-DBN7SY.T1.P1`](storage/proof-store.md#req-proofstore-2-dbn7sy.t1.p1), [`REQ-PROOFSTORE-2-DBN7SY.T1.P4`](storage/proof-store.md#req-proofstore-2-dbn7sy.t1.p4) and [`REQ-PROOFSTORE-6-X7FT2K.T1.P1`](storage/proof-store.md#req-proofstore-6-x7ft2k.t1.p1).
+
+<a id="oq-spec-proofstore-8-07yfkt"></a>
+
+## OQ-SPEC-PROOFSTORE-8-07YFKT — Re-rooting and base-layer finality of the adoption
+
+Open. The record is re-rooted when the local mirror observes a later same-fork snapshot ([`REQ-PROOFSTORE-4-XB8Z9W` (Re-rooting on a chain anchor advance)](storage/proof-store.md#req-proofstore-4-xb8z9w)).
+If the base layer later reverts that adoption, the dropped hops are gone and the record starts at an
+anchor the chain no longer holds; verification then falls back to the chain tier. With pruning below
+the anchor this loss becomes permanent. Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) re-root on observation
+(current); (2) re-root only after base-layer finality of the adoption; (3) re-root on observation and
+keep the dropped hops until that finality. Blocking effect: none while nothing below the anchor is
+pruned. Affected layers: local mirror.
+
+<a id="oq-spec-proofstore-9-7cnc80"></a>
+
+## OQ-SPEC-PROOFSTORE-9-7CNC80 — Restart durability of the stored proof and proof evidence
+
+Open. Both modules are process memory ([storage/proof-store.md](./storage/proof-store.md)). After a restart the node rebuilds its stored proof
+from what survives, and audit and sync evidence are lost. Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) keep
+memory only; (2) persist both with the other stores, read back through verification
+([`REQ-STOR-3-4RJGER` (Restart recovery without trust)](storage/durability.md#req-stor-3-4rjger)), with the proof write and the state
+install in one batch as [`INV-PROOFSTORE-1-0N80S6` (The proof write and the state install are one step)](storage/proof-store.md#inv-proofstore-1-0n80s6) requires. Blocking effect: no guarantee in the proof store presumes
+restart survival. Affected layers: storage durability.
+
+<a id="oq-spec-proofstore-10-66zdb2"></a>
+
+## OQ-SPEC-PROOFSTORE-10-66ZDB2 — Snapshot updates that bound the stored proof
+
+Open. Hops that change membership accumulate between chain anchor advances ([`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](storage/proof-store.md#req-proofstore-2-dbn7sy)), and the
+node's disputes and synchronization payloads carry them. The dispute upload cap and the hop count it
+allows ([fraud-proofs.md](disputes/fraud-proofs.md#assumptions-and-constraints),
+[`OQ-32-5NDD24`](open-questions.md#oq-32-5ndd24)) bound an honest proof only while snapshot updates
+keep the hop count below that bound; participants that refuse snapshot updates can push it past.
+Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) no trigger: rely on ordinary snapshot updates; (2) post a same-fork
+snapshot update when the stored proof nears the hop bound; (3) as (2), and treat a refusal to sign
+it as a fault. Blocking effect: an honest dispute above the cap cannot be built. Affected layers:
+snapshot adoption, fraud proofs.
+
+<a id="oq-spec-proofstore-11-9x8jfg"></a>
+
+## OQ-SPEC-PROOFSTORE-11-9X8JFG — Missing-evidence policy with pruned storage
+
+Open. The stored proof is never checked against block storage below its final point, and a missing
+tail block makes construction fail ([`REQ-PROOFSTORE-1-V5KEYP` (One stored proof, for the active fork)](storage/proof-store.md#req-proofstore-1-v5keyp), [`REQ-PROOFSTORE-6-X7FT2K` (Readers use the stored proof)](storage/proof-store.md#req-proofstore-6-x7ft2k)). With pruning, other readers meet absent data:
+a dispute block at a pruned height, a not-latest-state check, a predecessor below a gap. Absent data
+must never be read as evidence of fraud. Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) a reader fails on absent
+data; (2) it skips the check; (3) it lowers its result to what it can prove. Blocking effect: decided
+with pruning. Affected layers: state proofs, fraud proofs.
+
+<a id="oq-spec-proofstore-12-hvmc6k"></a>
+
+## OQ-SPEC-PROOFSTORE-12-HVMC6K — Ordering of stored-proof writers and readers
+
+**Resolved (Ljuba, 2026-11-27, recommendation accepted):** writes to the stored proof are applied
+one at a time in queue order, and every reader sees the writes queued before its read. A write
+computed from an earlier read is dropped when the record changed meanwhile or its fork is no longer
+active. The synchronization write happens in the install step, and an install whose prepared proof
+went stale aborts without penalty ([`INV-PROOFSTORE-1-0N80S6` (The proof write and the state install are one step)](storage/proof-store.md#inv-proofstore-1-0n80s6)). The writers after a block commit, a merge and a chain
+snapshot update are not awaited, so the record may lag executed history but never leads it
+([`INV-PROOFSTORE-2-4K6815` (The record may lag history but never lead it)](storage/proof-store.md#inv-proofstore-2-4k6815)). Rejected: awaiting every writer at its trigger, which can wait on chain-event recovery
+while holding the state lock. Recorded as [`INV-PROOFSTORE-1-0N80S6` (The proof write and the state install are one step)](storage/proof-store.md#inv-proofstore-1-0n80s6) and [`INV-PROOFSTORE-2-4K6815` (The record may lag history but never lead it)](storage/proof-store.md#inv-proofstore-2-4k6815); tests [`INV-PROOFSTORE-1-0N80S6.T1.P1`](storage/proof-store.md#inv-proofstore-1-0n80s6.t1.p1),
+[`INV-PROOFSTORE-1-0N80S6.T1.P2`](storage/proof-store.md#inv-proofstore-1-0n80s6.t1.p2), [`INV-PROOFSTORE-1-0N80S6.T1.P3`](storage/proof-store.md#inv-proofstore-1-0n80s6.t1.p3) and [`INV-PROOFSTORE-2-4K6815.T1.P1`](storage/proof-store.md#inv-proofstore-2-4k6815.t1.p1).

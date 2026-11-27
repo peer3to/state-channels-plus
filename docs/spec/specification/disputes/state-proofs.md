@@ -77,8 +77,13 @@ signers on the consecutive run, including signatures supplied above its first bl
 **<a id="req-sp-8-9zccej"></a>`REQ-SP-8-9ZCCEJ`.** Construct proofs from the mirrored chain anchor,
 which may lag the chain but must not lead it. Do not use a peer's newer private final point as the
 construction anchor. Keep the required finalized membership changes after the anchor, with the
-shortest forward evidence that establishes each hop. Search backward from the requested active
-head for the latest point that can be proved final. Add that final point as a separate last
+shortest forward evidence that establishes each hop. A proof at the latest height proves the latest
+point that can be proved final, which the stored proof keeps up to date with the node's own
+finality ([`REQ-PROOFSTORE-2-DBN7SY` (Advance with own finality)](../storage/proof-store.md#req-proofstore-2-dbn7sy)). A proof
+at a lower requested height keeps the stored hops that end at or below it and appends the linked
+tail; it does not search for a lower final point
+([`REQ-PROOFSTORE-6-X7FT2K` (Readers use the stored proof)](../storage/proof-store.md#req-proofstore-6-x7ft2k)). Missing material
+makes construction fail only in that tail: blocks below a proven point may be absent. Add that final point as a separate last
 milestone when its start differs from the preceding hop, even if the runs overlap. Extend an
 existing milestone only when its first block is the same. Append the linked tail inside the last
 milestone. Missing signatures can lower the proved final point while leaving a valid unfinalized
@@ -106,7 +111,10 @@ replay backward from its newer final view; the peer can submit its own newer evi
 
 **<a id="req-sp-10-jmvhtb"></a>`REQ-SP-10-JMVHTB`.** After successful synchronization, persist the
 verified start and retained region, snapshots and membership changes needed to reconstruct the
-proof, writing only changed data. Do not persist unchecked skipped history. Store the full state
+proof, writing only changed data. The stored proof of the fork takes the verified start, the
+received hops and the final point with its full state, in the same step as the install
+([`REQ-PROOFSTORE-3-FDNJYN` (Seeding from a verified synchronization)](../storage/proof-store.md#req-proofstore-3-fdnjyn),
+[`INV-PROOFSTORE-1-0N80S6` (The proof write and the state install are one step)](../storage/proof-store.md#inv-proofstore-1-0n80s6)). Do not persist unchecked skipped history. Store the full state
 at the latest proved final point and replay the tail through normal processing. If the anchor is
 itself that final point, retain its block, snapshot and full state so its proof can be rebuilt.
 If a later point is final, the older anchor's full state and a separate proof ending at it are
@@ -807,17 +815,17 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-8-9zccej.t2.p10"></a>`REQ-SP-8-9ZCCEJ.T2.P10` — Missing required anchor-run blocks make construction throw; restoring the genuine blocks permits an explicit new attempt yielding the expected chain-valid run.
 
-<a id="req-sp-8-9zccej.t2.p11"></a>`REQ-SP-8-9ZCCEJ.T2.P11` — A missing participant-change block above the anchor makes construction throw instead of skipping its hop.
+<a id="req-sp-8-9zccej.t2.p11"></a>`REQ-SP-8-9ZCCEJ.T2.P11` — A participant-change block above the anchor but below the stored final point is missing: construction still builds the stored hops, since absence below a proven point is not missing material.
 
 <a id="req-sp-8-9zccej.t2.p12"></a>`REQ-SP-8-9ZCCEJ.T2.P12` — Loss of a required join confirmation lowers the proved final point to the preceding block and retains the join in a chain-valid unfinalized tail.
 
-<a id="req-sp-8-9zccej.t2.p13"></a>`REQ-SP-8-9ZCCEJ.T2.P13` — A missing stored snapshot for a required participant-change block makes construction throw instead of skipping the hop.
+<a id="req-sp-8-9zccej.t2.p13"></a>`REQ-SP-8-9ZCCEJ.T2.P13` — The stored snapshot of a join block above the anchor but below the stored final point is missing: construction still builds the stored hops.
 
 <a id="req-sp-8-9zccej.t2.p14"></a>`REQ-SP-8-9ZCCEJ.T2.P14` — Required proof-block absence makes dispute construction throw and leaves the chain dispute window without commitments.
 
 <a id="req-sp-8-9zccej.t2.p15"></a>`REQ-SP-8-9ZCCEJ.T2.P15` — Required proof-block absence makes sync payload generation throw and return no replacement payload.
 
-<a id="req-sp-8-9zccej.t2.p16"></a>`REQ-SP-8-9ZCCEJ.T2.P16` — Missing required participant-change block makes snapshot posting throw before any recorded multicall; the chain anchor stays unchanged.
+<a id="req-sp-8-9zccej.t2.p16"></a>`REQ-SP-8-9ZCCEJ.T2.P16` — A participant-change block below the stored final point is missing: snapshot posting still sends the update and the chain adopts the stored final point.
 
 <a id="req-sp-8-9zccej.t2.p17"></a>`REQ-SP-8-9ZCCEJ.T2.P17` — With required proof material present, snapshot posting sends updateStateSnapshotSameFork and the chain adopts the newer last-milestone final point.
 
@@ -899,7 +907,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t3.p6"></a>`REQ-SP-9-RNXP56.T3.P6` — An unlinked block causes all three tiers to return false; shared verification returns the chain invalid verdict without throwing.
 
-<a id="req-sp-9-rnxp56.t3.p7"></a>`REQ-SP-9-RNXP56.T3.P7` — Missing required participant-change storage while obtaining the local final start throws and no later proof tier runs.
+<a id="req-sp-9-rnxp56.t3.p7"></a>`REQ-SP-9-RNXP56.T3.P7` — A participant-change block below the stored final point is missing: the local final tier still walks the proof from the stored final point and accepts it, and no later tier runs.
 
 <a id="req-sp-9-rnxp56.t3.p8"></a>`REQ-SP-9-RNXP56.T3.P8` — A local EVM connection failure during mirror walk throws with no chain fallback.
 
@@ -1101,7 +1109,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-10-jmvhtb.t5.p12"></a>`REQ-SP-10-JMVHTB.T5.P12` — Verified support evidence outside replay is stored as a block with its signatures but does not cause its resulting snapshot or full state to be stored.
 
-<a id="req-sp-10-jmvhtb.t5.p13"></a>`REQ-SP-10-JMVHTB.T5.P13` — Repeated occurrences of the same block contribute distinct signatures that merge in storage; the tail applies and reconstruction ending at the merged block proves it final as a one-block milestone.
+<a id="req-sp-10-jmvhtb.t5.p13"></a>`REQ-SP-10-JMVHTB.T5.P13` — Repeated occurrences of the same block contribute distinct signatures that merge in storage; the tail applies, and the proof rebuilt through the tail keeps the received hops as verified, proves the merged block final and verifies.
 
 <a id="req-sp-10-jmvhtb.t5.p14"></a>`REQ-SP-10-JMVHTB.T5.P14` — A threshold hop above the anchor syncs without contiguous gap history; those gap heights remain absent and reconstruction verifies from the anchor.
 
