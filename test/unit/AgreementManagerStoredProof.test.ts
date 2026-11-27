@@ -3,8 +3,10 @@ import { proofEvidence, storedProof } from "@test/factory";
 import {
     assertAbortedInstallPublishesNoStoredProof,
     assertAuditKeepsStoredProof,
+    assertGenesisResetStartsStoredProof,
     assertHistoryEditKeepsStoredFinalPoint,
     assertOldForkAdvanceKeepsActiveStoredProof,
+    assertReRootKeepsHopAboveAnchor,
     assertStaleAbortKeepsResponder,
     assertSyncAdvancesStoredProof,
     assertSyncKeepsNotNewerStoredProof,
@@ -52,6 +54,14 @@ describe("Unit: AgreementManager stored proof", function () {
 
     it("a stored block at the stored final point is dropped → the final point and the proof built over it are unchanged", async function () {
         await assertHistoryEditKeepsStoredFinalPoint(TestSession.getHarness());
+    });
+
+    it("a re-root at the snapshot below the stored final point → the anchor moves there, the hop above it and the final point with its state are kept", async function () {
+        await assertReRootKeepsHopAboveAnchor(TestSession.getHarness());
+    });
+
+    it("a reset at the genesis of a reduced fork → its stored proof is that genesis alone with its state, and the old fork's is gone", async function () {
+        await assertGenesisResetStartsStoredProof(TestSession.getHarness());
     });
 
     describe("conflict final points", function () {

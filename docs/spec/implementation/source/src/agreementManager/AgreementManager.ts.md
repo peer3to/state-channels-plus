@@ -122,7 +122,7 @@ A failed recovery of a genesis-hop inbound run is remembered per fork and upper 
 
 The stored proof is written only by the own advance, the sync install, the re-root and the reset, and a write never replaces a later stored final point.
 
-- Setup: A spectator that holds its own earlier final point syncs to a later served final point, to the final point it already stores, and with its held install interrupted by a conflicting block or by a stored-proof change; a pending auditor audits a dispute above its own final point; an advance of the old fork runs after a fork change; a peer loses its stored block at its stored final point
+- Setup: A spectator that holds its own earlier final point syncs to a later served final point, to the final point it already stores, and with its held install interrupted by a conflicting block or by a stored-proof change; a pending auditor audits a dispute above its own final point; an advance of the old fork runs after a fork change; a peer loses its stored block at its stored final point; a peer's stored proof is re-rooted directly at the held snapshot below its final point; a peer stores a reduced fork's genesis built from its block 1 state and resets its stored proof there
 - Oracle: The stored proof read back through `getLocalFinalizedSnapshot` and the `Type.StoredProof` encoding of the record; the install state; the sync result's rejections and blacklist flag; the proof built over the stored final point
 
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P1` — a sync to a later final point stores the served final point with its state
@@ -132,6 +132,8 @@ The stored proof is written only by the own advance, the sync install, the re-ro
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P5` — an audit that verifies a later final point than the auditor's own leaves the stored proof unchanged
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P6` — an advance of the old fork after a fork change writes nothing and keeps the new fork's stored proof
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P7` — a stored block dropped at the stored final point leaves the final point and the proof built over it unchanged
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P8` — a re-root at a snapshot below the final point moves the anchor there and keeps the hop above it and the final point with its state
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P9` — a reset at a genesis of a fork with no stored proof makes that genesis, with its state and no hop, the stored proof and drops the old fork's
 
 ## UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH
 

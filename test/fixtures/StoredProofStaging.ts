@@ -444,6 +444,111 @@ export async function assertForkChangeResetsStoredProof(
 }
 
 /**
+ * Three peers finalize blocks 0..2. Peer 0's stored proof, rooted at the
+ * fork genesis, is re-rooted at the snapshot of the block below its final
+ * point: the anchor moves there, and the hop above it and the final point
+ * with its state are kept.
+ */
+export async function assertReRootKeepsHopAboveAnchor(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.lifecycle.start(3, 0);
+    const peerIndices = h.peers.map((peer) => peer.index);
+    await h.transition.advanceState({
+        count: 3,
+        waitForPeers: peerIndices,
+        waitForFinalization: true
+    });
+    await h.assert.sync.peersInSyncWait({ peerIndices });
+    const peer = h.getPeer(0);
+    const forkId = h.activeForkId!;
+    const before = await storedProofView(h, peer.index, forkId);
+    // premise - rooted at the genesis, one hop whose final point is above block 0
+    expect(before, "the stored proof").to.not.equal(null);
+    expect(before!.anchor.hash).to.equal(await genesisHash(h, peer, forkId));
+    expect(before!.hopHeights).to.have.lengthOf(1);
+    expect(before!.finalized.height).to.be.greaterThan(0);
+    const anchorHeight = before!.finalized.height - 1;
+
+    const anchor = await h.execOnHost(
+        peer,
+        async (sm, args) => {
+            const snapshot = sm.storage.getStateSnapshot({
+                forkId: args.forkId,
+                height: args.anchorHeight
+            })!;
+            await sm.agreementManager.reRootStoredProof(snapshot);
+            return String(snapshot.hash);
+        },
+        { forkId, anchorHeight }
+    );
+    const after = await storedProofView(h, peer.index, forkId);
+
+    expect(after!.anchor).to.deep.equal({ hash: anchor, height: anchorHeight });
+    expect(after!.hopHeights).to.deep.equal(before!.hopHeights);
+    expect(after!.finalized).to.deep.equal(before!.finalized);
+    expect(after!.isStateHeld).to.equal(true);
+}
+
+/**
+ * The genesis of a reduced fork (peer 0's block 1 state, as a reduction
+ * installs it) is stored, then its stored proof is reset: the new fork's
+ * stored proof is that genesis alone with its state, and the old fork's
+ * stored proof is gone.
+ */
+export async function assertGenesisResetStartsStoredProof(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.lifecycle.start(3, 0);
+    const peerIndices = h.peers.map((peer) => peer.index);
+    await h.transition.advanceState({
+        count: 2,
+        waitForPeers: peerIndices,
+        waitForFinalization: true
+    });
+    await h.assert.sync.peersInSyncWait({ peerIndices });
+    const peer = h.getPeer(0);
+    const oldForkId = h.activeForkId!;
+    // premise - the old fork holds a stored proof
+    expect(await storedProofView(h, peer.index, oldForkId)).to.not.equal(null);
+
+    const newGenesis = await h.execOnHost(
+        peer,
+        async (sm, args) => {
+            const reduced = sm.storage.getStateSnapshot({
+                forkId: args.oldForkId,
+                height: 1
+            })!;
+            const encodedState =
+                sm.storage.stateMachineStates.getStateMachineState(
+                    reduced.stateMachineStateHash
+                )!;
+            const genesis = (reduced.constructor as typeof StateSnapshot).from({
+                ...reduced.toStruct(),
+                forkId: reduced.snapshotDataHash,
+                blockHeight: 0
+            });
+            // the install stores the genesis in the same step
+            sm.storage.stateSnapshots.storeStateSnapshot(genesis);
+            sm.agreementManager.resetStoredProof(genesis, encodedState);
+            return {
+                forkId: String(genesis.forkID),
+                hash: String(genesis.hash)
+            };
+        },
+        { oldForkId }
+    );
+    const after = await storedProofView(h, peer.index, newGenesis.forkId);
+
+    expect(after, "the new fork's stored proof").to.not.equal(null);
+    expect(after!.anchor).to.deep.equal({ hash: newGenesis.hash, height: 0 });
+    expect(after!.hopHeights).to.deep.equal([]);
+    expect(after!.finalized).to.deep.equal(after!.anchor);
+    expect(after!.isStateHeld).to.equal(true);
+    expect(await storedProofView(h, peer.index, oldForkId)).to.equal(null);
+}
+
+/**
  * Installs `storedProof` as peer `peerIndex`'s stored proof of its active
  * fork and each of `auditEvidence` as an audit record there, then reads the
  * final points a conflict counter rests on: the stored proof's own points

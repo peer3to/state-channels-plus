@@ -23,5 +23,7 @@ proof back through `getLocalFinalizedSnapshot` and its encoded record. Two cases
 - `A4: an audit verifies a later final point than the auditor's own → the stored proof is unchanged`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P5
 - `an advance of the old fork's stored proof after a fork change → nothing is written, the new fork's stored proof stays`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P6
 - `a stored block at the stored final point is dropped → the final point and the proof built over it are unchanged`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P7
+- `a re-root at the snapshot below the stored final point → the anchor moves there, the hop above it and the final point with its state are kept`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P8
+- `a reset at the genesis of a reduced fork → its stored proof is that genesis alone with its state, and the old fork's is gone`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P9
 - `an evidence point is not used at a height where our stored proof has a point`: UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P1, REQ-FP-7-4DD0D7.T9.P24
 - `an evidence record that conflicts with one of our own points is skipped`: UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P2, REQ-FP-7-4DD0D7.T9.P25
