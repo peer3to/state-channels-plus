@@ -9,15 +9,19 @@ Status: the calls, readiness and first capacity ramps were measured on farm host
 synthetic workload (see Results). Channel flows of real participants were measured on 2026-11-23 to
 2026-11-27, and capacity again on 2026-11-25 to 2026-11-27 with a workload taken from those flows
 (Channel flows, Capacity with the flows' workload). The fallback strategy was chosen on 2026-11-26.
+On 2026-11-27 the event-built mirror was removed, and the flows were measured again (Channel flows).
+On 2026-11-28 PR #3 took PR #8's node (`bebaa76`): keys are pushed as the blocks change them, and a
+watched key stays watched until its subscription ends.
 
 ## What is compared
 
-- **Current path:** the SDK with the light client off. Chain reads go to the RPC node, and the
-  event-built mirror answers the local-first and replicated reads.
+- **Current path:** the SDK with the light client off. Chain reads go to the RPC node. Until
+  2026-11-27 the event-built mirror answered the local-first and replicated reads; since its removal
+  they go to the node as well (`REQ-MIRROR-6-0WSB4V`).
 - **Light client path:** the SDK with the light client on against a peer3 node started with
   `--light-client`. Reads at the latest block are answered from the partitions the node pushes, or
   from proofs fetched at the same block, and replicated reads go to the chain
-  (`REQ-MIRROR-5-N5SZC9`).
+  (`REQ-MIRROR-6-0WSB4V`).
 
 Both paths replay the same blocks and calls. Every light client answer is also compared with the
 node's answer pinned to the same block hash (compare mode, `LIGHT_CLIENT_COMPARE_READS`,
@@ -618,6 +622,16 @@ the same limits.
 
 For 10,000 players in channels of 3 (the shared rows), one node per 1,800 or more subscribers gives at
 most 6 nodes at the capacity limit, or 9 nodes with the p95 within 2 s (1,200 per node).
+
+**PR #8's node.** On 2026-11-27 the same ramps ran against PR #8 (`ace9bb2`, now PR #3's head tree),
+which pushes each block's changes instead of proving every held key again. Building the pushes took
+a median 76 ms per block at 1,000 distinct subscribers (1,454 to 1,528 ms on `827ca0d`) and at most
+126 ms in any step. Distinct partitions then sustained 1,600 subscribers with the p95 within 2 s and
+first missed at 1,800; shared partitions sustained 1,200 and 1,800 in the two rounds and first
+missed at 1,800 and 2,400. In every ramp the peer hosts, not the node, were the limit: their threads
+were 92% busy at 1,600 and fully busy at every missed step. The node's own limit is above these
+numbers and needs more peer hosts than testing2 to testing5 to measure. No push was refused and no
+watch failed in a sustained step.
 
 Measured with the farm drained of tests; results, logs and scripts are kept outside the repository
 with the bench notes of 2026-11-25 to 2026-11-27.
