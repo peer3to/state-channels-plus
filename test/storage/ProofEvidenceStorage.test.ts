@@ -219,6 +219,26 @@ describe("ProofEvidenceStorage", () => {
         ]);
     });
 
+    it("returns only the audit records of a fork as its audit evidence: its sync records and another fork's audit records are left out", () => {
+        const proofEvidence = new Storage().proofEvidence;
+        const forkId = factory.hash();
+        const otherForkId = factory.hash();
+        const audit = factory.proofEvidence(forkId, 1);
+        const laterAudit = factory.proofEvidence(forkId, 2);
+
+        proofEvidence.setAuditEvidence(factory.hash(), audit);
+        proofEvidence.setSyncEvidence(factory.proofEvidence(forkId, 3));
+        proofEvidence.setAuditEvidence(factory.hash(), laterAudit);
+        proofEvidence.setAuditEvidence(
+            factory.hash(),
+            factory.proofEvidence(otherForkId, 1)
+        );
+
+        expect(proofEvidence.getForkAuditEvidence(forkId)).to.have.deep.members(
+            [audit, laterAudit]
+        );
+    });
+
     it("drops a fork's audit and sync evidence and keeps another fork's", () => {
         const proofEvidence = new Storage().proofEvidence;
         const droppedForkId = factory.hash();

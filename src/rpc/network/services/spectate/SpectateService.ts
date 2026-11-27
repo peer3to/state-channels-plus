@@ -1,7 +1,8 @@
 import SpectateServiceRpcMethods from "./SpectateRpcMethods";
-import type {
-    ProofTierWalk,
-    StateProofEvidence
+import {
+    ProofTier,
+    type ProofTierWalk,
+    type StateProofEvidence
 } from "@/agreementManager/AgreementManager";
 import { DisconnectPolicy } from "@/DisconnectPolicy";
 import { END_OF_BLOCK_LOG_INDEX } from "@/eventHandlers/EventHandler";
@@ -18,6 +19,7 @@ import { Codec, getChecksumAddress, hash, Type } from "@/utils";
 import { channelKey } from "@/utils/channelKey";
 import { errorMessage } from "@/utils/errorMessage";
 import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
+import { LoggerUtils } from "@/utils/LoggerUtils";
 import { DisputeStruct } from "@typechain-types/contracts/V1/types/DisputeTypes";
 import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { ZeroHash } from "ethers";
@@ -61,6 +63,18 @@ function isResponderSyncingResponse(
         (response as { isResponderSyncing?: unknown } | null)
             ?.isResponderSyncing === true
     );
+}
+
+/**
+ * `walk` passed only from a trusted start below this peer's own final point
+ * (the local diamond's or the chain's anchor, or the fork genesis), not from
+ * that final point. An anchor at or above the final point is this peer's
+ * start: a proof walked from it is walked from where this peer stands.
+ */
+function passedBelowOwnFinalPoint(walk: ProofTierWalk): boolean {
+    const localFinalized = walk.localFinalized;
+    if (!localFinalized || walk.tier === ProofTier.LocalFinalized) return false;
+    return (walk.start?.blockHeight ?? -1) < localFinalized.blockHeight;
 }
 
 /** A sync request's result for its caller. */
@@ -833,6 +847,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 syncPayload.stateProof,
                 evidence
             );
+            // fails from every start: a broken proof
             if (!walk.valid)
                 return this.rejectSync(peerAddress, "milestones invalid");
             const milestones = syncPayload.stateProof.milestones;
@@ -848,6 +863,16 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 localFinalized?.blockHeight ?? -1,
                 walk.start?.blockHeight ?? -1
             );
+            // a pass from a start below this peer's own final point alone
+            // never installs: it keeps its stored proof and state
+            if (passedBelowOwnFinalPoint(walk))
+                return await this.declineUncheckedProof(
+                    peerAddress,
+                    forkId,
+                    syncPayload,
+                    { evidence, walk },
+                    provenHeight < knownFinalHeight
+                );
             if (provenHeight < knownFinalHeight)
                 return this.rejectSync(
                     peerAddress,
@@ -1514,6 +1539,77 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             b.latestOutboundMessageBlockHeight
             ? { lowerOutboundSnapshot: a, upperOutboundSnapshot: b }
             : { lowerOutboundSnapshot: b, upperOutboundSnapshot: a };
+    }
+
+    /**
+     * A proof that verified only from a start below this peer's own final
+     * point is not installed: the peer keeps its stored proof and state.
+     * When a final-history kill holds with this peer's final history as F,
+     * the proof is a side chain: it is kept as sync evidence, and the
+     * responder is rejected only when a kill's slash set shows it signed
+     * both histories; a peer that only relayed it is not penalized.
+     * Otherwise the proof shows no conflict but cannot be checked from the
+     * final point: no verdict and no close, and the next sync request asks
+     * again. A proof ending below the final point (`isTooOld`) stays a
+     * too-old proof.
+     */
+    private async declineUncheckedProof(
+        peerAddress: string,
+        forkId: ForkId,
+        syncPayload: SyncPayload,
+        { evidence, walk }: Pick<VerifiedSync, "evidence" | "walk">,
+        isTooOld: boolean
+    ): Promise<SyncOutcome> {
+        const stateManager = this.p2pManager.stateManager;
+        const kills =
+            await stateManager.disputeValidationService.findFinalHistoryKills(
+                forkId,
+                syncPayload.stateProof,
+                evidence
+            );
+        const metadata = {
+            peerAddress,
+            tier: walk.tier,
+            finalized: LoggerUtils.getSnapshotMetadata(walk.finalizedSnapshot),
+            localFinalized: LoggerUtils.getSnapshotMetadata(
+                walk.localFinalized!
+            )
+        };
+        if (kills.length === 0) {
+            if (isTooOld)
+                return this.rejectSync(
+                    peerAddress,
+                    "proof ends below the finalized state"
+                );
+            this.logger.info(
+                "applySyncResponse - the proof does not verify from the local final point and shows no conflict: not installed, no verdict",
+                metadata
+            );
+            return { synced: false };
+        }
+        const evidenceKey = stateManager.agreementManager.persistSyncEvidence(
+            forkId,
+            syncPayload.stateProof,
+            evidence,
+            walk,
+            syncPayload.latestFinalizedEncodedState as Bytes,
+            await stateManager.disputeManager.getMaxDisputeUploadBytes()
+        );
+        const signers = [...new Set(kills.flat())];
+        this.logger.warn(
+            "applySyncResponse - side chain served: not installed, kept as sync evidence",
+            {
+                ...metadata,
+                evidenceKey,
+                ...LoggerUtils.getSlashSetMetadata(signers)
+            }
+        );
+        if (signers.includes(getChecksumAddress(peerAddress)))
+            return this.rejectSync(
+                peerAddress,
+                "side chain signed by the responder"
+            );
+        return { synced: false };
     }
 
     private rejectSync(peerAddress: string, reason: string): SyncOutcome {

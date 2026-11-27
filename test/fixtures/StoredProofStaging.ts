@@ -24,6 +24,11 @@ import {
     installState,
     syncWithHeldInstall
 } from "@test/fixtures/SyncInstallStaging";
+import {
+    servingSignedConflictAt,
+    stageAnchoredHistory,
+    syncEvidenceView
+} from "@test/fixtures/SyncProofStaging";
 import { stageSpectatorBehindUnfinalizedTail } from "@test/fixtures/SyncReplayBaseStaging";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -138,6 +143,138 @@ export async function assertSyncAdvancesStoredProof(
     expect(sync.synced).to.equal(true);
     expect(after!.finalized).to.deep.equal(served);
     expect(after!.isStateHeld).to.equal(true);
+}
+
+/**
+ * The spectator stands below the served final point and syncs from its own
+ * final point; no hop since the fork genesis changes membership. The served
+ * final point replaces the spectator's last hop, which changes none, so the
+ * stored proof holds one hop: the served final point.
+ */
+export async function assertSyncFoldsNonChangeHop(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { forkId, spectator, responder, tip } =
+        await stageSpectatorBehindUnfinalizedTail(h, {
+            finalBlocksWhileCutOff: 1
+        });
+    const served = servedFinalPoint(await servedPayload(h, responder, forkId));
+    const before = await storedProofView(h, spectator.index, forkId);
+    // premise - one own hop, below the served final point
+    expect(before!.hopHeights).to.have.length(1);
+    expect(before!.finalized.height).to.be.lessThan(served.height);
+
+    const sync = await syncFromResponder(h, spectator, responder, forkId, tip);
+    const after = await storedProofView(h, spectator.index, forkId);
+
+    expect(sync.synced).to.equal(true);
+    expect(after!.anchor).to.deep.equal(before!.anchor);
+    expect(after!.hopHeights.map(([pointHeight]) => pointHeight)).to.deep.equal(
+        [served.height]
+    );
+    expect(after!.finalized).to.deep.equal(served);
+}
+
+/**
+ * Three participants finalize four blocks with no membership change: each
+ * later final point replaces the last hop, so a participant's stored proof
+ * holds one hop, at its latest final point.
+ */
+export async function assertNonChangeAdvanceKeepsOneHop(
+    h: MathPeerTestHarness
+): Promise<void> {
+    await h.lifecycle.start(3, 3);
+    await h.transition.advanceState({ count: 4, waitForFinalization: true });
+    const finalized = (await localFinalizedView(h, 0))!;
+    // premise - several final points were proven since the genesis
+    expect(finalized.height).to.be.greaterThan(1);
+
+    const view = await storedProofView(h, 0);
+
+    expect(view!.hopHeights.map(([pointHeight]) => pointHeight)).to.deep.equal(
+        [finalized.height]
+    );
+    expect(view!.finalized.hash).to.equal(finalized.hash);
+}
+
+/**
+ * A participant's walk of a side-chain proof whose threshold-final block
+ * conflicts with its own final point passes from the anchor; its real
+ * `persistSyncEvidence` then runs with `maxDisputeUploadBytes` as the
+ * dispute upload cap ("chain": the chain's own cap). Returns the key it
+ * kept the record under (null: refused) and the record held for the
+ * proof's final point.
+ */
+export async function persistSideChainSyncEvidence(
+    h: MathPeerTestHarness,
+    maxDisputeUploadBytes: "chain" | bigint
+) {
+    const { forkId, anchor, payload } = await stageAnchoredHistory(h, {
+        blocksAfter: 2
+    });
+    const requester = h.getPeer(2);
+    const localFinalized = (await localFinalizedView(h, requester.index))!;
+    const conflicting = await servingSignedConflictAt(
+        h,
+        payload,
+        anchor,
+        localFinalized.height
+    );
+    const kept = await h.execOnHost(
+        requester,
+        async (sm, args, { Codec, Type }) => {
+            const am = sm.agreementManager;
+            const served = Codec.decode(
+                args.encodedPayload,
+                Type.SyncPayload
+            );
+            const evidence = {
+                genesisStateSnapshotData:
+                    served.latestForkGenesisSnapshot.snapshotData,
+                milestoneSnapshots: served.milestoneSnapshots
+            };
+            const walk = await am.verifyStateProof(
+                args.forkId,
+                served.stateProof,
+                evidence
+            );
+            if (!walk.valid) throw new Error("the side chain must walk");
+            const cap =
+                args.cap === null
+                    ? await sm.disputeManager.getMaxDisputeUploadBytes()
+                    : BigInt(args.cap);
+            return (
+                am.persistSyncEvidence(
+                    args.forkId,
+                    served.stateProof,
+                    evidence,
+                    walk,
+                    served.latestFinalizedEncodedState,
+                    cap
+                ) ?? null
+            );
+        },
+        {
+            forkId,
+            encodedPayload: Codec.encode(
+                conflicting.payload,
+                Type.SyncPayload
+            ) as string,
+            cap:
+                maxDisputeUploadBytes === "chain"
+                    ? null
+                    : String(maxDisputeUploadBytes)
+        }
+    );
+    return {
+        kept,
+        finalSnapshot: conflicting.finalSnapshot,
+        evidence: await syncEvidenceView(
+            h,
+            requester,
+            conflicting.finalSnapshot
+        )
+    };
 }
 
 /**

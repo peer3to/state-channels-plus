@@ -1,6 +1,7 @@
 import { Block, StateSnapshot, StateProof } from "@/models";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage, { SortOrder } from "@/storage";
+import type { EvidenceKey } from "@/storage/keys";
 import { ReduceData } from "@/types";
 import type { StoredProof, StoredProofHop } from "@/types/disputes";
 import {
@@ -35,7 +36,7 @@ import {
     MilestoneProofStruct,
     StateProofStruct
 } from "@typechain-types/contracts/V1/types/ProofTypes";
-import { getAddress, id, ZeroHash } from "ethers";
+import { dataLength, getAddress, id, ZeroHash } from "ethers";
 
 const MESSAGE_TYPE_JOIN = id("JOIN_CHANNEL_MESSAGE");
 // the most genesis-hop misses remembered for one fork
@@ -331,8 +332,9 @@ class AgreementManager {
     /**
      * The stored proof a verified sync proof gives, for `write` to store in
      * the install's synchronous step. From this node's own final point it is
-     * the stored hops plus the received hops above it; from an anchor (or
-     * the genesis) the received hops alone. `write` stores only a later
+     * the stored hops plus the received hops above it, folded as an own
+     * advance folds them; from an anchor (or the genesis) the received hops
+     * alone. `write` stores only a later
      * final point than the one then stored. `isStale` is true when a proof
      * that extends the stored one finds the stored proof changed since: the
      * install then aborts, so it never commits without its proof. Nothing
@@ -375,7 +377,7 @@ class AgreementManager {
             start
         );
         if (!received) return skip;
-        const candidate: StoredProof = {
+        const appended: StoredProof = {
             anchorSnapshot: extendsStored
                 ? read!.anchorSnapshot
                 : start.toStruct(),
@@ -383,6 +385,19 @@ class AgreementManager {
             finalizedSnapshot: finalized.toStruct(),
             encodedFinalizedState
         };
+        // an extension folds like an own advance: a received final point
+        // replaces the last hop when that hop changes no membership. The
+        // plain append is the fallback when the fold does not verify
+        const candidate =
+            (extendsStored &&
+                (await this.foldFinalPoints(
+                    forkId,
+                    read!,
+                    received,
+                    true,
+                    encodedFinalizedState
+                ))) ||
+            appended;
         const isKept = (current: StoredProof | undefined) =>
             !!current && !this.isLaterFinalPoint(finalized, current);
         return {
@@ -703,6 +718,68 @@ class AgreementManager {
     }
 
     /**
+     * Keeps a synced `stateProof` that `walk` verified but the sync does not
+     * install as sync evidence of `forkId`, outside block history: the walk's
+     * start (the fork genesis without one), each threshold hop above it as
+     * received with the snapshot it proves, and the walk's final point with
+     * `encodedFinalizedState` (`0x` when it is not the state there), which is
+     * also its latest point. Nothing else is written. Undefined when the hops
+     * do not fit in a dispute upload (`maxDisputeUploadBytes`: no dispute
+     * can carry that history) or the fork holds the maximum of sync records.
+     */
+    public persistSyncEvidence(
+        forkId: ForkId,
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence,
+        walk: ProofTierWalk,
+        encodedFinalizedState: Bytes | undefined,
+        maxDisputeUploadBytes: bigint
+    ): EvidenceKey | undefined {
+        const start = walk.start ?? this.getGenesisSnapshot(forkId);
+        const hops = this.selectReceivedHops(stateProof, evidence, walk, start);
+        const hopBytes = dataLength(
+            Codec.encode(
+                { milestones: hops.map(({ milestone }) => milestone) },
+                Type.StateProof
+            )
+        );
+        if (BigInt(hopBytes) > maxDisputeUploadBytes) {
+            this.logger.warn(
+                "Sync evidence not kept: its hops do not fit in a dispute upload",
+                {
+                    forkId,
+                    finalized: LoggerUtils.getSnapshotMetadata(
+                        walk.finalizedSnapshot
+                    ),
+                    ...LoggerUtils.getTransactionSizeMetadata(
+                        hopBytes,
+                        Number(maxDisputeUploadBytes)
+                    )
+                }
+            );
+            return undefined;
+        }
+        const finalized = walk.finalizedSnapshot.toStruct();
+        const state =
+            encodedFinalizedState !== undefined &&
+            hash(encodedFinalizedState) ===
+                walk.finalizedSnapshot.stateMachineStateHash
+                ? encodedFinalizedState
+                : "0x";
+        return this.storage.proofEvidence.setSyncEvidence({
+            forkId,
+            proof: {
+                anchorSnapshot: start.toStruct(),
+                hops,
+                finalizedSnapshot: finalized,
+                encodedFinalizedState: state
+            },
+            latestSnapshot: finalized,
+            encodedLatestState: state
+        });
+    }
+
+    /**
      * The chain anchor is now `anchor`: when it left the fork of the anchor
      * before it, that fork's proof evidence is dropped.
      */
@@ -713,13 +790,13 @@ class AgreementManager {
             this.storage.proofEvidence.dropFork(left);
     }
 
-    /** The final blocks (each hop's first block) at `height` that evidence of `forkId` holds. */
+    /** The final blocks (each hop's first block) at `height` that audit evidence of `forkId` holds. */
     public getEvidenceFinalBlocks(
         forkId: ForkId,
         height: BlockHeight
     ): Block[] {
         return this.storage.proofEvidence
-            .getForkEvidence(forkId)
+            .getForkAuditEvidence(forkId)
             .flatMap(({ proof }) => proof.hops)
             .map(({ milestone }) =>
                 Block.fromBlockConfirmation(milestone.blockConfirmations[0])
@@ -1028,23 +1105,17 @@ class AgreementManager {
                       finalized,
                       fromHeight
                   );
+        const hops = milestones.map((milestone) => ({
+            milestone,
+            snapshot: this.getSnapshotFromMilestone(milestone)!.toStruct()
+        }));
         // appending every final point is the fallback when a replacement
         // does not verify, so one bad fold never stalls the advance
         const advanced =
-            milestones.length === 0
+            hops.length === 0
                 ? stored
-                : ((await this.foldFinalPoints(
-                      forkId,
-                      stored,
-                      milestones,
-                      true
-                  )) ??
-                  (await this.foldFinalPoints(
-                      forkId,
-                      stored,
-                      milestones,
-                      false
-                  )));
+                : ((await this.foldFinalPoints(forkId, stored, hops, true)) ??
+                  (await this.foldFinalPoints(forkId, stored, hops, false)));
         if (!advanced || (read && advanced === read)) return;
         // the fork changed meanwhile: writing would drop the new fork's proof
         if (forkId !== this.getActiveForkId()) return;
@@ -1064,24 +1135,22 @@ class AgreementManager {
     }
 
     /**
-     * `stored` with each final point of `milestones` (in order, each proven
+     * `stored` with each final point of `newHops` (in order, each proven
      * from the one before): with `replacesNonChange` it replaces the last hop
      * when that hop changes no membership, else it is appended. Undefined
      * when the result does not verify from the anchor or the state at its
-     * final point is not held.
+     * final point is not held: `encodedFinalizedState` when given (a synced
+     * state not stored yet), else the stored one.
      */
     private async foldFinalPoints(
         forkId: ForkId,
         stored: StoredProof,
-        milestones: MilestoneProofStruct[],
-        replacesNonChange: boolean
+        newHops: StoredProofHop[],
+        replacesNonChange: boolean,
+        encodedFinalizedState?: Bytes
     ): Promise<StoredProof | undefined> {
         const hops = [...stored.hops];
-        for (const milestone of milestones) {
-            const hop = {
-                milestone,
-                snapshot: this.getSnapshotFromMilestone(milestone)!.toStruct()
-            };
+        for (const hop of newHops) {
             const last = hops.at(-1);
             const lastStart = hops.at(-2)?.snapshot ?? stored.anchorSnapshot;
             const replacesLast =
@@ -1095,7 +1164,8 @@ class AgreementManager {
             else hops.push(hop);
         }
         const finalized = StateSnapshot.from(hops.at(-1)!.snapshot);
-        const encodedFinalizedState =
+        const finalizedState =
+            encodedFinalizedState ??
             this.storage.stateMachineStates.getStateMachineState(
                 finalized.stateMachineStateHash
             );
@@ -1113,13 +1183,13 @@ class AgreementManager {
         const isProven =
             walk.valid &&
             StateSnapshot.from(walk.finalizedSnapshot).hash === finalized.hash;
-        if (!isProven || !encodedFinalizedState) {
+        if (!isProven || !finalizedState) {
             this.logger.warn("Stored proof not advanced", {
                 forkId,
                 finalized: LoggerUtils.getSnapshotMetadata(finalized),
                 replacesNonChange,
                 isProven,
-                isStateHeld: encodedFinalizedState !== undefined
+                isStateHeld: finalizedState !== undefined
             });
             return undefined;
         }
@@ -1127,7 +1197,7 @@ class AgreementManager {
             anchorSnapshot: stored.anchorSnapshot,
             hops,
             finalizedSnapshot: finalized.toStruct(),
-            encodedFinalizedState
+            encodedFinalizedState: finalizedState
         };
     }
 
@@ -1296,16 +1366,17 @@ class AgreementManager {
     }
 
     /**
-     * The hops of each evidence record of `forkId` whose hop points agree
-     * with the stored proof's: a record with another snapshot at one of the
-     * stored proof's final heights is left out.
+     * The hops of each audit evidence record of `forkId` whose hop points
+     * agree with the stored proof's: a record with another snapshot at one of
+     * the stored proof's final heights is left out. Sync evidence is no final
+     * point source: it serves snapshot lookups only.
      */
     private async getAgreeingEvidenceHops(
         forkId: ForkId
     ): Promise<StoredProofHop[][]> {
         const own = await this.readStoredProofPoints(forkId);
         return this.storage.proofEvidence
-            .getForkEvidence(forkId)
+            .getForkAuditEvidence(forkId)
             .map(({ proof }) => proof.hops)
             .filter((hops) =>
                 hops.every(({ snapshot }) => {

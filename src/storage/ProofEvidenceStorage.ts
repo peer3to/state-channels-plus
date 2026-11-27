@@ -72,6 +72,16 @@ export class ProofEvidenceStorage {
         );
     }
 
+    /** The audit records of `forkId`: sync records are left out. */
+    public getForkAuditEvidence(forkId: ForkId): ProofEvidence[] {
+        return [...this.evidenceByKey]
+            .filter(
+                ([key, evidence]) =>
+                    !isSyncEvidenceKey(key) && evidence.forkId === forkId
+            )
+            .map(([, evidence]) => evidence);
+    }
+
     /**
      * A snapshot some record holds (its anchor, a hop's snapshot, its final
      * point or its latest point) whose hash is `snapshotHash`.

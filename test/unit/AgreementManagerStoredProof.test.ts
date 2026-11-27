@@ -5,11 +5,14 @@ import {
     assertAuditKeepsStoredProof,
     assertGenesisResetStartsStoredProof,
     assertHistoryEditKeepsStoredFinalPoint,
+    assertNonChangeAdvanceKeepsOneHop,
     assertOldForkAdvanceKeepsActiveStoredProof,
     assertReRootKeepsHopAboveAnchor,
     assertStaleAbortKeepsResponder,
     assertSyncAdvancesStoredProof,
+    assertSyncFoldsNonChangeHop,
     assertSyncKeepsNotNewerStoredProof,
+    persistSideChainSyncEvidence,
     readConflictFinalPoints
 } from "@test/fixtures/StoredProofStaging";
 import { MathTestSession as TestSession } from "@test/harness";
@@ -18,6 +21,36 @@ import { expect } from "chai";
 describe("Unit: AgreementManager stored proof", function () {
     it("S4: a sync to a later final point than the stored one → the install stores the served final point with its state", async function () {
         await assertSyncAdvancesStoredProof(TestSession.getHarness());
+    });
+
+    it("a sync from the own final point whose last hop changes no membership → the served final point replaces that hop, the stored proof holds one hop", async function () {
+        await assertSyncFoldsNonChangeHop(TestSession.getHarness());
+    });
+
+    it("final points with no membership change → each replaces the last hop, the stored proof holds one hop at the latest final point", async function () {
+        await assertNonChangeAdvanceKeepsOneHop(TestSession.getHarness());
+    });
+
+    it("a side chain kept as sync evidence under the chain's upload cap → the record holds its start, the hop that conflicts with the own final point and its final point with its state", async function () {
+        const outcome = await persistSideChainSyncEvidence(
+            TestSession.getHarness(),
+            "chain"
+        );
+        expect(outcome.kept).to.equal(`sync:${outcome.finalSnapshot.hash}`);
+        expect(outcome.evidence).to.deep.include({
+            hopHeights: [outcome.finalSnapshot.blockHeight],
+            finalizedHash: String(outcome.finalSnapshot.hash),
+            isStateHeld: true
+        });
+    });
+
+    it("a side chain whose hops do not fit in a dispute upload → no sync evidence is kept", async function () {
+        const outcome = await persistSideChainSyncEvidence(
+            TestSession.getHarness(),
+            0n
+        );
+        expect(outcome.kept).to.equal(null);
+        expect(outcome.evidence).to.equal(null);
     });
 
     it("S5: a sync to the final point already stored → the stored proof is unchanged", async function () {

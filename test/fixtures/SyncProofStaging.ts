@@ -11,8 +11,13 @@ import {
     proofHeights,
     servedPayload
 } from "@test/fixtures/MilestoneSyncStaging";
-import { postAnchor } from "@test/fixtures/ProofOwnerStaging";
+import {
+    forgeSideChainFinalProof,
+    type SeatedJoinerHistory
+} from "@test/fixtures/OmittedInboundJoinerStaging";
+import { localFinalizedView, postAnchor } from "@test/fixtures/ProofOwnerStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
+import type { MirrorUpdateHold } from "@test/harness/actions/MirrorActions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { getBytes } from "ethers";
@@ -971,7 +976,7 @@ export function snapshotWithout(
 async function missConsumedTopUp(
     h: MathPeerTestHarness,
     requester: Peer
-): Promise<void> {
+): Promise<MirrorUpdateHold> {
     const held = await h.mirror.holdUpdates(
         requester.index,
         "onInboundMessagesProcessed"
@@ -989,6 +994,186 @@ async function missConsumedTopUp(
         await held.heldCount(),
         "the requester's mirror must have missed the top-up"
     ).to.be.greaterThan(0);
+    return held;
+}
+
+/**
+ * An observer present at the opening follows peers 0..2's first three final
+ * blocks, so it holds an own final point; then its gossip is dropped and its
+ * local diamond misses a consumed top-up ({@link missConsumedTopUp}). Every
+ * proof of a later final point then needs that run: the observer's walk from
+ * its own final point and from its local diamond fail, the chain's passes.
+ * `hold` holds the missed log; the gossip drop is undone by `restoreGossip`.
+ */
+export async function stageOwnFinalPointBehindMissedTopUp(
+    h: MathPeerTestHarness
+) {
+    await h.setup(4);
+    const requester = h.getPeer(3);
+    const stub = h.control(requester).stub;
+    const forkId = String(
+        await h.lifecycle.openChannelForParticipants([0, 1, 2])
+    );
+    await h.join.connectSpectator(requester);
+    await h.event.waitUntilPeerStatus(requester.index, Status.SYNCED);
+    await h.transition.advanceState({
+        count: 3,
+        waitForPeers: [0, 1, 2],
+        waitForFinalization: true
+    });
+    await waitFor(
+        async () =>
+            ((await localFinalizedView(h, requester.index))?.height ?? -1) >=
+            1,
+        h.event.protocolEventTimeoutMs()
+    );
+    const localFinalized = (await localFinalizedView(h, requester.index))!;
+    await stub.stubDropNetworkConfirmations().request();
+    const hold = await missConsumedTopUp(h, requester);
+    return {
+        forkId,
+        requester,
+        localFinalized,
+        hold,
+        restoreGossip: async () =>
+            void (await stub.restoreDropNetworkConfirmations().request())
+    };
+}
+
+/**
+ * A copy of `payload` serving two milestones: peer 0's stored blocks from
+ * the anchor block through `height` - 1, then a final point at `height` by
+ * that height's author, confirmed by the two other participants, so it is
+ * threshold-final walked from the anchor. It commits a copy of peer 0's
+ * snapshot at `height` with a later timestamp, so it conflicts with the
+ * stored final block there; the served state is peer 0's at `height`.
+ */
+export async function servingSignedConflictAt(
+    h: MathPeerTestHarness,
+    payload: SyncPayload,
+    anchor: StateSnapshot,
+    height: number
+): Promise<{ payload: SyncPayload; finalSnapshot: StateSnapshot }> {
+    const forkId = String(anchor.forkID);
+    const run: ServedBlock[] = [];
+    for (let at = anchor.blockHeight; at < height; at++)
+        run.push(await servedBlock(h, forkId, at));
+    const stored = await servedBlock(h, forkId, height);
+    const finalSnapshot = StateSnapshot.from({
+        ...stored.snapshot,
+        timestamp: BigInt(stored.snapshot.timestamp) + 1n
+    });
+    const authorIndex = h.peers.find(
+        (peer) => peer.address === stored.author
+    )!.index;
+    const crafted = await craftProofBlock(h, {
+        authorIndex,
+        forkId,
+        height,
+        stateSnapshotHash: finalSnapshot.hash,
+        previousBlockHash: run.at(-1)!.hash
+    });
+    const block = crafted.block;
+    block.expandSignatures(
+        await Promise.all(
+            [0, 1, 2]
+                .filter((index) => index !== authorIndex)
+                .map((index) => block.sign(h.getPeer(index).signer))
+        )
+    );
+    expect(block.hash).to.not.equal(stored.hash);
+    return {
+        payload: servingProof(
+            payload,
+            [
+                run.map((served) => served.confirmation),
+                [block.blockConfirmationStruct]
+            ],
+            [anchor.toStruct(), finalSnapshot.toStruct()],
+            await servedState(h, stored.snapshot)
+        ),
+        finalSnapshot
+    };
+}
+
+/**
+ * A copy of Alice's payload serving the colluders' side-chain proof: one
+ * threshold hop from the chain anchor above Alice's head, signed by Alice
+ * and Bob, committing the anchor state with the anchor's inbound head, so
+ * it never consumes seated Charlie's JOIN (`forgeSideChainFinalProof`).
+ */
+export async function servingJoinerBypass(
+    h: MathPeerTestHarness,
+    history: SeatedJoinerHistory
+): Promise<{ payload: SyncPayload; finalSnapshot: StateSnapshot }> {
+    const alice = h.getPeer(history.aliceIndex);
+    const forkId = String(history.forkId);
+    const payload = await servedPayload(h, alice, forkId);
+    const head = (await h
+        .control(alice)
+        .query.getLatestBlockHeight(forkId)
+        .request())!;
+    const { finalProof, finalSnapshot } = await forgeSideChainFinalProof(
+        h,
+        history,
+        {
+            height: head + 1,
+            genesisStateSnapshotData:
+                payload.latestForkGenesisSnapshot.snapshotData
+        }
+    );
+    return {
+        payload: servingProof(
+            payload,
+            finalProof.stateProof.milestones.map(
+                (milestone) => milestone.blockConfirmations
+            ),
+            finalProof.milestoneSnapshots,
+            await servedState(h, finalSnapshot.toStruct())
+        ),
+        finalSnapshot
+    };
+}
+
+/** The heights of the final points `peer`'s proof evidence adds for a conflict counter on its active fork (`getEvidenceFinalPoints`). */
+export async function evidenceFinalPointHeights(
+    h: MathPeerTestHarness,
+    peer: Peer
+): Promise<number[]> {
+    return await h.execOnHost(peer, async (sm) =>
+        (await sm.agreementManager.getEvidenceFinalPoints(sm.forkId)).map(
+            (point) => Number(point.blockHeight)
+        )
+    );
+}
+
+/**
+ * `peer`'s sync evidence of the proof whose final point is `finalSnapshot`:
+ * its start's hash, its hops' final heights and its final point's hash and
+ * whether it holds the state there; null when none is kept.
+ */
+export async function syncEvidenceView(
+    h: MathPeerTestHarness,
+    peer: Peer,
+    finalSnapshot: StateSnapshot
+) {
+    const kept = await h
+        .control(peer)
+        .query.getSyncEvidence(finalSnapshot.hash)
+        .request();
+    if (!kept) return null;
+    const { proof } = Codec.decode(
+        kept.encodedProofEvidence,
+        Type.ProofEvidence
+    );
+    return {
+        startHash: String(StateSnapshot.from(proof.anchorSnapshot).hash),
+        hopHeights: proof.hops.map(({ snapshot }) =>
+            Number(snapshot.blockHeight)
+        ),
+        finalizedHash: String(StateSnapshot.from(proof.finalizedSnapshot).hash),
+        isStateHeld: proof.encodedFinalizedState !== "0x"
+    };
 }
 
 /**

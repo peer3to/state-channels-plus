@@ -4,6 +4,7 @@ import type { QueryService } from "./QueryService";
 import Clock from "@/Clock";
 import StateSnapshot from "@/models/StateSnapshot";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
+import { syncEvidenceKey } from "@/storage/keys";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import { Status } from "@/types/flags";
 import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
@@ -585,6 +586,23 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
                 stateHash
             ) as string | undefined) ?? null
         );
+    }
+
+    /** The sync evidence record of the proof whose final point is `finalizedSnapshotHash`, encoded (`Type.ProofEvidence`), or null. */
+    public getSyncEvidence(
+        finalizedSnapshotHash: Hash
+    ): { encodedProofEvidence: string } | null {
+        const evidence = this.service.storage.proofEvidence.get(
+            syncEvidenceKey(finalizedSnapshotHash)
+        );
+        return evidence
+            ? {
+                  encodedProofEvidence: Codec.encode(
+                      evidence,
+                      Type.ProofEvidence
+                  ) as string
+              }
+            : null;
     }
 
     /** Encoded state for `stateHash` kept as proof evidence, or null. */

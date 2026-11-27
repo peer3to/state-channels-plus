@@ -9,6 +9,7 @@ import {
     type ProofTierWalk,
     type StateProofEvidence
 } from "@/agreementManager/AgreementManager";
+import { getEmptyTimeoutStruct } from "@/disputeManager/DisputeBuilder";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import type { BlockPredecessor } from "@/storage/QueueStorage";
@@ -19,6 +20,7 @@ import {
     Bytes,
     ChannelId,
     ChecksumAddress,
+    ForkId,
     Hash,
     Signature
 } from "@/types/types";
@@ -49,6 +51,7 @@ import {
     DisputeAuditingDataStruct,
     DisputeStruct
 } from "@typechain-types/contracts/V1/types/DisputeTypes";
+import { StateProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { type BytesLike, ethers } from "ethers";
 
 enum FinalHistoryOutcome {
@@ -188,6 +191,42 @@ export default class DisputeValidationService {
     }
 
     /**
+     * The final-history kills a proof this peer did not build meets against
+     * this peer's final history, none stored: the slash set of each counter
+     * the chain accepts (`findFinalHistoryCounters`). The proof is judged as
+     * the state proof of a synthetic dispute of `forkId` that carries nothing
+     * else, so it never reaches a commitment check. Empty when no kill holds:
+     * the proof then shows no conflict with this peer's final history.
+     */
+    public async findFinalHistoryKills(
+        forkId: ForkId,
+        stateProof: StateProofStruct,
+        evidence: StateProofEvidence
+    ): Promise<Address[][]> {
+        const dispute: DisputeStruct = {
+            input: {
+                channelId: this.stateManager.channelId,
+                forkId,
+                latestStateSnapshotHash: ethers.ZeroHash,
+                latestInboundMessageBlockHash: ethers.ZeroHash,
+                lastInboundMessageBlockHeight: 0,
+                stateProof,
+                onChainSlashes: [],
+                disputeAuditingDataHash: ethers.ZeroHash,
+                disputer: ethers.ZeroAddress,
+                timeout: getEmptyTimeoutStruct(),
+                selfRemoval: false,
+                requireExistingDisputeWindow: false
+            },
+            postedAuditingData: false,
+            outputSnapshotDataHash: ethers.ZeroHash
+        };
+        return (await this.findFinalHistoryCounters(dispute, evidence)).map(
+            ({ slashes }) => slashes
+        );
+    }
+
+    /**
      * A counter against this peer's final history: a block of the dispute
      * that conflicts with a final block, or a latest finalized point that
      * regresses this peer's final point's inbound. Every counter the chain
@@ -208,20 +247,10 @@ export default class DisputeValidationService {
               storeUnsendable: () => void;
           }
     > {
-        // the snapshot the first block of the last milestone commits
-        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
-        if (!latestFinalizedSnapshot)
-            return { outcome: FinalHistoryOutcome.None };
-        const counters = [
-            ...(await this.findConflictsWithFinalStateCounters(
-                dispute,
-                latestFinalizedSnapshot
-            )),
-            ...(await this.findFinalPointRegressionCounters(
-                dispute,
-                latestFinalizedSnapshot
-            ))
-        ];
+        const counters = await this.findFinalHistoryCounters(
+            dispute,
+            evidence
+        );
         const { maxTransactionBytes } = this.stateManager.disputeManager;
         const chosen = chooseFinalHistoryCounter(counters, maxTransactionBytes);
         if (!chosen) return { outcome: FinalHistoryOutcome.None };
@@ -251,6 +280,31 @@ export default class DisputeValidationService {
                 chosen.store();
             }
         };
+    }
+
+    /**
+     * Every final-history counter the chain accepts against `dispute`, none
+     * stored: the conflicts with this peer's final points and the
+     * regressions of its final point's inbound (each with its slash set,
+     * kill size and `store`).
+     */
+    private async findFinalHistoryCounters(
+        dispute: DisputeStruct,
+        evidence: StateProofEvidence
+    ) {
+        // the snapshot the first block of the last milestone commits
+        const latestFinalizedSnapshot = evidence.milestoneSnapshots.at(-1);
+        if (!latestFinalizedSnapshot) return [];
+        return [
+            ...(await this.findConflictsWithFinalStateCounters(
+                dispute,
+                latestFinalizedSnapshot
+            )),
+            ...(await this.findFinalPointRegressionCounters(
+                dispute,
+                latestFinalizedSnapshot
+            ))
+        ];
     }
 
     /** The walk and replay of the proof, then the checks of its latest state: false when they store a counter. */
