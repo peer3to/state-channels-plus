@@ -77,6 +77,21 @@ function passedBelowOwnFinalPoint(walk: ProofTierWalk): boolean {
     return (walk.start?.blockHeight ?? -1) < localFinalized.blockHeight;
 }
 
+/**
+ * `walk` passed from this peer's own final point, but the proof ends below
+ * it (`provenHeight`): the walk skipped every milestone and checked nothing
+ * of the proof.
+ */
+function checkedNothingBelowOwnFinalPoint(
+    walk: ProofTierWalk,
+    provenHeight: number
+): boolean {
+    return (
+        walk.tier === ProofTier.LocalFinalized &&
+        provenHeight < walk.localFinalized!.blockHeight
+    );
+}
+
 /** A sync request's result for its caller. */
 export enum SyncResult {
     Synced,
@@ -842,13 +857,13 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                     syncPayload.latestForkGenesisSnapshot.snapshotData,
                 milestoneSnapshots: syncPayload.milestoneSnapshots
             };
-            const walk = await agreementManager.verifyStateProof(
+            const tierWalk = await agreementManager.verifyStateProof(
                 forkId,
                 syncPayload.stateProof,
                 evidence
             );
             // fails from every start: a broken proof
-            if (!walk.valid)
+            if (!tierWalk.valid)
                 return this.rejectSync(peerAddress, "milestones invalid");
             const milestones = syncPayload.stateProof.milestones;
             // blocks below the anchor are unchecked and may not decode
@@ -857,6 +872,21 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             );
             // the walk decoded the last block
             const provenHeight = lastRun.at(-1)?.height ?? -1;
+            // a pass from the local final point that checked nothing is
+            // walked from the anchor tiers: a pass there is judged against
+            // the final history below, so a kill below that point is seen
+            const anchorWalk = checkedNothingBelowOwnFinalPoint(
+                tierWalk,
+                provenHeight
+            )
+                ? await agreementManager.verifyStateProof(
+                      forkId,
+                      syncPayload.stateProof,
+                      evidence,
+                      ProofTier.LocalDiamond
+                  )
+                : undefined;
+            const walk = anchorWalk?.valid ? anchorWalk : tierWalk;
             // a valid proof ending below this peer's finalized state is too old
             const localFinalized = walk.localFinalized;
             const knownFinalHeight = Math.max(

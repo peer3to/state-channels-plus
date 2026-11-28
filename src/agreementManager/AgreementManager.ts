@@ -646,17 +646,21 @@ class AgreementManager {
     /**
      * Walks `stateProof` from each trusted start in order: the latest locally
      * finalized state, the local diamond's anchor, the chain's anchor. A tier
-     * without a start is skipped. The caller stops at the first tier it
-     * accepts. Any read error throws: it is no verdict.
+     * without a start is skipped. With `fromTier` the local diamond, the
+     * local finalized state is only reported, not walked. The caller stops at
+     * the first tier it accepts. Any read error throws: it is no verdict.
      */
     public async *walkStateProofTiers(
         forkId: ForkId,
         stateProof: StateProofStruct,
-        evidence: StateProofEvidence
+        evidence: StateProofEvidence,
+        fromTier:
+            | ProofTier.LocalFinalized
+            | ProofTier.LocalDiamond = ProofTier.LocalFinalized
     ): AsyncGenerator<ProofTierWalk> {
         const input = this.toWalkInput(forkId, stateProof, evidence);
         const localFinalized = await this.getLocalFinalizedSnapshot(forkId);
-        if (localFinalized)
+        if (localFinalized && fromTier === ProofTier.LocalFinalized)
             yield {
                 ...this.toTierWalk(
                     ProofTier.LocalFinalized,
@@ -692,17 +696,24 @@ class AgreementManager {
         return this.toTierWalk(ProofTier.Chain, result);
     }
 
-    /** The first tier whose walk accepts the proof; the chain's walk when none does. */
+    /**
+     * The first tier from `fromTier` (`walkStateProofTiers`) whose walk
+     * accepts the proof; the chain's walk when none does.
+     */
     public async verifyStateProof(
         forkId: ForkId,
         stateProof: StateProofStruct,
-        evidence: StateProofEvidence
+        evidence: StateProofEvidence,
+        fromTier:
+            | ProofTier.LocalFinalized
+            | ProofTier.LocalDiamond = ProofTier.LocalFinalized
     ): Promise<ProofTierWalk> {
         let walk: ProofTierWalk | undefined;
         for await (walk of this.walkStateProofTiers(
             forkId,
             stateProof,
-            evidence
+            evidence,
+            fromTier
         ))
             if (walk.valid) return walk;
         return walk!;

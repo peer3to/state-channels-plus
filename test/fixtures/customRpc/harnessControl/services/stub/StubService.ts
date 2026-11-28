@@ -5035,7 +5035,8 @@ export class StubService extends ANetworkRpcService<
         agreementManager.walkStateProofTiers = async function* (
             forkId,
             stateProof,
-            evidence
+            evidence,
+            fromTier
         ) {
             const latest =
                 agreementManager.getLatestBlockFromStateProof(stateProof);
@@ -5045,7 +5046,7 @@ export class StubService extends ANetworkRpcService<
                     release
                 })
             );
-            yield* original(forkId, stateProof, evidence);
+            yield* original(forkId, stateProof, evidence, fromTier);
         };
     }
 

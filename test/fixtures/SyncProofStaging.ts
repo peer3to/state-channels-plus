@@ -13,9 +13,13 @@ import {
 } from "@test/fixtures/MilestoneSyncStaging";
 import {
     forgeSideChainFinalProof,
-    type SeatedJoinerHistory
+    type SeatedJoinerHistory,
+    stageSeatedJoinerHistory
 } from "@test/fixtures/OmittedInboundJoinerStaging";
-import { localFinalizedView, postAnchor } from "@test/fixtures/ProofOwnerStaging";
+import {
+    localFinalizedView,
+    postAnchor
+} from "@test/fixtures/ProofOwnerStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import type { MirrorUpdateHold } from "@test/harness/actions/MirrorActions";
 import { waitFor } from "@test/utils/waitFor";
@@ -1023,8 +1027,7 @@ export async function stageOwnFinalPointBehindMissedTopUp(
     });
     await waitFor(
         async () =>
-            ((await localFinalizedView(h, requester.index))?.height ?? -1) >=
-            1,
+            ((await localFinalizedView(h, requester.index))?.height ?? -1) >= 1,
         h.event.protocolEventTimeoutMs()
     );
     const localFinalized = (await localFinalizedView(h, requester.index))!;
@@ -1428,21 +1431,28 @@ export async function holdCanonicalProofWalk(
  * a spectator's JOIN more ({@link servingSignedConflictAheadInboundAt}).
  * With that point as F the conflict kill holds against peer 2's own
  * history, not the other way: peer 2's history is the side chain.
+ * With `belowOwnFinalPoint` the served final point is one below peer 2's
+ * own: the proof ends below that final point, and with the served point
+ * as F peer 2's later final point regresses its inbound (peer 2 holds the
+ * JOIN).
  */
 export async function stageOwnHistoryBehindServedInbound(
-    h: MathPeerTestHarness
+    h: MathPeerTestHarness,
+    options: { belowOwnFinalPoint?: boolean } = {}
 ) {
     const staged = await stageAnchoredHistory(h, { blocksAfter: 2 });
-    for (const index of [0, 1, 2])
-        await h.rpcStub.suppressTimeoutCheck(index);
+    for (const index of [0, 1, 2]) await h.rpcStub.suppressTimeoutCheck(index);
     const requester = h.getPeer(2);
     const localFinalized = (await localFinalizedView(h, requester.index))!;
-    expect(localFinalized.height).to.be.greaterThan(staged.anchor.blockHeight);
+    const servedHeight = options.belowOwnFinalPoint
+        ? localFinalized.height - 1
+        : localFinalized.height;
+    expect(servedHeight).to.be.greaterThan(staged.anchor.blockHeight);
     const served = await servingSignedConflictAheadInboundAt(
         h,
         staged.payload,
         staged.anchor,
-        localFinalized.height
+        servedHeight
     );
     return { ...staged, requester, localFinalized, served };
 }
@@ -1458,6 +1468,63 @@ export async function stageSigningStoppedBySync(h: MathPeerTestHarness) {
         { readLocalFinality: true }
     );
     return { ...staged, outcome };
+}
+
+/**
+ * Alice of {@link stageSeatedJoinerHistory} after two more final blocks:
+ * her stored proof keeps the hop that seated Charlie (it changes
+ * membership) below her own final point. A spectator relays her payload
+ * with a threshold-final block at that hop's height committing another
+ * snapshot ({@link servingSignedConflictAt}): the proof ends below Alice's
+ * final point and conflicts with a lower final point of her history.
+ */
+export async function stageLowerHopConflictServedByRelay(
+    h: MathPeerTestHarness
+) {
+    const history = await stageSeatedJoinerHistory(h);
+    const forkId = String(history.forkId);
+    await h.transition.advanceState({
+        count: 2,
+        waitForPeers: [
+            history.aliceIndex,
+            history.bobIndex,
+            history.charlieIndex
+        ],
+        waitForFinalization: true
+    });
+    const requester = h.getPeer(history.aliceIndex);
+    const localFinalized = (await localFinalizedView(h, requester.index))!;
+    const finalPointHeights = await h.execOnHost(
+        requester,
+        async (sm, args) =>
+            (await sm.agreementManager.getProvableFinalPoints(args.forkId)).map(
+                (point) => point.blockHeight
+            ),
+        { forkId }
+    );
+    const lowerHopHeight = finalPointHeights.find(
+        (height) => height < localFinalized.height
+    );
+    expect(
+        lowerHopHeight,
+        "a final point of Alice's history below her own final point"
+    ).to.not.equal(undefined);
+    const relay = h.getPeer((await h.join.createSpectatorPeer()).index);
+    const served = await servingSignedConflictAt(
+        h,
+        await servedPayload(h, requester, forkId),
+        history.anchor,
+        lowerHopHeight!
+    );
+    return {
+        forkId,
+        requester,
+        relay,
+        anchor: history.anchor,
+        localFinalized,
+        lowerHopHeight: lowerHopHeight!,
+        served
+    };
 }
 
 /**
@@ -1519,7 +1586,9 @@ export async function readReceivedFinalHistory(
                     ),
                     sm.storage.proofEvidence
                         .getForkEvidence(args.forkId)
-                        .map((record) => Codec.encode(record, Type.ProofEvidence))
+                        .map((record) =>
+                            Codec.encode(record, Type.ProofEvidence)
+                        )
                 ]);
             const before = readStores();
             const walk = await am.verifyStateProof(

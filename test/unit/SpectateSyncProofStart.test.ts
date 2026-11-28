@@ -32,7 +32,9 @@ import {
     servingJoinerBypass,
     servingSignedConflictAt,
     stageAnchoredHistory,
+    stageLowerHopConflictServedByRelay,
     stageOwnFinalPointBehindMissedTopUp,
+    stageOwnHistoryBehindServedInbound,
     stageSigningStoppedBySync,
     syncAboveHeldQueuedBlock,
     syncEvidenceView
@@ -334,9 +336,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
         // the walk from the anchor ends at the anchor: the conflicting block is in its tail
-        expect(
-            await syncEvidenceView(h, requester, anchor)
-        ).to.deep.equal({
+        expect(await syncEvidenceView(h, requester, anchor)).to.deep.equal({
             startHash: String(anchor.hash),
             hopHeights: [],
             finalizedHash: String(anchor.hash),
@@ -349,9 +349,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
             const h = TestSession.getHarness();
             const history = await stageSeatedJoinerHistory(h);
             const charlie = h.getPeer(history.charlieIndex);
-            const relay = h.getPeer(
-                (await h.join.createSpectatorPeer()).index
-            );
+            const relay = h.getPeer((await h.join.createSpectatorPeer()).index);
             const { payload, finalSnapshot } = await servingJoinerBypass(
                 h,
                 history
@@ -374,12 +372,8 @@ describe("Unit: SpectateService sync proof verification order", function () {
                     readLocalFinality: true
                 }
             );
-            expect(outcome.walks!.trustedStart.local.answers).to.include(
-                false
-            );
-            expect(outcome.walks!.storage.local.answers).to.deep.equal([
-                true
-            ]);
+            expect(outcome.walks!.trustedStart.local.answers).to.include(false);
+            expect(outcome.walks!.storage.local.answers).to.deep.equal([true]);
             expect(outcome.outcomes).to.deep.equal([
                 { accepted: false, threw: "", head: headBefore }
             ]);
@@ -438,10 +432,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
             const { forkId, anchor, payload, latestHeight } =
                 await stageAnchoredHistory(h, { blocksAfter: 2 });
             const requester = h.getPeer(2);
-            const localFinalized = await localFinalizedView(
-                h,
-                requester.index
-            );
+            const localFinalized = await localFinalizedView(h, requester.index);
             expect(localFinalized!.height).to.be.greaterThan(
                 anchor.blockHeight
             );
@@ -458,12 +449,8 @@ describe("Unit: SpectateService sync proof verification order", function () {
                 [conflicting.payload],
                 { observeWalks: true }
             );
-            expect(outcome.walks!.trustedStart.local.answers).to.include(
-                false
-            );
-            expect(outcome.walks!.storage.local.answers).to.deep.equal([
-                true
-            ]);
+            expect(outcome.walks!.trustedStart.local.answers).to.include(false);
+            expect(outcome.walks!.storage.local.answers).to.deep.equal([true]);
             expect(outcome.outcomes).to.deep.equal([
                 { accepted: false, threw: "", head: latestHeight }
             ]);
@@ -503,7 +490,11 @@ describe("Unit: SpectateService sync proof verification order", function () {
             expect(outcome.rejections).to.deep.equal([]);
             expect(outcome.blacklisted).to.equal(false);
             expect(
-                await syncEvidenceView(h, requester, staged.served.finalSnapshot)
+                await syncEvidenceView(
+                    h,
+                    requester,
+                    staged.served.finalSnapshot
+                )
             ).to.deep.equal({
                 startHash: String(staged.anchor.hash),
                 hopHeights: [localFinalized.height],
@@ -531,9 +522,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
                 (await readSigningOn(h, requester, forkId)).stoppedBySync
             ).to.equal(true);
 
-            const again = await applyPayloads(h, requester, forkId, [
-                "served"
-            ]);
+            const again = await applyPayloads(h, requester, forkId, ["served"]);
 
             expect(again.outcomes[0].threw).to.equal("");
             expect(again.rejections).to.deep.equal([]);
@@ -543,6 +532,99 @@ describe("Unit: SpectateService sync proof verification order", function () {
                 signsLatestBlock: false,
                 disputing: false
             });
+        });
+
+        it("a participant served a proof that ends one below its own final point, whose threshold-final block there has consumed a joiner's JOIN it holds and its own final point lacks → walked from the anchor, only the reverse direction holds: not installed, kept as sync evidence, no rejection, no blacklist, no dispute, and it stops signing on the fork", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageOwnHistoryBehindServedInbound(h, {
+                belowOwnFinalPoint: true
+            });
+            const { requester, forkId, localFinalized } = staged;
+            // premise: the proof ends below the requester's own final point
+            expect(staged.served.finalSnapshot.blockHeight).to.equal(
+                localFinalized.height - 1
+            );
+
+            const outcome = await applyPayloads(
+                h,
+                requester,
+                forkId,
+                [staged.served.payload],
+                { readLocalFinality: true }
+            );
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: false, threw: "", head: staged.latestHeight }
+            ]);
+            expect(outcome.stateWrites).to.deep.equal([0]);
+            expect(outcome.localFinalizedHeights).to.deep.equal([
+                localFinalized.height
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(
+                await syncEvidenceView(
+                    h,
+                    requester,
+                    staged.served.finalSnapshot
+                )
+            ).to.deep.equal({
+                startHash: String(staged.anchor.hash),
+                hopHeights: [localFinalized.height - 1],
+                finalizedHash: String(staged.served.finalSnapshot.hash),
+                isStateHeld: true
+            });
+            expect(await readSigningOn(h, requester, forkId)).to.deep.equal({
+                stopped: true,
+                stoppedBySync: true,
+                signsLatestBlock: false,
+                disputing: false
+            });
+        });
+
+        it("a relay serves a proof that ends below the participant's own final point, whose threshold-final block conflicts with a lower final point of its history (the hop that seated a joiner) → walked from the anchor, the conflict kill holds: not installed, kept as sync evidence, and the relay is not rejected or blacklisted", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageLowerHopConflictServedByRelay(h);
+            const { requester, forkId, localFinalized, lowerHopHeight } =
+                staged;
+            const headBefore = (await h
+                .control(requester)
+                .query.getLatestBlockHeight(forkId)
+                .request())!;
+
+            const outcome = await applyPayloads(
+                h,
+                requester,
+                forkId,
+                [staged.served.payload],
+                { responderIndex: staged.relay.index, readLocalFinality: true }
+            );
+
+            expect(outcome.outcomes).to.deep.equal([
+                { accepted: false, threw: "", head: headBefore }
+            ]);
+            expect(outcome.stateWrites).to.deep.equal([0]);
+            expect(outcome.localFinalizedHeights).to.deep.equal([
+                localFinalized.height
+            ]);
+            expect(outcome.rejections).to.deep.equal([]);
+            expect(outcome.blacklisted).to.equal(false);
+            expect(
+                await syncEvidenceView(
+                    h,
+                    requester,
+                    staged.served.finalSnapshot
+                )
+            ).to.deep.equal({
+                startHash: String(staged.anchor.hash),
+                hopHeights: [lowerHopHeight],
+                finalizedHash: String(staged.served.finalSnapshot.hash),
+                isStateHeld: true
+            });
+            // the forward kill holds: the participant keeps signing
+            expect(
+                (await readSigningOn(h, requester, forkId)).stoppedBySync
+            ).to.equal(false);
         });
 
         it("S2: an honest continuation fails from the observer's final point (its local diamond missed a consumed top-up) and passes at the chain tier → not installed, no rejection, no blacklist; once its local diamond holds the run the same peer's next answer verifies from that final point and installs", async function () {
@@ -558,9 +640,10 @@ describe("Unit: SpectateService sync proof verification order", function () {
                 );
                 // the second trusted-start walk is the build of the
                 // observer's own proof, judged against the served history
-                expect(
-                    before.walks!.trustedStart.local.answers
-                ).to.deep.equal([false, true]);
+                expect(before.walks!.trustedStart.local.answers).to.deep.equal([
+                    false,
+                    true
+                ]);
                 expect(before.walks!.storage.local.answers).to.deep.equal([
                     false
                 ]);

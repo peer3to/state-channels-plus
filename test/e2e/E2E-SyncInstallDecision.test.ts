@@ -43,9 +43,9 @@ describe("E2E: Sync install decision", function () {
             blacklisted: false,
             latestHeight
         });
-        expect(
-            (await localFinalizedView(h, requester.index))!.hash
-        ).to.equal(localFinalized!.hash);
+        expect((await localFinalizedView(h, requester.index))!.hash).to.equal(
+            localFinalized!.hash
+        );
         expect(
             (await syncEvidenceView(h, requester, anchor))?.finalizedHash
         ).to.equal(String(anchor.hash));
@@ -124,9 +124,65 @@ describe("E2E: Sync install decision", function () {
             blacklisted: false,
             latestHeight
         });
+        expect((await localFinalizedView(h, requester.index))!.hash).to.equal(
+            staged.localFinalized.hash
+        );
         expect(
-            (await localFinalizedView(h, requester.index))!.hash
-        ).to.equal(staged.localFinalized.hash);
+            (await syncEvidenceView(h, requester, staged.served.finalSnapshot))
+                ?.finalizedHash
+        ).to.equal(String(staged.served.finalSnapshot.hash));
+        expect(
+            await h.control(requester).query.didIDispute(forkId).request()
+        ).to.equal(false);
+        expect(
+            await h
+                .control(requester)
+                .query.isConnectedTo(responder.address)
+                .request()
+        ).to.equal(true);
+
+        // the next block is the participant's own
+        expect((await h.query.getNextPeerToWrite()).index).to.equal(
+            requester.index
+        );
+        await requester.p2pInstance.p2pContractInstance.add(1);
+        expect(
+            await Promise.all(
+                [0, 1, 2].map((index) =>
+                    h
+                        .control(h.getPeer(index))
+                        .query.getLatestBlockHeight(forkId)
+                        .request()
+                )
+            )
+        ).to.deep.equal([latestHeight, latestHeight, latestHeight]);
+    });
+
+    it("a participant asks a peer that serves a proof ending one below its own final point, whose final block there has consumed a joiner's JOIN its own final point lacks → the request fails and blames nobody, nothing is installed, the proof is kept as sync evidence, no dispute is opened, and on its next turn the participant authors no block on the fork", async function () {
+        const h = TestSession.getHarness();
+        const staged = await stageOwnHistoryBehindServedInbound(h, {
+            belowOwnFinalPoint: true
+        });
+        const { requester, responder, forkId, latestHeight } = staged;
+
+        const sync = await syncFromServedPayload(
+            h,
+            requester,
+            responder,
+            Codec.encode(staged.served.payload, Type.SyncPayload) as string,
+            forkId,
+            latestHeight
+        );
+
+        expect(sync).to.deep.equal({
+            synced: false,
+            rejections: [],
+            blacklisted: false,
+            latestHeight
+        });
+        expect((await localFinalizedView(h, requester.index))!.hash).to.equal(
+            staged.localFinalized.hash
+        );
         expect(
             (await syncEvidenceView(h, requester, staged.served.finalSnapshot))
                 ?.finalizedHash
