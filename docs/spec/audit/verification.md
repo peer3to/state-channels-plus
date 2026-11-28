@@ -42,7 +42,7 @@ receipt, block hash and storage read as oracles; they run outside CI
 behaviour the sidecar stands in for, a block without a subscribed topic and a removed subscription, which no
 requirement states yet; one checks the failure "RPC node doesn't support LC endpoints" (Luka, 2026-11-18)
 without a node binary. Added on 2026-11-20 after the automated review, and run in CI: `test/unit/LightClientEndpointCheck.test.ts`
-(4) checks that failure against a node without `rpc_methods`, one listing neither method and one listing one,
+(4) checks that failure against a node whose `rpc_methods` fails (a proxy error, on Hardhat and on `--parachain`), one listing neither method and one listing one,
 and the pass against one listing both; `test/unit/JsonRpcSocket.test.ts` (2) checks that requests fail on a
 dropped or closed socket; `test/scripts/peer3NodeLauncher.test.ts` (4) checks the launcher's start failures,
 its node output in the error, and the removal of a dead node's database. Each of 15 single-line faults

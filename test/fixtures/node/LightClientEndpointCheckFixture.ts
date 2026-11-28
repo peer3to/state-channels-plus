@@ -7,16 +7,18 @@ import { waitFor } from "@test/utils/waitFor";
 
 /**
  * What `assertLightClientEndpoints` fails with against a node that lists
- * `methods` in `rpc_methods`, or against a Hardhat node, which has no
- * `rpc_methods`, when `methods` is undefined. Undefined when it passes.
+ * `methods` in `rpc_methods`, or, when `methods` is undefined, against a node
+ * that answers `rpc_methods` with a JSON-RPC error. The proxy gives that error
+ * on any chain: a Hardhat node has no `rpc_methods`, but the parachain dev
+ * node of a `--parachain` run lists its methods. Undefined when it passes.
  */
 export async function lightClientEndpointCheckFailure(
     methods: string[] | undefined
 ): Promise<unknown> {
     return await withIsolatedHardhatNode(async (provider) => {
         const proxy = await RpcNodeProxy.start(provider._getConnection().url);
-        if (methods !== undefined)
-            proxy.answerRequests("rpc_methods", { version: 1, methods });
+        if (methods === undefined) proxy.failNextRequest("rpc_methods");
+        else proxy.answerRequests("rpc_methods", { version: 1, methods });
         const socket = await JsonRpcSocket.open(proxy.url);
         try {
             await assertLightClientEndpoints(socket);
