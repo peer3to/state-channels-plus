@@ -2,8 +2,8 @@
 
 This report answers the "Benchmark against the current SDK", "Measure time to verified readiness",
 "Estimate concurrent subscriber capacity per RPC node", "Explain state freshness" and "Benchmark
-fallback strategies before choosing one" sections of the Light Clients card (Trello 399). The farm
-validation section of the card is a later step (S6) and is not covered here.
+fallback strategies before choosing one" sections of the Light Clients card (Trello 399), and its farm
+validation section in Farm validation (2026-11-28).
 
 Status: the calls, readiness and first capacity ramps were measured on farm hosts on 2026-11-22 with a
 synthetic workload (see Results). Channel flows of real participants were measured on 2026-11-23 to
@@ -256,7 +256,8 @@ Where the build departs from the card is listed in
 [`OQ-SPEC-LC-2-XQ3PR7`](spec/specification/open-questions.md#oq-spec-lc-2-xq3pr7).
 
 - Collator and full-node import costs: capacity runs against one dev node with interval sealing, not
-  a relay-chain network.
+  a relay-chain network. On a relay-chain network only correctness was checked (Network check
+  (2026-11-28)), at 10 subscribers at most.
 - The 22 Nov synthetic ramps never missed a step, so their limits (about 35,000 distinct, 43,000
   shared) are extrapolated. The ramps with the flows' workload were run to their first miss.
 - The shared ramps stopped at the peer hosts' limit, not the node's: one node's limit for shared
@@ -624,7 +625,7 @@ the same limits.
 For 10,000 players in channels of 3 (the shared rows), one node per 1,800 or more subscribers gives at
 most 6 nodes at the capacity limit, or 9 nodes with the p95 within 2 s (1,200 per node).
 
-**PR #8's node.** On 2026-11-27 the same ramps ran against PR #8 (`ace9bb2`, now PR #3's head tree),
+**PR #8's node.** On 2026-11-27 the same ramps ran against PR #8 (`ace9bb2`, the light client code PR #3 has carried since 2026-11-28, with main merged in at `cd6e503`),
 which pushes each block's changes instead of proving every held key again. Building the pushes took
 a median 76 ms per block at 1,000 distinct subscribers (1,454 to 1,528 ms on `827ca0d`) and at most
 126 ms in any step. Distinct partitions then sustained 1,600 subscribers with the p95 within 2 s and
@@ -636,3 +637,72 @@ watch failed in a sustained step.
 
 Measured with the farm drained of tests; results, logs and scripts are kept outside the repository
 with the bench notes of 2026-11-25 to 2026-11-27.
+
+## Farm validation (2026-11-28)
+
+The card's farm validation: farm workers 1 to 5 run the full suite with the light client on.
+
+Setup. testing1 to testing5 were taken out of the shared pool and ran distributed protocol 16, which
+adds the `lightClient` runner to the browser tier's set (`c4712e023`). Their runner images carried
+`zero-fee-node` built on testing1 from PR #3 at `cd6e503`, because PR #3 is not merged and no published
+image has the light client yet. The five workers used a pool secret of their own for the runs, so no
+protocol 15 worker took a task. Command: the canonical gate with `--parachain --test-parallel-script
+--test-browser --lc-tests`, with `PEER3_NODE_BIN=zero-fee-node` and `PEER3_NODE_LIGHT_CLIENT=1`
+forwarded, so every slot node started with `--light-client` and every SDK peer ran with the light
+client on.
+
+| Run | SDK         | Passing        | Failing | Wall   |
+| --- | ----------- | -------------- | ------- | ------ |
+| 1   | `60823e8da` | 4,385 of 4,413 | 28      | 43 min |
+| 2   | `67d5c097f` | 4,419 of 4,419 | 0       | 21 min |
+
+Run 2 had 122 light client tests among its 4,419, the 5 of `LightClientChannelFollow` among them,
+which fail at once unless the slot nodes serve the light client endpoints. Neither run printed the
+skipped-browser warning.
+
+Run 1's 28 failures were run again on the five quiet workers, with the light client off and then on.
+Off, 28 of 28 passed. On, 21 passed and 7 failed, so 21 were load (the workers ran at a load of about 14
+on 8 cores, and 72 of the 91 error files were event-loop-delay starvation) and 7 were real. The 7 were
+fixed in `8594d659f` and `67d5c097f`:
+
+- `E2E-MultiRpcNodes`: with the light client on, the SDK subscribes to `newHeads` again on a reopened
+  socket, so the test counts only its `logs` subscriptions.
+- `RuntimeLifecycle` (2 tests): the light client answers the startup reads itself without an
+  `eth_call`, so `SetupDisposalFixture` holds `eth_call`, `state_getReadProof` and
+  `lightClient_watchStorage`.
+- `E2E-Spectate` lag: `stageOutboundAroundAnchor` released the held post before it was parked (about
+  160 ms later with the light client on); it now waits for `waitUntilHeld()`.
+- `E2E-ReductionManager`: a reduction took 1.1 to 1.6 s with the light client on against the router's
+  3 s default; the wait now uses `hostExecTimeoutMs`.
+- Event-loop stalls on the SDK thread: `FrontierPushedPartition` built a new `SubstrateTrieProof`, and
+  hashed every held node again, for each read. It now builds one proof per accepted block. Peak
+  event-loop delay with the light client on fell from 142 to 163 ms to 69 to 79 ms (73 to 103 ms with
+  it off).
+- `BlockQueueManager`: not reproduced locally; it passed in all 3 farm reruns of the 7 with the fixes.
+
+Logs: `logs/run-145` (run 2) of the orchestrating machine, kept outside the repository with the bench
+notes of 2026-11-28. The workers were restored to the shared pool after the runs.
+
+## Network check (2026-11-28)
+
+The recording had been checked only on the dev node. This check ran PR #3's node (`cd6e503`) on the
+local relay-chain network of peer3-parachain's `chain.sh`: 6 relay validators (polkadot
+`stable2512-3` release binaries), 3 cores for para 4747 and 7 collators. Two nodes had `--light-client`:
+collator `ff1`, which builds blocks and imports the other collators' blocks, and a full node, which
+only imports. The capacity driver (`scripts/bench/lightClientCapacity.ts`, SDK `67d5c097f`) attached
+to each in turn: 5 channels, 4 watched keys per peer, steps of 5 and 10 subscribers for 180 s each.
+
+| Node           | Partition pushes | Watch pushes   | Refused | Skipped blocks |
+| -------------- | ---------------- | -------------- | ------- | -------------- |
+| Full node      | 1,350 of 1,350   | 1,350 of 1,350 | 0       | 0              |
+| Collator `ff1` | 1,350 of 1,350   | 1,350 of 1,350 | 0       | 0              |
+
+Every pushed block was verified with the SDK's own code (`FrontierPushedPartition.accept`), which
+refuses a block whose proof does not decide every held key as the partition holds it. `ff1` sealed
+110 blocks, 97 of them canonical (13 lost a fork), and 28 of the canonical ones carried the collator
+run's writes, so blocks the light client recorded while building were pushed and verified too. No
+fallback read and no watch failed, and the three parachain node logs read (`ff1`, the full node, `ff2`)
+hold no warning or error.
+
+Not covered: the light client test suite itself, whose tests start their own dev node; costs on the
+network; more than 10 subscribers.
