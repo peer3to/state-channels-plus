@@ -15,7 +15,10 @@ its height and the deposit total at the snapshot's values, and `ChannelOpened` a
 inbound block. A fourth test applies `onChannelStorageCleared` naming the older of two stored
 blocks: the older block is deleted, the newer one stays and the inbound head with its deposit
 total stays at it. A fifth test replays that event for the already-deleted block, as a later advance
-with the same head emits it: nothing changes and the head block stays.
+with the same head emits it: nothing changes and the head block stays. A sixth test replays the
+open, runs a real join on the harness diamond and replays its inbound event: the mirror's pending
+set and the chain's are both exactly the joiner. A seventh test mirrors an on-chain slash, applies
+`onChannelStorageCleared` and finds the slash set empty.
 
 ## Tests
 
@@ -24,3 +27,5 @@ with the same head emits it: nothing changes and the head block stays.
 - `test_onChannelStorageCleared_prunesFromTheFirstPrunedBlockAndKeepsTheBlocksAbove`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P6
 - `test_onChannelStorageCleared_alreadyPrunedBlock_keepsTheHead`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P7
 - `test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3, REQ-MIRROR-2-E9F3TM.T2.P1
+- `test_onInboundMessagesProcessed_joinAfterGenesis_mirrorPendingMatchesChain`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P8
+- `test_onChannelStorageCleared_clearsTheMirroredOnChainSlashes`: UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P9

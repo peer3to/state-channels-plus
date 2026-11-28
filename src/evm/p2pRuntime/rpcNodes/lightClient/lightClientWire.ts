@@ -14,7 +14,7 @@ export const LIGHT_CLIENT_METHODS = {
 /** What a peer follows: one contract and the log topics that concern it. */
 export type LightClientSubscription = {
     address: string;
-    /** A block is pushed when a log of the contract carries one of these. */
+    /** The contract's logs that carry one of these are pushed with their block. */
     topics: string[];
 };
 
@@ -40,8 +40,11 @@ export type LightClientLog = {
 };
 
 /**
- * What the node pushes for one block in which a log of the contract carried a
- * subscribed topic.
+ * What the node pushes to a subscription for every block it imports, in block
+ * order. A block that writes the contract carries all of the contract's writes
+ * and their proof, whether or not a log matched. The contract's logs that carry
+ * a subscribed topic come with their block as hints. A block with neither comes
+ * with its header only.
  */
 export type LightClientStorageBlock = {
     header: SubstrateHeaderJson;

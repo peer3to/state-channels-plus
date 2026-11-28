@@ -249,21 +249,10 @@ contract LocalDiamond is StateChannelManagerProxy {
             return;
         }
         // Clear dispute data
-        DisputeData storage disputeData = disputeData[channelId];
-        delete disputeData.onChainSlashes;
-        mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
-        for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
-            delete disputeWindowMap[disputeData.disputedForks[i]];
-        }
-        delete disputeData.disputedForks;
+        _clearDisputeData(channelId);
 
         // Clear old inbound message blocks from the first block the chain pruned
-        bytes32 keyToDelete = firstPrunedInboundMessageBlockHash;
-        while (keyToDelete != bytes32(0)) {
-            bytes32 nextKeyToDelete = inboundMessageBlockMap[channelId][keyToDelete].previousBlockHash;
-            delete inboundMessageBlockMap[channelId][keyToDelete];
-            keyToDelete = nextKeyToDelete;
-        }
+        _clearOldInboundMessageBlocks(channelId, firstPrunedInboundMessageBlockHash);
     }
 
     function _acceptEvent(bytes32 channelId, bytes32 family, bytes32 scope, uint256 blockNumber, uint256 logIndex)

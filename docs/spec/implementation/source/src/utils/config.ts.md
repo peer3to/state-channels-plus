@@ -10,6 +10,7 @@
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
 - [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../../../../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75)
 - [`REQ-LOG-11-F5TJQC` (An aborting runtime uploads its logs before it disposes)](../../../../specification/runtime/log-collection.md#req-log-11-f5tjqc)
+- [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-RUN-13-27YE2T` (Isolated placement is the default)](../../../../specification/runtime/execution.md#req-run-13-27ye2t)
 - [`REQ-RUNTIME-3-VQXW59` (Lifecycle convergence)](../../../../specification/runtime/execution.md#req-runtime-3-vqxw59)
 - [`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../../../../specification/runtime/light-client.md#req-lc-4-e29y46)

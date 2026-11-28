@@ -19,9 +19,11 @@ import AProvenStateReader, {
     type ProvenBlock
 } from "../AProvenStateReader";
 import StorageProofError from "../StorageProofError";
+import { isHexString } from "ethers";
 
-function isHexString(value: unknown): value is string {
-    return typeof value === "string" && /^0x[0-9a-f]*$/i.test(value);
+/** Whether `value` is hex of whole bytes, as every hash, log and proof node is. */
+function isBytes(value: unknown): value is string {
+    return isHexString(value, true);
 }
 
 function isHeader(answer: unknown): answer is SubstrateHeaderJson {
@@ -29,12 +31,12 @@ function isHeader(answer: unknown): answer is SubstrateHeaderJson {
     return (
         typeof header === "object" &&
         header !== null &&
-        isHexString(header.parentHash) &&
+        isBytes(header.parentHash) &&
         isHexString(header.number) &&
-        isHexString(header.stateRoot) &&
-        isHexString(header.extrinsicsRoot) &&
+        isBytes(header.stateRoot) &&
+        isBytes(header.extrinsicsRoot) &&
         Array.isArray(header.digest?.logs) &&
-        header.digest.logs.every(isHexString)
+        header.digest.logs.every(isBytes)
     );
 }
 
@@ -110,29 +112,31 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
         // a read that asks nothing needs no proof
         const proofNodes =
             keys.length > 0 ? await this.readProof(block, keys) : [];
+        // one proof for the whole read, so each of its nodes is hashed once
+        const proof = new SubstrateTrieProof(proofNodes);
         return reads.map(({ address, slots, account, code }) => ({
             address,
             storage:
                 slots.length > 0
-                    ? this.storageVerifier.provenStorage(
+                    ? this.storageVerifier.storageIn(
+                          proof,
                           block.stateRoot,
                           address,
-                          slots,
-                          proofNodes
+                          slots
                       )
                     : [],
             ...(account && {
-                account: this.accountVerifier.provenAccount(
+                account: this.accountVerifier.accountIn(
+                    proof,
                     block.stateRoot,
-                    address,
-                    proofNodes
+                    address
                 )
             }),
             ...(code && {
-                code: this.accountVerifier.provenCode(
+                code: this.accountVerifier.codeIn(
+                    proof,
                     block.stateRoot,
-                    address,
-                    proofNodes
+                    address
                 )
             })
         }));
@@ -148,7 +152,7 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
             block.hash
         ])) as { proof?: unknown } | null;
         const proofNodes = answer?.proof;
-        if (!Array.isArray(proofNodes) || !proofNodes.every(isHexString))
+        if (!Array.isArray(proofNodes) || !proofNodes.every(isBytes))
             throw new StorageProofError("The node answered no read proof");
         return proofNodes;
     }

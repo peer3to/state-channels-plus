@@ -21,8 +21,22 @@ export default class FrontierStorageProofVerifier extends AStorageProofVerifier 
         slots: StorageSlot[],
         proofNodes: Bytes[]
     ): string[] {
+        return this.storageIn(
+            new SubstrateTrieProof(proofNodes),
+            stateRoot,
+            address,
+            slots
+        );
+    }
+
+    /** {@link provenStorage} from a proof the caller already holds. */
+    storageIn(
+        proof: SubstrateTrieProof,
+        stateRoot: Hash,
+        address: ChecksumAddress,
+        slots: StorageSlot[]
+    ): string[] {
         const keys = slots.map((slot) => contractStorageKey(address, slot));
-        const proof = new SubstrateTrieProof(proofNodes);
         return keys.map((key, index) => {
             const value = proof.read(stateRoot, key);
             // the map stores no entry for a zero slot

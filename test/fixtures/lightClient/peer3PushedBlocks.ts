@@ -1,5 +1,8 @@
 // @spec-test-coverage-ignore: recorded chain data used by the mapped SubstrateHeader and proveFrontierStorageBlock declarations
 
+import type { SubstrateHeaderJson } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
+import SubstrateHeader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader";
+
 /**
  * Blocks a peer3 dev node (`zero-fee-node` at d845dbfb) pushed through the
  * light client sidecar to a subscriber of topic 1 of a contract that stores
@@ -188,3 +191,11 @@ export const peer3PushedBlocks = {
         }
     ]
 };
+
+/** `header` with `logs` as its digest, as a node might push it. */
+export function headerWithDigestLogs(
+    header: SubstrateHeaderJson,
+    logs: string[]
+): SubstrateHeader {
+    return new SubstrateHeader({ ...header, digest: { logs } });
+}

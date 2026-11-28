@@ -37,8 +37,21 @@ export default class FrontierAccountProofVerifier extends AAccountProofVerifier 
         address: ChecksumAddress,
         proofNodes: Bytes[]
     ): ProvenAccount {
+        return this.accountIn(
+            new SubstrateTrieProof(proofNodes),
+            stateRoot,
+            address
+        );
+    }
+
+    /** {@link provenAccount} from a proof the caller already holds. */
+    accountIn(
+        proof: SubstrateTrieProof,
+        stateRoot: Hash,
+        address: ChecksumAddress
+    ): ProvenAccount {
         const key = systemAccountKey(address);
-        const value = new SubstrateTrieProof(proofNodes).read(stateRoot, key);
+        const value = proof.read(stateRoot, key);
         // the chain stores no entry for an account that never existed
         if (value === null) return { nonce: 0n, balance: 0n };
         if (value.length !== ACCOUNT_INFO_LENGTH)
@@ -68,8 +81,21 @@ export default class FrontierAccountProofVerifier extends AAccountProofVerifier 
         address: ChecksumAddress,
         proofNodes: Bytes[]
     ): string {
+        return this.codeIn(
+            new SubstrateTrieProof(proofNodes),
+            stateRoot,
+            address
+        );
+    }
+
+    /** {@link provenCode} from a proof the caller already holds. */
+    codeIn(
+        proof: SubstrateTrieProof,
+        stateRoot: Hash,
+        address: ChecksumAddress
+    ): string {
         const key = accountCodeKey(address);
-        const value = new SubstrateTrieProof(proofNodes).read(stateRoot, key);
+        const value = proof.read(stateRoot, key);
         // the map stores no entry for an account without code
         if (value === null) return "0x";
         const reader = new ScaleReader(value, "A contract's code");

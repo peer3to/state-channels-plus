@@ -82,14 +82,18 @@ function holdReason(options) {
 }
 
 // Shared owner of the distributed worker's account and resource admission.
+// `accountTask` is the task whose account need is checked when no assignment
+// was fetched yet (the local scheduler's queue head); costs stay on
+// `assignment`.
 async function allowsWorkerAssignment(
     { scheduler, taskResources, resources, config, logging },
     running,
     assignment,
-    activeAssignments
+    activeAssignments,
+    accountTask = assignment?.task
 ) {
     const schedule = scheduler.options.schedule;
-    const accountsAvailable = taskResources.canAcquire(assignment?.task);
+    const accountsAvailable = taskResources.canAcquire(accountTask);
     const allowed =
         accountsAvailable &&
         (await resources.allows(

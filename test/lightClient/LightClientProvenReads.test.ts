@@ -1,9 +1,13 @@
 // @distributed-requires: lightClient
+import type { SubstrateHeaderJson } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
 import type { ProvenBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/AProvenStateReader";
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierProvenStateReader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader";
-import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
+import {
+    contractStorageKey,
+    systemAccountKey
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import type { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
 import { LightClientNodeFixture } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { rejectionOf } from "@test/utils/rejectionOf";
@@ -13,6 +17,8 @@ import { toBeHex, ZeroHash } from "ethers";
 
 const SLOT_ONE = toBeHex(1, 32);
 const SLOT_TWO = toBeHex(2, 32);
+/** A Frontier digest log: a consensus item of the engine `fron`. */
+const FRONTIER_LOG = "0x0466726f6e";
 
 function readerOver(socket: JsonRpcSocket): FrontierProvenStateReader {
     return new FrontierProvenStateReader(
@@ -233,9 +239,8 @@ describe("Light client proven reads", function () {
         await node.firstBlockSealed();
         const { proxy, socket } = await node.connectToNodeThroughProxy();
         const reader = readerOver(socket);
-        const header = await socket.request<{ digest: { logs: string[] } }>(
-            "chain_getHeader"
-        );
+        const header =
+            await socket.request<SubstrateHeaderJson>("chain_getHeader");
 
         proxy.answerNextRequest("chain_getHeader", null);
         expect(await rejectionOf(reader.head()))
@@ -253,9 +258,206 @@ describe("Light client proven reads", function () {
         // the same header as the node gave it is accepted
         proxy.answerNextRequest("chain_getHeader", header);
         expect((await reader.head()).hash).to.equal(
-            await socket.request("chain_getBlockHash", [
-                (header as { number?: string }).number
-            ])
+            await socket.request("chain_getBlockHash", [header.number])
         );
+    });
+
+    it("throws when the node's header lacks a field or holds hex that is not whole bytes", async function () {
+        node = await LightClientNodeFixture.start();
+        await node.firstBlockSealed();
+        const { proxy, socket } = await node.connectToNodeThroughProxy();
+        const reader = readerOver(socket);
+        const header =
+            await socket.request<SubstrateHeaderJson>("chain_getHeader");
+        const { parentHash: _parentHash, ...withoutParentHash } = header;
+        const { extrinsicsRoot: _extrinsicsRoot, ...withoutExtrinsicsRoot } =
+            header;
+        const { digest: _digest, ...withoutDigest } = header;
+        const malformed = [
+            withoutParentHash,
+            { ...header, number: 7 },
+            { ...header, stateRoot: "a state root" },
+            withoutExtrinsicsRoot,
+            withoutDigest,
+            { ...header, parentHash: "0x0" },
+            { ...header, digest: { logs: [...header.digest.logs, "0x123"] } }
+        ];
+
+        const failures = [];
+        for (const answer of malformed) {
+            proxy.answerNextRequest("chain_getHeader", answer);
+            failures.push(await rejectionOf(reader.head()));
+        }
+        for (const failure of failures)
+            expect(failure)
+                .to.be.instanceOf(StorageProofError)
+                .with.property("message")
+                .that.includes("no block header");
+        // the same header as the node gave it is accepted
+        proxy.answerNextRequest("chain_getHeader", header);
+        expect((await reader.head()).hash).to.equal(
+            await socket.request("chain_getBlockHash", [header.number])
+        );
+    });
+
+    it("throws when the node's header carries no single Ethereum block hash", async function () {
+        node = await LightClientNodeFixture.start();
+        await node.firstBlockSealed();
+        const { proxy, socket } = await node.connectToNodeThroughProxy();
+        const reader = readerOver(socket);
+        const header =
+            await socket.request<SubstrateHeaderJson>("chain_getHeader");
+        const isFrontierLog = (log: string) => log.startsWith(FRONTIER_LOG);
+        const frontierLog = header.digest.logs.find(isFrontierLog)!;
+        const otherLogs = header.digest.logs.filter(
+            (log) => !isFrontierLog(log)
+        );
+
+        proxy.answerNextRequest("chain_getHeader", {
+            ...header,
+            digest: { logs: otherLogs }
+        });
+        expect(await rejectionOf(reader.head()))
+            .to.be.instanceOf(StorageProofError)
+            .with.property("message")
+            .that.includes("holds 0 Frontier logs");
+        proxy.answerNextRequest("chain_getHeader", {
+            ...header,
+            digest: { logs: [...header.digest.logs, frontierLog] }
+        });
+        expect(await rejectionOf(reader.head()))
+            .to.be.instanceOf(StorageProofError)
+            .with.property("message")
+            .that.includes("holds 2 Frontier logs");
+        proxy.answerNextRequest("chain_getHeader", header);
+        expect((await reader.head()).hash).to.equal(
+            await socket.request("chain_getBlockHash", [header.number])
+        );
+    });
+
+    it("throws when a proof node is hex that is not whole bytes", async function () {
+        node = await LightClientNodeFixture.start();
+        await node.firstBlockSealed();
+        const { proxy, socket } = await node.connectToNodeThroughProxy();
+        const reader = readerOver(socket);
+        const head = await reader.head();
+        const read = [
+            {
+                address: node.senderAddress,
+                slots: [],
+                account: true,
+                code: false
+            }
+        ];
+
+        proxy.answerNextRequest("state_getReadProof", {
+            at: head.hash,
+            proof: ["0x0"]
+        });
+        expect(await rejectionOf(reader.read(head, read)))
+            .to.be.instanceOf(StorageProofError)
+            .with.property("message")
+            .that.includes("no read proof");
+        // the node's own proof is accepted
+        expect(await reader.read(head, read)).to.have.length(1);
+    });
+
+    it("throws when the proof decides only some of the asked entries", async function () {
+        node = await LightClientNodeFixture.start();
+        const contract = await node.deployStoreAndLogContract();
+        await node.store(contract, SLOT_ONE, toBeHex(0xaaaa, 32));
+        const { proxy, socket } = await node.connectToNodeThroughProxy();
+        const reader = readerOver(socket);
+        const head = await servedHead(node, reader);
+        const read = [contract, node.senderAddress].map((address) => ({
+            address,
+            slots: [],
+            account: true,
+            code: false
+        }));
+        const proofOfFirst = await socket.request("state_getReadProof", [
+            [systemAccountKey(contract)],
+            head.hash
+        ]);
+
+        proxy.answerNextRequest("state_getReadProof", proofOfFirst);
+        expect(await rejectionOf(reader.read(head, read))).to.be.instanceOf(
+            StorageProofError
+        );
+        // the node's own proof decides both
+        const [ofContract, ofSender] = await reader.read(head, read);
+        expect([ofContract.account, ofSender.account]).to.deep.equal([
+            {
+                nonce: BigInt(
+                    await node.provider.getTransactionCount(
+                        contract,
+                        head.number
+                    )
+                ),
+                balance: await node.provider.getBalance(contract, head.number)
+            },
+            {
+                nonce: BigInt(
+                    await node.provider.getTransactionCount(
+                        node.senderAddress,
+                        head.number
+                    )
+                ),
+                balance: await node.provider.getBalance(
+                    node.senderAddress,
+                    head.number
+                )
+            }
+        ]);
+    });
+
+    it("reads a contract's code without its account", async function () {
+        node = await LightClientNodeFixture.start();
+        const contract = await node.deployStoreAndLogContract();
+        const socket = await node.connectToNode();
+        const reader = readerOver(socket);
+        const head = await servedHead(node, reader);
+
+        expect(
+            await reader.read(head, [
+                { address: contract, slots: [], account: false, code: true }
+            ])
+        ).to.deep.equal([
+            {
+                address: contract,
+                storage: [],
+                code: await node.provider.getCode(contract, head.number)
+            }
+        ]);
+    });
+
+    it("fails with the node's own error when the node answers a request with an error", async function () {
+        node = await LightClientNodeFixture.start();
+        await node.firstBlockSealed();
+        const { proxy, socket } = await node.connectToNodeThroughProxy();
+        const reader = readerOver(socket);
+        const head = await reader.head();
+        const read = [
+            {
+                address: node.senderAddress,
+                slots: [],
+                account: true,
+                code: false
+            }
+        ];
+
+        proxy.failNextRequest("chain_getHeader");
+        const headFailure = await rejectionOf(reader.head());
+        proxy.failNextRequest("state_getReadProof");
+        const readFailure = await rejectionOf(reader.read(head, read));
+        for (const failure of [headFailure, readFailure]) {
+            expect(failure).not.to.be.instanceOf(StorageProofError);
+            expect(failure)
+                .to.be.instanceOf(Error)
+                .with.property("message")
+                .that.includes("request failed");
+        }
+        // the node's own answers are accepted next
+        expect(await reader.read(head, read)).to.have.length(1);
     });
 });

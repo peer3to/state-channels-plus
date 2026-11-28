@@ -28,6 +28,10 @@ const { resolveProjectHardhatCli } = require(
     )
 );
 const HARDHAT_CLI = resolveProjectHardhatCli(PROJECT_ROOT);
+// Each peer3 node keeps its database in a directory of its own under here.
+const PEER3_NODES_DIR = path.join(PROJECT_ROOT, "temp", "peer3-nodes");
+// The file in a peer3 node's directory that names the node's process.
+const PEER3_NODE_PID_FILE = "node.pid";
 const DISCOVERY_SCRIPT = path.join(
     PACKAGE_ROOT,
     "scripts",
@@ -78,10 +82,19 @@ async function startDhtBootstrapper(host, { port, attempts = 20 } = {}) {
     }
 }
 
-/** Poll a node's RPC endpoint until it responds or the timeout expires. */
-async function waitForHardhatNode(url, timeoutMs = 30000) {
+/**
+ * Poll a node's RPC endpoint until it responds or the timeout expires. Polling
+ * ends early, without an error, once `signal` aborts.
+ */
+async function waitForHardhatNode(
+    url,
+    timeoutMs = 30000,
+    label = "Hardhat node",
+    signal = undefined
+) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
+        if (signal?.aborted) return;
         const ready = await new Promise((resolve) => {
             const req = http.request(
                 url,
@@ -103,7 +116,7 @@ async function waitForHardhatNode(url, timeoutMs = 30000) {
         if (ready) return;
         await new Promise((r) => setTimeout(r, 250));
     }
-    throw new Error(`Hardhat node not ready at ${url} within ${timeoutMs}ms`);
+    throw new Error(`${label} not ready at ${url} within ${timeoutMs}ms`);
 }
 
 function pipeLogs(child, logPath) {
@@ -128,12 +141,67 @@ function infraNodeFlags() {
     return flags ? flags.split(" ").filter(Boolean) : [];
 }
 
+// --parachain (PARACHAIN=1) starts the parachain dev node (PEER3_NODE_BIN,
+// default `zero-fee-node` on PATH) on the funded test chain instead of hardhat.
+const isParachain = () => process.env.PARACHAIN === "1";
+
+/** The peer3 node binary: the one `PEER3_NODE_BIN` names, else `zero-fee-node` on PATH. */
+const peer3NodeBin = () => process.env.PEER3_NODE_BIN || "zero-fee-node";
+
+/**
+ * The peer3 dev node's arguments: `seal` is "interval" or "manual", `chain`
+ * is "test" or "test-other" (the same chain under a second EVM chain id).
+ * Archive state: Frontier's eth_getLogs skips blocks whose state is pruned
+ * (by default all but the last 256), without an error. A pool ten times the
+ * default: the future queue holds a tenth of it (2 MB by default), and the
+ * opening wave of concurrent tests sends contract deploys out of nonce order,
+ * so a smaller queue silently evicts deploys their senders then wait on.
+ * `extraArgs` follow the common ones.
+ */
+function peer3NodeArgs(nodePort, seal, chain, basePath, extraArgs = []) {
+    return [
+        "--dev",
+        "--base-path",
+        basePath,
+        "--chain",
+        chain,
+        "--dev-seal",
+        seal,
+        "--state-pruning",
+        "archive",
+        "--rpc-port",
+        String(nodePort),
+        "--rpc-max-connections",
+        "10000",
+        "--pool-limit",
+        "81920",
+        "--pool-kbytes",
+        "204800",
+        "--port",
+        "0",
+        "--no-mdns",
+        "--no-prometheus",
+        "--no-telemetry",
+        "--no-hardware-benchmarks",
+        ...extraArgs
+    ];
+}
+
+/** Bytes of a node's latest output kept for its startup failure. */
+const NODE_OUTPUT_TAIL = 4096;
+/** How long a node may take to report its RPC port, as waitForHardhatNode. */
+const NODE_READY_MS = 30000;
+
 async function startHardhatNode({
     port,
     logPath,
     label = "hardhat node",
-    env = {}
+    env = {},
+    seal = "interval",
+    chain = "test"
 } = {}) {
+    if (isParachain())
+        return startPeer3Node({ port, logPath, label, env, seal, chain });
     const nodePort = port ?? (await getFreePort());
     const proc = spawn(
         process.execPath,
@@ -156,61 +224,125 @@ async function startHardhatNode({
 }
 
 /**
- * Spawn the peer3 dev node at `PEER3_NODE_BIN` (on `port` or a free one), wait
- * until its RPC is ready, and return `{ proc, url, stop }`. The node seals a
- * block every block time on the funded test chain and keeps its database in a
- * directory of its own, removed when it exits.
+ * Spawn the peer3 dev node (`peer3NodeBin`) on `port`, or without one on the
+ * port it binds and reports, wait until its RPC is ready, and return
+ * `{ proc, url, stop }`. The node seals blocks as `seal` says on `chain`, with
+ * `extraArgs` after the common arguments, and keeps its database in a
+ * directory of its own in `nodesDir`. The directory is removed when the node
+ * exits, or by a later start when the process that would have removed it was
+ * killed first.
  */
-async function startPeer3Node({ port, logPath, label = "peer3 node" } = {}) {
-    const nodeBin = process.env.PEER3_NODE_BIN;
-    if (!nodeBin) throw new Error("PEER3_NODE_BIN names no peer3 node binary");
-    const nodePort = port ?? (await getFreePort());
-    // --dev alone keeps the database in the system temp dir and leaves it there
-    const nodesDir = path.join(PROJECT_ROOT, "temp", "peer3-nodes");
+async function startPeer3Node({
+    port,
+    logPath,
+    label = "peer3 node",
+    env = {},
+    seal = "interval",
+    chain = "test",
+    extraArgs = [],
+    nodesDir = PEER3_NODES_DIR
+} = {}) {
+    // a node without a given port binds port 0 and prints the one it got: a
+    // port reserved and released first can be taken before the node binds it
+    const readsBoundPort = port === undefined;
+    const nodePort = port ?? 0;
+    // the node's database grows past a container's small /tmp, so it lives in
+    // the project's temp dir; --dev alone keeps it in the system temp dir and
+    // leaves it there
     fs.mkdirSync(nodesDir, { recursive: true });
+    removeDeadPeer3NodeDirs(nodesDir);
     const basePath = fs.mkdtempSync(path.join(nodesDir, "node-"));
-    const output = logPath ? "pipe" : "ignore";
     const proc = spawn(
-        nodeBin,
-        [
-            "--dev",
-            "--base-path",
-            basePath,
-            "--chain",
-            "test",
-            "--dev-seal",
-            "interval",
-            "--rpc-port",
-            String(nodePort),
-            // the wildcard storage subscription is an unsafe method
-            "--rpc-methods",
-            "unsafe",
-            "--port",
-            "0",
-            "--no-mdns",
-            "--no-prometheus",
-            "--no-telemetry",
-            "--no-hardware-benchmarks"
-        ],
-        // the node logs every block, and an unread pipe would fill and stall it
-        { cwd: PROJECT_ROOT, stdio: ["ignore", output, output] }
+        peer3NodeBin(),
+        peer3NodeArgs(nodePort, seal, chain, basePath, extraArgs),
+        // the node logs every block, and an unread pipe would fill and stall it:
+        // nodeHandleWhenReady reads both to the end
+        {
+            cwd: PROJECT_ROOT,
+            env: { ...process.env, ...env },
+            stdio: ["ignore", "pipe", "pipe"]
+        }
     );
     const removeBasePath = () =>
         fs.rmSync(basePath, { recursive: true, force: true });
     proc.once("exit", removeBasePath);
     // a binary that cannot be spawned emits no exit
     proc.once("error", removeBasePath);
-    return nodeHandleWhenReady(proc, nodePort, { logPath, label });
+    if (proc.pid !== undefined) {
+        // written whole by a rename, so a sweep never reads half of it
+        const pidFile = path.join(basePath, PEER3_NODE_PID_FILE);
+        fs.writeFileSync(`${pidFile}.tmp`, String(proc.pid));
+        fs.renameSync(`${pidFile}.tmp`, pidFile);
+    }
+    return nodeHandleWhenReady(proc, nodePort, {
+        logPath,
+        label,
+        readsBoundPort
+    });
 }
 
-/** The handle of a spawned node once its RPC on `nodePort` answers. */
-function nodeHandleWhenReady(proc, nodePort, { logPath, label }) {
+/**
+ * Removes the database directory of every peer3 node in `nodesDir` whose
+ * process is gone. A directory without a valid process id is one whose node is
+ * being started right now, and is kept.
+ */
+function removeDeadPeer3NodeDirs(nodesDir) {
+    for (const entry of fs.readdirSync(nodesDir)) {
+        const dir = path.join(nodesDir, entry);
+        let pid;
+        try {
+            pid = Number(
+                fs.readFileSync(path.join(dir, PEER3_NODE_PID_FILE), "utf8")
+            );
+        } catch {
+            continue;
+        }
+        if (Number.isInteger(pid) && pid > 0 && !isProcessAlive(pid))
+            fs.rmSync(dir, { recursive: true, force: true });
+    }
+}
+
+function isProcessAlive(pid) {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch (error) {
+        // EPERM: the process exists and belongs to another user
+        return error.code === "EPERM";
+    }
+}
+
+/**
+ * The handle of a spawned node once its RPC answers: on `nodePort`, or with
+ * `readsBoundPort` on the port the node prints.
+ */
+function nodeHandleWhenReady(
+    proc,
+    nodePort,
+    { logPath, label, readsBoundPort = false }
+) {
     let resolveExit;
     const exited = new Promise((resolve) => {
         resolveExit = resolve;
     });
     proc.once("exit", (code, signal) => resolveExit({ code, signal }));
     const logStream = pipeLogs(proc, logPath);
+    // the output is always read, so a full pipe never blocks the node; its
+    // tail goes into a startup failure
+    let outputTail = "";
+    let resolveBoundPort;
+    const boundPort = new Promise((resolve) => {
+        resolveBoundPort = resolve;
+    });
+    const readOutput = (chunk) => {
+        outputTail = (outputTail + chunk.toString()).slice(-NODE_OUTPUT_TAIL);
+        const bound = /Running JSON-RPC server: addr=127\.0\.0\.1:(\d+)/.exec(
+            outputTail
+        );
+        if (bound) resolveBoundPort(Number(bound[1]));
+    };
+    proc.stdout.on("data", readOutput);
+    proc.stderr.on("data", readOutput);
     const logClosed = logStream
         ? new Promise((resolve) => {
               if (logStream.closed) resolve();
@@ -218,18 +350,25 @@ function nodeHandleWhenReady(proc, nodePort, { logPath, label }) {
           })
         : Promise.resolve();
     proc.once("close", () => logStream?.end());
-    const url = `http://127.0.0.1:${nodePort}`;
     const stop = () => {
         if (!proc.killed) proc.kill("SIGTERM");
     };
 
+    // a node that exits or cannot start ends the readiness polling
+    const polling = new AbortController();
+    proc.once("exit", () => polling.abort());
+    proc.once("error", () => polling.abort());
+
     return new Promise((resolve, reject) => {
         let settled = false;
-        proc.on("exit", (code) => {
+        // close, not exit: the output read so far is complete
+        proc.once("close", (code) => {
             if (!settled) {
                 settled = true;
                 reject(
-                    new Error(`${label} exited with code ${code} before ready`)
+                    new Error(
+                        `${label} exited with code ${code} before ready:\n${outputTail}`
+                    )
                 );
             }
         });
@@ -240,19 +379,57 @@ function nodeHandleWhenReady(proc, nodePort, { logPath, label }) {
                 reject(err);
             }
         });
-        waitForHardhatNode(url).then(
-            () =>
-                settled ||
-                ((settled = true),
-                resolve({ proc, url, stop, exited, logClosed })),
-            (err) => {
-                if (!settled) {
+        let url;
+        (readsBoundPort
+            ? Promise.race([
+                  boundPort,
+                  new Promise((_, rejectPort) =>
+                      setTimeout(
+                          () =>
+                              rejectPort(
+                                  new Error(
+                                      `${label} reported no RPC port within ${NODE_READY_MS}ms:\n${outputTail}`
+                                  )
+                              ),
+                          NODE_READY_MS
+                      ).unref()
+                  )
+              ])
+            : Promise.resolve(nodePort)
+        )
+            .then((boundTo) => {
+                url = `http://127.0.0.1:${boundTo}`;
+                return waitForHardhatNode(
+                    url,
+                    undefined,
+                    label,
+                    polling.signal
+                );
+            })
+            .then(
+                () => {
+                    // polling also ends when the node exits; close then rejects
+                    if (
+                        settled ||
+                        proc.exitCode !== null ||
+                        proc.signalCode !== null
+                    )
+                        return;
                     settled = true;
-                    stop();
-                    reject(err);
+                    resolve({ proc, url, stop, exited, logClosed });
+                },
+                (err) => {
+                    if (!settled) {
+                        settled = true;
+                        stop();
+                        reject(
+                            new Error(
+                                `${err.message}; its last output:\n${outputTail}`
+                            )
+                        );
+                    }
                 }
-            }
-        );
+            );
     });
 }
 
@@ -531,6 +708,9 @@ module.exports = {
     waitForHardhatNode,
     startHardhatNode,
     startPeer3Node,
+    peer3NodeBin,
+    PEER3_NODES_DIR,
+    PEER3_NODE_PID_FILE,
     startDiscoveryRegistry,
     jsonRpc,
     resetSlotCacheDir,

@@ -1,7 +1,7 @@
 import ScaleReader, { encodeCompact } from "./ScaleReader";
+import { blake2_256 } from "./SubstrateTrieProof";
 import type { SubstrateHeaderJson } from "../../lightClientWire";
 import StorageProofError from "../StorageProofError";
-import { blake2b } from "@noble/hashes/blake2b";
 import { concat, dataLength, getBytes, hexlify } from "ethers";
 
 /** The digest item kind of a consensus log, and Frontier's engine id, "fron". */
@@ -10,6 +10,13 @@ const FRONTIER_CONSENSUS_LOG = "0x0466726f6e";
 const HASHES_LOG = 1;
 const BLOCK_HASH_LOG = 3;
 const HASH_LENGTH = 32;
+/** A block number is a `u32`: SCALE-encoded wider, the header would hash to another value. */
+const MAX_BLOCK_NUMBER = 0xffffffff;
+
+/** Whether `number` is a block number as `chain_getHeader` gives one: a hex `u32`. */
+function isBlockNumber(number: string): boolean {
+    return /^0x[0-9a-f]+$/i.test(number) && Number(number) <= MAX_BLOCK_NUMBER;
+}
 
 /**
  * A Substrate block header of a Frontier chain: the block's hash, the state
@@ -24,6 +31,10 @@ export default class SubstrateHeader {
     private readonly digestLogs: string[];
 
     constructor(header: SubstrateHeaderJson) {
+        if (!isBlockNumber(header.number))
+            throw new StorageProofError(
+                `The header's block number ${header.number} is no hex u32`
+            );
         this.number = Number(header.number);
         this.stateRoot = header.stateRoot;
         this.digestLogs = header.digest.logs;
@@ -44,9 +55,7 @@ export default class SubstrateHeader {
             encodeCompact(this.digestLogs.length),
             ...this.digestLogs
         ]);
-        this.hash = hexlify(
-            blake2b(getBytes(encodedHeader), { dkLen: HASH_LENGTH })
-        );
+        this.hash = hexlify(blake2_256(getBytes(encodedHeader)));
     }
 
     /**
