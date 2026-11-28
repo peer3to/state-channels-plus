@@ -347,19 +347,22 @@ with the suite still green.
   checklist).
 - Canonical full gate: the command in root `AGENTS.md`
   (`yarn test:parallel:distributed --parachain --test-parallel-script --test-browser`), which runs the Mocha,
-  forge and browser tiers. Add `--e2e-only` to run only E2E tests (it drops the
+  forge and browser tiers. Mocha files marked `@distributed-requires: lightClient`
+  are left out of it and of CI; they run only locally with `--lc-tests`. Add `--e2e-only` to run only E2E tests (it drops the
   forge and browser tiers), or `--grep <regexp>` for the narrowest relevant
   task.
 - Browser gates and Mocha files marked `// @distributed-requires: browser` need
-  a protocol 14 or newer worker host whose runner image was built with
-  `yarn test:parallel:image`. Without one they are skipped after the discovery
+  a protocol 14 or newer worker host whose runner image matches its checkout's
+  `runner-image.Dockerfile` (the worker server rebuilds a stale one at
+  startup). Without one they are skipped after the discovery
   window with a warning that lists them; check a green run for it. A Mocha file
   that launches Chromium must carry that marker in its leading comments. See
   "Browser tests" in the root `README.md`.
 - Light client tests need a node with the light client endpoints: mark the file
   `// @distributed-requires: lightClient` and start the node through
   `LightClientNodeFixture`. They are discovered only with `--lc-tests`, run on
-  the local runner with `PEER3_NODE_BIN` set, and fail at once with
+  the local runner with a peer3 node binary (`PEER3_NODE_BIN`, else
+  `zero-fee-node` on `PATH`), and fail at once with
   `RPC node doesn't support LC endpoints` otherwise. See "Light client tests" in
   the root `README.md`.
 - Legacy in-process unit/integration: `yarn test`. E2E inline: `yarn test:e2e`.

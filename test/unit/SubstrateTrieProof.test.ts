@@ -6,20 +6,25 @@ import SubstrateTrieProof, {
 import {
     ANY_TRIE_KEY,
     craftedTrieNodes,
+    hashedValueBranch,
     oneChildBranch,
     patternedValue,
-    readCrafted,
     readFromSingleLeaf,
     singleLeafNode,
+    readCraftedTrie,
     twoEntryBranch
 } from "@test/fixtures/lightClient/craftedTrieNodes";
 import { moonbeamStorageProof } from "@test/fixtures/lightClient/moonbeamStorageProof";
 import { expect } from "chai";
-import { dataLength, getBytes, hexlify, ZeroHash } from "ethers";
+import { concat, dataLength, getBytes, hexlify, ZeroHash } from "ethers";
 
 const { stateRoot, slots, sharedProofNodes, firstSlotProofNodes, account } =
     moonbeamStorageProof;
 const [firstSlot, , emptySlot] = slots;
+/** Longer than 32 bytes, so state version 1 holds it by hash. */
+const LONG_VALUE = hexlify(new Uint8Array(40).fill(0xcd));
+/** Eight key bytes: a partial key of 16 nibbles. */
+const LONG_PARTIAL_KEY = "0x0102030405060708";
 
 describe("SubstrateTrieProof", function () {
     it("reads a value the trie holds inside its leaf", function () {
@@ -87,38 +92,44 @@ describe("SubstrateTrieProof", function () {
     });
 
     it("reads null from the empty trie", function () {
-        expect(readCrafted(craftedTrieNodes.empty)).to.equal(null);
+        expect(readCraftedTrie(craftedTrieNodes.empty, ANY_TRIE_KEY)).to.equal(
+            null
+        );
     });
 
     it("reads the value a branch holds where the key ends", function () {
-        expect(hexlify(readCrafted(twoEntryBranch, "0x")!)).to.equal("0xaa");
+        expect(hexlify(readCraftedTrie(twoEntryBranch, "0x")!)).to.equal(
+            "0xaa"
+        );
     });
 
     it("reads a value through a child its branch holds inside itself", function () {
-        expect(hexlify(readCrafted(twoEntryBranch, "0x12")!)).to.equal("0xbb");
+        expect(hexlify(readCraftedTrie(twoEntryBranch, "0x12")!)).to.equal(
+            "0xbb"
+        );
     });
 
     it("reads null where the key ends at a branch that holds no value", function () {
-        expect(readCrafted(oneChildBranch, "0x")).to.equal(null);
+        expect(readCraftedTrie(oneChildBranch, "0x")).to.equal(null);
     });
 
     it("reads null where a branch has no child for the key's next nibble", function () {
-        expect(readCrafted(twoEntryBranch, "0x22")).to.equal(null);
+        expect(readCraftedTrie(twoEntryBranch, "0x22")).to.equal(null);
     });
 
     it("reads null where a leaf's partial key differs from the key", function () {
-        expect(readCrafted(twoEntryBranch, "0x13")).to.equal(null);
+        expect(readCraftedTrie(twoEntryBranch, "0x13")).to.equal(null);
     });
 
     it("reads null where the key continues past a leaf", function () {
-        expect(readCrafted(twoEntryBranch, "0x1234")).to.equal(null);
+        expect(readCraftedTrie(twoEntryBranch, "0x1234")).to.equal(null);
     });
 
     it("reads null where the key ends inside a leaf's partial key", function () {
         // a leaf with the 4-nibble partial key 0a0b and value ff
         const leaf = "0x440a0b04ff";
-        expect(hexlify(readCrafted(leaf, "0x0a0b")!)).to.equal("0xff");
-        expect(readCrafted(leaf, "0x0a")).to.equal(null);
+        expect(hexlify(readCraftedTrie(leaf, "0x0a0b")!)).to.equal("0xff");
+        expect(readCraftedTrie(leaf, "0x0a")).to.equal(null);
     });
 
     it("throws when any node on the key's path is left out of the proof", function () {
@@ -171,39 +182,68 @@ describe("SubstrateTrieProof", function () {
         );
     });
 
-    it("throws on a node with an unknown header", function () {
-        expect(() => readCrafted(craftedTrieNodes.unknownHeader)).to.throw(
-            StorageProofError,
-            /unknown header/
+    it("reads the value a branch holds by hash where the key ends", function () {
+        const { node, valueNode } = hashedValueBranch("0x", LONG_VALUE);
+        const value = readCraftedTrie(node, "0x", [valueNode]);
+        expect(hexlify(value!)).to.equal(LONG_VALUE);
+        expect(hexlify(readCraftedTrie(node, "0x12", [valueNode])!)).to.equal(
+            "0xbb"
         );
+    });
+
+    it("throws when the node holding a branch's hashed value is left out", function () {
+        const { node } = hashedValueBranch("0x", LONG_VALUE);
+        expect(() => readCraftedTrie(node, "0x")).to.throw(
+            StorageProofError,
+            /holds no node with hash/
+        );
+    });
+
+    it("reads a branch that holds its value by hash under a partial key of 16 nibbles", function () {
+        const { node, valueNode } = hashedValueBranch(
+            LONG_PARTIAL_KEY,
+            LONG_VALUE
+        );
+        expect(
+            hexlify(readCraftedTrie(node, LONG_PARTIAL_KEY, [valueNode])!)
+        ).to.equal(LONG_VALUE);
+        expect(
+            hexlify(
+                readCraftedTrie(node, concat([LONG_PARTIAL_KEY, "0x12"]), [
+                    valueNode
+                ])!
+            )
+        ).to.equal("0xbb");
+    });
+
+    it("throws on a node with an unknown header", function () {
+        expect(() =>
+            readCraftedTrie(craftedTrieNodes.unknownHeader, ANY_TRIE_KEY)
+        ).to.throw(StorageProofError, /unknown header/);
     });
 
     it("throws on a node that ends before its announced content", function () {
-        expect(() => readCrafted(craftedTrieNodes.truncatedLeaf)).to.throw(
-            StorageProofError,
-            /ends early/
-        );
+        expect(() =>
+            readCraftedTrie(craftedTrieNodes.truncatedLeaf, ANY_TRIE_KEY)
+        ).to.throw(StorageProofError, /ends early/);
     });
 
     it("throws on an odd partial key whose padding is not zero", function () {
-        expect(() => readCrafted(craftedTrieNodes.paddedPartial)).to.throw(
-            StorageProofError,
-            /padded partial key/
-        );
+        expect(() =>
+            readCraftedTrie(craftedTrieNodes.paddedPartial, ANY_TRIE_KEY)
+        ).to.throw(StorageProofError, /padded partial key/);
     });
 
     it("throws on a branch that has no child", function () {
-        expect(() => readCrafted(craftedTrieNodes.childlessBranch)).to.throw(
-            StorageProofError,
-            /no child/
-        );
+        expect(() =>
+            readCraftedTrie(craftedTrieNodes.childlessBranch, ANY_TRIE_KEY)
+        ).to.throw(StorageProofError, /no child/);
     });
 
     it("throws on a value length nothing can hold", function () {
-        expect(() => readCrafted(craftedTrieNodes.bigIntegerLength)).to.throw(
-            StorageProofError,
-            /length nothing can hold/
-        );
+        expect(() =>
+            readCraftedTrie(craftedTrieNodes.bigIntegerLength, ANY_TRIE_KEY)
+        ).to.throw(StorageProofError, /length nothing can hold/);
     });
 
     it("reads from nodes already keyed by their hash what a proof of the same nodes reads", function () {

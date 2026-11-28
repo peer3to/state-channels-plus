@@ -57,6 +57,7 @@ The SDK abstracts away most of the complexities of the system and is designed to
 
 ### Upgrade notes
 
+- `inboundMessageBlockMap` now stores a `StoredInboundBlock` (link, height, timestamp, deposit total, JOIN participants) instead of the full `MessageBlock`. Read message data from `InboundMessagesProcessed`. The storage layout changes: deploy a new proxy and redeploy every facet with it. Do not reuse facet addresses from an earlier deployment; the constructor does not detect a facet built for another layout (`FIND-DEPLOY-1-T2XFRK`).
 - `GAS_USAGE_SETTLE_MS` is replaced by `GAS_USAGE_SETTLE_BLOCKS` (default 3): a gas-usage read waits that many blocks at the measured block time, at most half its request timeout. An old `GAS_USAGE_SETTLE_MS` override is ignored.
 - State-machine diamonds MUST route `getNextToWriteOf(bytes)` from `AStateMachine` to the state-machine facet. It sets the given state, so call it only as a simulated call (`eth_call`). The SDK uses it to read the next writer of a given state. An unrouted selector makes every timeout audit throw.
 - The `requestJoinSignature` peer RPC no longer carries the joiner's snapshot and fork pins, and countersigners no longer check them. Mixed SDK versions cannot sign joins: an old countersigner refuses a new collector's request.
@@ -170,7 +171,11 @@ browser tiers with it. Use `--mocha-test-pattern`, `--forge-test-pattern` or
 `--parachain` runs the slot nodes and tests on the parachain dev node
 (`PEER3_NODE_BIN`, default `zero-fee-node` on `PATH`) instead of Hardhat. The
 runner image copies the node from the image peer3-parachain publishes
-(`docker/zero-fee-node.Dockerfile` there), pinned by digest.
+(`docker/zero-fee-node.Dockerfile` there), pinned by digest. A PR that changes
+that pin also runs the chosen node-sensitive cases (pending-block gas estimates
+in `RpcNodes.test.ts`, block-authoring timeouts in `E2E-Timeouts`) in CI's
+`browser` job, on the image it builds; the distributed suite keeps running on
+the workers' own images until they restart on the merged checkout.
 
 Forge tasks need no Hardhat node, so they take neither a warm slot nor a funded
 account partition. Local and distributed runs build the contracts and the
@@ -249,10 +254,10 @@ unless the operator exported another path. A gate that cannot find the browser
 says so and names the variable.
 
 A worker runs tasks with the runner from its own checkout, so the browser tier
-reaches it only after **the worker host updates that checkout, restarts
-`yarn test:parallel:server`, and rebuilds its runner image**
-(`yarn test:parallel:image`; the server refuses a stale image, and on restart
-discards cached environments whose containers were created from another image). The browser tier
+reaches it only after **the worker host updates that checkout and restarts
+`yarn test:parallel:server`** (a docker server rebuilds a stale runner image at
+startup, and on restart discards cached environments whose containers were
+created from another image). The browser tier
 arrived with distributed protocol 14. The orchestrator still leases protocol 13
 hosts and hands them only hardhat and forge tasks, so a pool can upgrade one
 host at a time. A Mocha test file that launches Chromium carries
@@ -262,7 +267,7 @@ and no connected worker has supported the browser runner for the discovery
 window (`--discovery-timeout`), the run skips the browser tasks and those marked
 Mocha tests with a warning that lists them (also written to the GitHub job
 summary) instead of failing; CI's `browser` job runs the same gates inside the
-runner image either way. A task whose attempt was lost with the only host that
+runner image either way (and, for a node pin PR, the node-sensitive cases). A task whose attempt was lost with the only host that
 could run it fails instead of being skipped.
 
 A worker that leaves before it is given a task, whether its lease or workspace
@@ -389,23 +394,25 @@ discovered only with `--lc-tests`; the legacy `yarn test` leaves
 `test/lightClient` out.
 
 ```shell
-PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --mocha-test-pattern "lightClient/*.ts"
+PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --no-forge --mocha-test-pattern "lightClient/*.ts"
 ```
 
-`PEER3_NODE_BIN` names a peer3 node binary (`zero-fee-node` of
-`peer3-parachain`, built with the light client endpoints). Each test starts a
-dev node of its own from it with `--light-client` (`startPeer3Node` in
-`test/utils/nodeInfra.js`), so the tests share no chain state. Without
-`PEER3_NODE_BIN`, or against a node that does not list the endpoints, a test
-fails at once with `RPC node doesn't support LC endpoints`.
+The node binary is the one `PEER3_NODE_BIN` names, else `zero-fee-node` on
+`PATH`, the same rule as `--parachain` (`zero-fee-node` of `peer3-parachain`,
+built with the light client endpoints). Each test starts a dev node of its own
+from it with `--light-client` (`startPeer3Node` in `test/utils/nodeInfra.js`,
+which also starts the `--parachain` slot nodes), so the tests share no chain
+state. When no node binary can be found, or against a node that does not list
+the endpoints, a test fails at once with `RPC node doesn't support LC endpoints`.
 
 A distributed run hands these tests only to worker hosts on distributed
 protocol 16 or newer, whose runner image carries a node with the light client
 endpoints, and skips them with a warning that lists them when no such host
-connects. The image puts the node on `PATH`, so forward its name:
+connects. The image puts `zero-fee-node` on `PATH`, where the tests find it
+without `PEER3_NODE_BIN`:
 
 ```shell
-PEER3_NODE_BIN=zero-fee-node yarn test:parallel:distributed --lc-tests --forward-env PEER3_NODE_BIN --mocha-test-pattern "lightClient/*.ts"
+yarn test:parallel:distributed --lc-tests --mocha-test-pattern "lightClient/*.ts"
 ```
 
 The runner image's pinned node (`PEER3_NODE_IMAGE` in
@@ -448,12 +455,17 @@ export SCP_TEST_RUNNER_IMAGE='sha256:<local-image-id>'
 yarn test:parallel:server --name worker-one
 ```
 
-The server refuses to start when the configured image was built from another
-revision of the Dockerfile than its checkout carries, or without the label: the
-distributed protocol version covers the runner code, not the image, so a host
-that updated its checkout without rebuilding would otherwise accept tasks its
-image cannot run. Rebuild the image after every checkout update that changes
-the Dockerfile.
+When the configured image was built from another revision of the Dockerfile
+than its checkout carries, carries no label, is not on this host (pull a
+published digest before starting), or is not set, the docker server
+builds the image at startup, after its docker host checks, and runs on the new
+ID: the distributed protocol
+version covers the runner code, not the image, so a host that updated its
+checkout without rebuilding would otherwise accept tasks its image cannot run.
+It prints the new ID; set `SCP_TEST_RUNNER_IMAGE` to it so the next restart
+does not build again. If the build fails, the server does not start. The docker
+self-check, integration and benchmark tools stay strict: they refuse such an
+image and name the restart or `yarn test:parallel:image` as the fix.
 
 The Docker volume driver must enforce the `size` option. The Linux service
 account also needs permission to create Docker bridge networks and install the
@@ -783,7 +795,7 @@ Enable them explicitly, including when using `--grep`:
 yarn test:parallel:distributed --test-parallel-script
 yarn test:parallel:distributed --test-browser
 yarn test:parallel:distributed --test-parallel-script --test-browser
-PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests
+PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --no-forge --mocha-test-pattern "lightClient/*.ts"
 ```
 
 CI passes the first two flags, and `--parachain`, for the full test gate; see

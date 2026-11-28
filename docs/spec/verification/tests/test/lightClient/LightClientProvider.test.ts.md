@@ -5,8 +5,8 @@ Exercises: [LightClientRpcProvider.ts](../../../../implementation/source/src/evm
 
 ## Overview
 
-Every declaration starts a peer3 dev node of its own, with the light client endpoints, from the binary
-`PEER3_NODE_BIN` names, and a test-owned proxy in front of it. The runner discovers the file only with
+Every declaration starts a peer3 dev node of its own, with the light client endpoints (`PEER3_NODE_BIN`,
+else `zero-fee-node` on `PATH`), and a test-owned proxy in front of it. The runner discovers the file only with
 `--lc-tests`. The provider under test is the one the SDK builds with `createRpcNodesProvider`, given the
 proxy's address; it is on because the node lists the endpoints. The contracts are the repository's
 `SimpleNumberStorage` and hand-assembled ones that return the block values a call reads, forward a

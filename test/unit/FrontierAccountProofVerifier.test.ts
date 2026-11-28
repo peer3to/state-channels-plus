@@ -1,13 +1,12 @@
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import FrontierAccountProofVerifier from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierAccountProofVerifier";
-
 import { encodeCompact } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader";
-import {
-    encodedAccountInfo,
-    provenFromSingleAccount,
-    provenFromSingleCode
-} from "@test/fixtures/lightClient/craftedTrieNodes";
+import { encodedAccountInfo } from "@test/fixtures/lightClient/craftedTrieNodes";
 import { peer3AccountProof } from "@test/fixtures/lightClient/peer3AccountProof";
+import {
+    accountFromSingleEntryTrie,
+    codeFromSingleEntryTrie
+} from "@test/fixtures/lightClient/singleEntryAccountTries";
 import { expect } from "chai";
 import { concat, dataLength, dataSlice } from "ethers";
 
@@ -61,7 +60,7 @@ describe("FrontierAccountProofVerifier", function () {
 
     it("keeps back the existential deposit of a balance nothing is frozen of", function () {
         expect(
-            provenFromSingleAccount(
+            accountFromSingleEntryTrie(
                 verifier,
                 funded.address,
                 encodedAccountInfo({
@@ -76,7 +75,7 @@ describe("FrontierAccountProofVerifier", function () {
 
     it("keeps back a frozen balance that exceeds the existential deposit", function () {
         expect(
-            provenFromSingleAccount(
+            accountFromSingleEntryTrie(
                 verifier,
                 funded.address,
                 encodedAccountInfo({
@@ -92,7 +91,7 @@ describe("FrontierAccountProofVerifier", function () {
     it("counts a freeze against the reserved balance before the free balance", function () {
         // one deposit more is frozen than reserved: the deposit still stays
         expect(
-            provenFromSingleAccount(
+            accountFromSingleEntryTrie(
                 verifier,
                 funded.address,
                 encodedAccountInfo({
@@ -105,7 +104,7 @@ describe("FrontierAccountProofVerifier", function () {
         ).to.equal(9n * existentialDeposit);
         // three deposits more are frozen than reserved
         expect(
-            provenFromSingleAccount(
+            accountFromSingleEntryTrie(
                 verifier,
                 funded.address,
                 encodedAccountInfo({
@@ -118,7 +117,7 @@ describe("FrontierAccountProofVerifier", function () {
         ).to.equal(7n * existentialDeposit);
         // more is reserved than frozen
         expect(
-            provenFromSingleAccount(
+            accountFromSingleEntryTrie(
                 verifier,
                 funded.address,
                 encodedAccountInfo({
@@ -133,7 +132,7 @@ describe("FrontierAccountProofVerifier", function () {
 
     it("proves a free balance of no more than what is kept back as zero", function () {
         const balanceOf = (free: bigint) =>
-            provenFromSingleAccount(
+            accountFromSingleEntryTrie(
                 verifier,
                 funded.address,
                 encodedAccountInfo({
@@ -163,14 +162,14 @@ describe("FrontierAccountProofVerifier", function () {
         });
         expect(dataLength(account)).to.equal(80);
         expect(() =>
-            provenFromSingleAccount(
+            accountFromSingleEntryTrie(
                 verifier,
                 funded.address,
                 dataSlice(account, 0, 79)
             )
         ).to.throw(StorageProofError, /79-byte account/);
         expect(() =>
-            provenFromSingleAccount(
+            accountFromSingleEntryTrie(
                 verifier,
                 funded.address,
                 concat([account, "0x00"])
@@ -178,7 +177,7 @@ describe("FrontierAccountProofVerifier", function () {
         ).to.throw(StorageProofError, /81-byte account/);
         // the same one-entry trie with the whole entry is accepted
         expect(
-            provenFromSingleAccount(verifier, funded.address, account)
+            accountFromSingleEntryTrie(verifier, funded.address, account)
         ).to.deep.equal({
             nonce: 1n,
             balance: existentialDeposit
@@ -265,14 +264,14 @@ describe("FrontierAccountProofVerifier", function () {
 
     it("throws when the proven code is not as long as it announces", function () {
         expect(() =>
-            provenFromSingleCode(
+            codeFromSingleEntryTrie(
                 verifier,
                 contract.address,
                 concat([encodeCompact(5), "0x600060"])
             )
         ).to.throw(StorageProofError, /ends early/);
         expect(() =>
-            provenFromSingleCode(
+            codeFromSingleEntryTrie(
                 verifier,
                 contract.address,
                 concat([encodeCompact(2), "0x600060"])
@@ -280,7 +279,7 @@ describe("FrontierAccountProofVerifier", function () {
         ).to.throw(StorageProofError, /longer than it announces/);
         // the same one-entry trie with the announced length is accepted
         expect(
-            provenFromSingleCode(
+            codeFromSingleEntryTrie(
                 verifier,
                 contract.address,
                 concat([encodeCompact(3), "0x600060"])

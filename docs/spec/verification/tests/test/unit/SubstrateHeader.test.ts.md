@@ -23,5 +23,8 @@ whether a header belongs to the chain.
 - `throws when the digest holds two Frontier logs`: REQ-STPROOF-3-NVJGR0.T1.P13, UNIT-TEST-STPROOF-3-W0K47W.P6
 - `throws when the Frontier log holds a whole block and no hash`: UNIT-TEST-STPROOF-3-W0K47W.P7
 - `throws when the Frontier log ends before its hash`: UNIT-TEST-STPROOF-3-W0K47W.P8
+- `reads the Ethereum block hash of a Frontier log that holds the hash alone`: UNIT-TEST-STPROOF-3-W0K47W.P10
 - `throws when a hash of the header is not 32 bytes long`: UNIT-TEST-STPROOF-3-W0K47W.P9
 - `encodes numbers as SCALE compact integers on both sides of each size boundary`: UNIT-TEST-STPROOF-5-4PSJRN.P1
+- `throws when the block number is empty hex or not hex`: UNIT-TEST-STPROOF-3-W0K47W.P11
+- `throws when the block number is wider than 32 bits, and reads the widest one`: UNIT-TEST-STPROOF-3-W0K47W.P12

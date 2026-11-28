@@ -190,7 +190,10 @@ export const peer3PushedBlocks = {
     ]
 };
 
-/** `header` with `logs` as its digest. */
-export function withLogs(header: SubstrateHeaderJson, logs: string[]) {
+/** `header` with `logs` as its digest, as a node might push it. */
+export function headerWithDigestLogs(
+    header: SubstrateHeaderJson,
+    logs: string[]
+): SubstrateHeader {
     return new SubstrateHeader({ ...header, digest: { logs } });
 }

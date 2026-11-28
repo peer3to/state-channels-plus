@@ -6,17 +6,12 @@ import AAccountProofVerifier, {
 } from "../AAccountProofVerifier";
 import StorageProofError from "../StorageProofError";
 import type { Bytes, ChecksumAddress, Hash } from "@/types/types";
-import { hexlify, toBigInt } from "ethers";
+import { hexlify } from "ethers";
 
 const U32_LENGTH = 4;
 const U128_LENGTH = 16;
 /** `AccountInfo`: nonce and three reference counts, then four balances. */
 const ACCOUNT_INFO_LENGTH = 4 * U32_LENGTH + 4 * U128_LENGTH;
-
-/** A SCALE fixed-width unsigned integer, which is little-endian. */
-function readUnsigned(reader: ScaleReader, length: number): bigint {
-    return toBigInt(reader.take(length).slice().reverse());
-}
 
 /**
  * Accounts of a Frontier chain whose accounts are the 20-byte addresses
@@ -42,8 +37,21 @@ export default class FrontierAccountProofVerifier extends AAccountProofVerifier 
         address: ChecksumAddress,
         proofNodes: Bytes[] | SubstrateTrieProof
     ): ProvenAccount {
+        return this.accountIn(
+            SubstrateTrieProof.of(proofNodes),
+            stateRoot,
+            address
+        );
+    }
+
+    /** {@link provenAccount} from a proof the caller already holds. */
+    accountIn(
+        proof: SubstrateTrieProof,
+        stateRoot: Hash,
+        address: ChecksumAddress
+    ): ProvenAccount {
         const key = systemAccountKey(address);
-        const value = SubstrateTrieProof.of(proofNodes).read(stateRoot, key);
+        const value = proof.read(stateRoot, key);
         // the chain stores no entry for an account that never existed
         if (value === null) return { nonce: 0n, balance: 0n };
         if (value.length !== ACCOUNT_INFO_LENGTH)
@@ -51,12 +59,12 @@ export default class FrontierAccountProofVerifier extends AAccountProofVerifier 
                 `The proof holds a ${value.length}-byte account for ${address}`
             );
         const reader = new ScaleReader(value, "An account");
-        const nonce = readUnsigned(reader, U32_LENGTH);
+        const nonce = reader.readUnsigned(U32_LENGTH);
         // consumers, providers and sufficients
         reader.take(3 * U32_LENGTH);
-        const free = readUnsigned(reader, U128_LENGTH);
-        const reserved = readUnsigned(reader, U128_LENGTH);
-        const frozen = readUnsigned(reader, U128_LENGTH);
+        const free = reader.readUnsigned(U128_LENGTH);
+        const reserved = reader.readUnsigned(U128_LENGTH);
+        const frozen = reader.readUnsigned(U128_LENGTH);
         // pallet-evm reports what a transfer may take and keep the account
         // alive: a freeze counts against the reserved balance first, and the
         // existential deposit always stays
@@ -73,8 +81,21 @@ export default class FrontierAccountProofVerifier extends AAccountProofVerifier 
         address: ChecksumAddress,
         proofNodes: Bytes[] | SubstrateTrieProof
     ): string {
+        return this.codeIn(
+            SubstrateTrieProof.of(proofNodes),
+            stateRoot,
+            address
+        );
+    }
+
+    /** {@link provenCode} from a proof the caller already holds. */
+    codeIn(
+        proof: SubstrateTrieProof,
+        stateRoot: Hash,
+        address: ChecksumAddress
+    ): string {
         const key = accountCodeKey(address);
-        const value = SubstrateTrieProof.of(proofNodes).read(stateRoot, key);
+        const value = proof.read(stateRoot, key);
         // the map stores no entry for an account without code
         if (value === null) return "0x";
         const reader = new ScaleReader(value, "A contract's code");
