@@ -615,7 +615,7 @@ Specification cases tested: 10/10.
 Specification cases tested: 5/5.
 
 [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)
-Specification cases tested: 6/11. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5.
+Specification cases tested: 11/11.
 
 [`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../specification/runtime/light-client.md#req-lc-9-kwxv43)
 Specification cases tested: 14/14.

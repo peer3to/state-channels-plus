@@ -11,6 +11,18 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Channel follow on a peer3 node — 2026-11-28
+
+Five declarations in [LightClientChannelFollow.test.ts](../verification/tests/test/lightClient/LightClientChannelFollow.test.ts.md)
+cover [`REQ-LC-8-BBYC51.T1`](../specification/runtime/light-client.md#req-lc-8-bbyc51.t1) `P1`-`P5`, until now gaps:
+participants with the light client on over a peer3 slot node started with `--light-client` (PR #3 at `cd6e503`),
+behind a recording proxy. Four faults each failed two to four declarations: the old subscription not ended,
+the topics not sent, the manager not followed at start, and the listener's removal not ending the follow.
+They run with `--lc-tests --parachain` and `PEER3_NODE_LIGHT_CLIENT=1`, and fail at once otherwise. On the farm,
+distributed protocol 16 hosts ran the light client suites: 114 of 114 three times without `--parachain`, and
+with it 119 of 119 twice and 118 of 119 once (a `LightClientPushedPartitions` node start that timed out
+after 30 s; that test passed in the other five runs).
+
 ## Watched keys — 2026-11-25
 
 Eleven declarations in [LightClientWatchedKeys.test.ts](../verification/tests/test/lightClient/LightClientWatchedKeys.test.ts.md)

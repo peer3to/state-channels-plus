@@ -929,8 +929,9 @@ decided by the engineer on the date given.
 8. **Channel flows are measured; the synthetic drivers stay for capacity.** Participants run the seven
    channel flows on a peer3 node with the light client off, on and compared (2026-11-23 to 2026-11-26,
    `docs/light-client-report.md`, Channel flows). Capacity ramps use a workload calibrated from those
-   flows, not the flows themselves. The test gaps of [`REQ-MIRROR-6-0WSB4V.T3`](enforcement/local-mirror.md#req-mirror-6-0wsb4v.t3)
-   and [`REQ-LC-8-BBYC51.T1`](runtime/light-client.md#req-lc-8-bbyc51.t1) stay open.
+   flows, not the flows themselves. The test gap of [`REQ-MIRROR-6-0WSB4V.T3`](enforcement/local-mirror.md#req-mirror-6-0wsb4v.t3)
+   stays open; [`REQ-LC-8-BBYC51.T1`](runtime/light-client.md#req-lc-8-bbyc51.t1) runs on a peer3 slot node with
+   `--light-client` since 2026-11-28.
 9. **Watched keys go beyond the card.** The card's partitions hold the keys channel transactions
    touch; the reads a participant's own simulations make reach keys no such transaction touches
    (configuration, routing entries, the participant's account, contract code), and they were proven
