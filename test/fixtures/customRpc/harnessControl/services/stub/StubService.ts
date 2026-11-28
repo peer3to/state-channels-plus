@@ -4383,6 +4383,11 @@ export class StubService extends ANetworkRpcService<
         );
     }
 
+    /** Test-harness pruning of one stored block through the real `BlockStorage.deleteBlock`. */
+    public deleteStoredBlock(forkId: ForkId, height: BlockHeight): boolean {
+        return this.sm.storage.blocks.deleteBlock(forkId, height);
+    }
+
     /**
      * Test-harness pruning of the snapshots and application states below an
      * anchor: for every stored block of `forkId` below `anchorHeight`, its

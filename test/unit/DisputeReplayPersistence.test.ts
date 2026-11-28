@@ -23,6 +23,7 @@ import {
     stagePendingAuditorBehindJoin,
     stagePendingJoinerMissingHopBase,
     stagePersistedSideBlockAtHonestTail,
+    stageSideBlockBelowAuditorHead,
     stageSideReplayBelowHonestTail,
     waitUntilAuditorKeptBlockAt
 } from "@test/fixtures/DisputeAuditStaging";
@@ -596,6 +597,46 @@ describe("Unit: DisputeValidationService replay persistence", function () {
                 ),
                 "the honest dispute's latest state is held for reduction"
             ).to.equal(true);
+        });
+        it("another author's block a side replay persisted in a gap below the auditor's head, linked to the honest final block, then the honest dispute replays the real block there → the honest dispute is valid with no dispute counter and no proof against the real block's author", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageSideBlockBelowAuditorHead(h, {
+                onHeadRun: false
+            });
+            const auditor = h.control(h.getPeer(staged.auditorIndex)).query;
+
+            const honest = await h.dispute.auditDispute(
+                staged.auditorIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+
+            expect(honest).to.include({ outcome: "returned", isValid: true });
+            expect(honest.storedProof).to.equal(undefined);
+            expect(honest.disputeFraudProofCount).to.equal(0);
+            expect(
+                await auditor
+                    .getFraudProofType(staged.shadowed.author)
+                    .request()
+            ).to.equal(null);
+        });
+
+        it("control: another author's block on the run that ends at the auditor's head, at the height the honest dispute's tail replays → that stored block is agreed history: the linked conflict stores a dispute counter, false", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageSideBlockBelowAuditorHead(h, {
+                onHeadRun: true
+            });
+
+            const run = await h.dispute.auditDispute(
+                staged.auditorIndex,
+                staged.dispute,
+                staged.auditingData
+            );
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeInvalidBlockInStateProofApplyFraudProof
+            );
         });
     });
 

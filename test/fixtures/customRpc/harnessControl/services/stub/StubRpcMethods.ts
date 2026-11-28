@@ -2537,6 +2537,15 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
     }
 
     /**
+     * Remove this peer's stored block of `forkId` at `height` (a gap in its
+     * history, as a compact sync or pruning leaves). False when none is
+     * stored there. Irreversible: the session teardown discards the peer.
+     */
+    public deleteStoredBlock(forkId: ForkId, height: BlockHeight): boolean {
+        return this.service.deleteStoredBlock(forkId, height);
+    }
+
+    /**
      * Prune this peer's snapshots and application states below `anchorHeight`
      * (the anchor's are kept); call it before pruning the blocks.
      */

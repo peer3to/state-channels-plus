@@ -511,11 +511,10 @@ export default class ValidationService {
         ) {
             // above the executed head the stored block is a dispute replay's
             // persistence-only write, not our history: no proof against this
-            // block, its own replay judges it
-            if (
-                conflictingBlock.height >
-                this.storage.blocks.getLatestBlockHeight(block.forkId)
-            )
+            // block, its own replay judges it. The same holds below a gap
+            // in the run that ends at the head (a compact sync or pruning
+            // left the gap, a replay filled it with a side block).
+            if (!this.isOnExecutedHeadRun(conflictingBlock))
                 return BlockValidationResult.SUCCESS;
             this.logger.warn(
                 "checkConflictingBlock - isLinked but conflict detected",
@@ -535,6 +534,25 @@ export default class ValidationService {
         }
 
         return await strategy.conflictingButNotLinkedBlockDetected(entry);
+    }
+
+    /**
+     * `block` is agreed history: it lies on the hash-linked run of stored
+     * blocks that ends at the executed head of its fork. A block above the
+     * head, or below a missing or unlinked block of that run, is not.
+     */
+    private isOnExecutedHeadRun(block: Block): boolean {
+        const blocks = this.storage.blocks;
+        let current = blocks.getBlock(
+            block.forkId,
+            blocks.getLatestBlockHeight(block.forkId)
+        );
+        while (current && current.height > block.height) {
+            const previous = blocks.getBlock(block.forkId, current.height - 1);
+            if (previous?.hash !== current.previousBlockHash) return false;
+            current = previous;
+        }
+        return current?.hash === block.hash;
     }
 
     /**

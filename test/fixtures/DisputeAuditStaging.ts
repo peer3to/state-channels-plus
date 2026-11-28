@@ -691,6 +691,74 @@ export async function stagePersistedSideBlockAtHonestTail(
 }
 
 /**
+ * {@link stageFrozenViewBehindDisputeTail}; the auditor is a live peer that
+ * holds the honest tail (final block 1, then 2 and 3, its head). Its own
+ * block 2 is removed and the frozen peer's block 2, linked to block 1, is
+ * persisted there without moving the head: what a side dispute's replay
+ * leaves in a gap below the head. With `onHeadRun`, the head block 3 is
+ * also replaced by the frozen peer's block linked to that block 2, so the
+ * side block lies on the run that ends at the head. The frozen peer signed
+ * neither real tail block. Returns the auditor, the side block and the
+ * real block it shadows.
+ */
+export async function stageSideBlockBelowAuditorHead(
+    h: MathPeerTestHarness,
+    options: { onHeadRun: boolean }
+) {
+    const staged = await stageFrozenViewBehindDisputeTail(h);
+    const { forkId } = staged;
+    const run =
+        staged.dispute.input.stateProof.milestones.at(-1)!.blockConfirmations;
+    expect(
+        run.length,
+        "the last milestone is a final block and a two-block tail"
+    ).to.equal(3);
+    const [final, shadowed, head] = run.map((confirmation) =>
+        Block.fromBlockConfirmation(confirmation)
+    );
+    const auditor = h.getPeer(staged.live[1]!);
+    const frozen = h.getPeer(staged.frozenIndex);
+    const control = h.control(auditor);
+    expect(
+        await control.query.getLatestBlockHeight(forkId).request(),
+        "the auditor's head is the dispute's latest block"
+    ).to.equal(head.height);
+    // removing the head block lowers the head; storing its replacement
+    // as a head (not persist-only) restores it
+    const persistFrozenBlock = async (
+        height: number,
+        previous: Block,
+        isHead: boolean
+    ) => {
+        expect(
+            await control.stub.deleteStoredBlock(forkId, height).request()
+        ).to.equal(true);
+        const encoded = await buildAndEncodeBlock(frozen.signer, {
+            header: {
+                channelId: h.channelId,
+                forkId,
+                transactionCnt: height,
+                participant: frozen.address
+            },
+            previousBlockHash: previous.hash
+        });
+        await control.validation
+            .storeBlockFixture(encoded, { justPersist: !isHead })
+            .request();
+        return Block.fromBlockConfirmation(
+            Codec.decode(encoded, Type.BlockConfirmation)
+        );
+    };
+    const side = await persistFrozenBlock(shadowed.height, final, false);
+    if (options.onHeadRun) await persistFrozenBlock(head.height, side, true);
+    expect(
+        await control.query.getLatestBlockHeight(forkId).request(),
+        "the head did not move"
+    ).to.equal(head.height);
+    return { ...staged, auditorIndex: auditor.index, side, shadowed };
+}
+
+/**
  * {@link stageBlindPendingAuditor} with authors 0-2 and peer 0's force-exit
  * dispute (its auditing data posted): the dispute ends at the head, a
  * threshold-final block the auditor never held. The auditor audits it.
