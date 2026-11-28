@@ -309,7 +309,9 @@ export class P2pRuntimeHostRoot<
                             "gas usage",
                             LoggerUtils.getGasUsageMetadata(
                                 await this.managedSigner.gasUsage.settledSnapshot(
-                                    config.GAS_USAGE_SETTLE_MS
+                                    Clock.getBlockSpanMs(
+                                        config.GAS_USAGE_SETTLE_BLOCKS
+                                    )
                                 )
                             )
                         );
@@ -499,6 +501,14 @@ export class P2pRuntimeHostRoot<
                 "Deployed maximum participant count is not a positive safe integer"
             );
         }
+        // a fraud proof that replays a transition could never succeed
+        if (
+            stateTransitionReplayGas >
+            BigInt(payload.config.MAX_TRANSACTION_GAS)
+        )
+            throw new Error(
+                `State transition replay requirement ${stateTransitionReplayGas} exceeds MAX_TRANSACTION_GAS ${payload.config.MAX_TRANSACTION_GAS}`
+            );
         await LoggerUtils.logTimestamp(logger, "info", timeConfig);
         steps.mark("clockAndChannelManagerReads");
         return localEvmCallGasLimit(

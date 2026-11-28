@@ -1,11 +1,13 @@
 // @spec-test-coverage-ignore: hand-encoded trie nodes used by the mapped SubstrateTrieProof and FrontierStorageProofVerifier declarations
 
-import { blake2b } from "@noble/hashes/blake2b";
+import SubstrateTrieProof, {
+    blake2_256
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
 import { concat, dataLength, getBytes, hexlify } from "ethers";
 
 /** The state root of a trie whose only node is `encodedNode`. */
 export function rootOfSingleNodeTrie(encodedNode: string): string {
-    return hexlify(blake2b(getBytes(encodedNode), { dkLen: 32 }));
+    return hexlify(blake2_256(getBytes(encodedNode)));
 }
 
 /**
@@ -49,3 +51,44 @@ export const craftedTrieNodes = {
     /** A leaf whose value length is a SCALE big-integer compact. */
     bigIntegerLength: "0x4003"
 };
+
+/**
+ * Reads `key` from the trie whose root node is `rootNode`, with `otherNodes`
+ * as the rest of the proof.
+ */
+export function readCraftedTrie(
+    rootNode: string,
+    key: string,
+    otherNodes: string[] = []
+) {
+    return new SubstrateTrieProof([rootNode, ...otherNodes]).read(
+        rootOfSingleNodeTrie(rootNode),
+        key
+    );
+}
+
+/**
+ * A hand-encoded state version 1 branch that holds its own value by hash:
+ * `partialKey` as its partial key, no more than 270 nibbles, the hash of
+ * `value` for the key that ends there, and, inside itself, the leaf one key
+ * byte `0x12` further down with value `0xbb`. `valueNode` is the proof node
+ * that carries `value`.
+ */
+export function hashedValueBranch(partialKey: string, value: string) {
+    const nibbleCount = dataLength(partialKey) * 2;
+    // a partial key of 15 nibbles or more continues its count in a second byte
+    const header =
+        nibbleCount < 15 ? [0x10 | nibbleCount] : [0x1f, nibbleCount - 15];
+    return {
+        node: concat([
+            new Uint8Array(header),
+            partialKey,
+            // child bitmap: nibble 1 only
+            "0x0200",
+            blake2_256(getBytes(value)),
+            // the inline leaf of the rest of key 0x12, holding 0xbb
+            "0x10410204bb"
+        ]),
+        valueNode: value
+    };
+}

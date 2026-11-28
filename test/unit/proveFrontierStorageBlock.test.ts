@@ -123,4 +123,91 @@ describe("proveFrontierStorageBlock", function () {
             /A pushed log is of block/
         );
     });
+
+    it("throws a StorageProofError when a pushed slot is not 32 bytes long", function () {
+        const block = {
+            ...oneWrite.block,
+            writes: [{ ...oneWrite.block.writes[0], slot: "0x01" }]
+        };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
+
+    it("throws a StorageProofError when a pushed value is not 32 bytes long", function () {
+        const block = {
+            ...oneWrite.block,
+            writes: [{ ...oneWrite.block.writes[0], value: "0xaaaa" }]
+        };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
+
+    it("throws a StorageProofError when a proof node is not hex", function () {
+        const block = {
+            ...oneWrite.block,
+            proofNodes: [...oneWrite.block.proofNodes, "not hex"]
+        };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
+
+    it("throws a StorageProofError when a header field is not hex", function () {
+        const block = {
+            ...oneWrite.block,
+            header: { ...oneWrite.block.header, extrinsicsRoot: "0xzz" }
+        };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
+
+    it("throws a StorageProofError when a pushed log has no block hash", function () {
+        const { blockHash: _left, ...logWithoutHash } = oneWrite.block.logs[0];
+        const block = { ...oneWrite.block, logs: [logWithoutHash] };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
+
+    it("throws a StorageProofError when the pushed block is not an object", function () {
+        for (const pushed of [null, "block", [oneWrite.block]])
+            expect(() => proveFrontierStorageBlock(pushed, address)).to.throw(
+                StorageProofError,
+                /malformed/
+            );
+    });
+
+    it("throws a StorageProofError when a proof node is hex of odd length", function () {
+        const block = {
+            ...oneWrite.block,
+            proofNodes: [...oneWrite.block.proofNodes, "0x0"]
+        };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
+
+    it("throws a StorageProofError when a digest log is hex of odd length", function () {
+        const header = oneWrite.block.header;
+        const block = {
+            ...oneWrite.block,
+            header: {
+                ...header,
+                digest: { logs: [...header.digest.logs, "0x123"] }
+            }
+        };
+        expect(() => proveFrontierStorageBlock(block, address)).to.throw(
+            StorageProofError,
+            /malformed/
+        );
+    });
 });

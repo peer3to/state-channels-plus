@@ -1,6 +1,10 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import { dockerBackendWithContainerImages } from "../fixtures/distributed/dockerBackendWithContainerImages";
-import { dockerBackendWithImageLabels } from "../fixtures/distributed/dockerBackendWithImageLabels";
+import {
+    BUILT,
+    dockerBackendForRunnerImage,
+    dockerBackendWithImageLabels
+} from "../fixtures/distributed/dockerBackendWithImageLabels";
 import { TestIsolatedRuntimeBackend } from "../fixtures/distributed/isolatedRuntimeBackend";
 import { repoRoot } from "@test/utils/repoRoot";
 import { expect } from "chai";
@@ -15,6 +19,7 @@ const {
     shouldTransferAttemptEvidence
 } = require("../../scripts/e2e-parallel/distributed/artifactSelection.js");
 const {
+    buildRunnerImage,
     runnerImageBuildArgs
 } = require("../../scripts/e2e-parallel/distributed/buildRunnerImage.js");
 const {
@@ -831,7 +836,8 @@ describe("distributed isolated environment", function () {
                 reason:
                     `Runner image sha256:${"f".repeat(64)} was built from runner-image.Dockerfile revision ${built.slice(0, 12)}, ` +
                     `but this checkout expects ${runnerImageRevision(trustedRoot).slice(0, 12)}. ` +
-                    "Rebuild it with `yarn test:parallel:image` and point SCP_TEST_RUNNER_IMAGE at the new image ID"
+                    "Restart `yarn test:parallel:server`, which rebuilds it, or run " +
+                    "`yarn test:parallel:image`, then point SCP_TEST_RUNNER_IMAGE at the new image ID"
             });
         } finally {
             fs.rmSync(trustedRoot, { recursive: true, force: true });
@@ -845,6 +851,202 @@ describe("distributed isolated environment", function () {
             `has no ${RUNNER_IMAGE_REVISION_LABEL} label`
         );
         expect(detected.reason).to.include("yarn test:parallel:image");
+    });
+
+    it("keeps the worker server's runner image built from this checkout's Dockerfile without building", async function () {
+        const { backend, build } = dockerBackendForRunnerImage({
+            server: {},
+            image: CONFIGURED,
+            labels: {
+                [RUNNER_IMAGE_REVISION_LABEL]: runnerImageRevision(repoRoot())
+            }
+        });
+        expect(await backend.detect()).to.deep.equal({ available: true });
+        expect([backend.image, build.count]).to.deep.equal([CONFIGURED, 0]);
+    });
+
+    it("rebuilds the worker server's runner image when it was built from another Dockerfile or carries no label", async function () {
+        const results = [];
+        for (const labels of [
+            { [RUNNER_IMAGE_REVISION_LABEL]: "other" },
+            null,
+            {}
+        ]) {
+            const { backend, build } = dockerBackendForRunnerImage({
+                server: {},
+                image: CONFIGURED,
+                labels
+            });
+            results.push([await backend.detect(), backend.image, build.count]);
+        }
+        expect(results).to.deep.equal(
+            Array(3).fill([{ available: true }, BUILT, 1])
+        );
+    });
+
+    it("builds the worker server's runner image when none is configured or it is not on the host", async function () {
+        const unset = dockerBackendForRunnerImage({
+            server: {},
+            image: undefined
+        });
+        const missing = dockerBackendForRunnerImage({
+            server: {},
+            image: CONFIGURED,
+            inspectError: `Error response from daemon: No such image: ${CONFIGURED}`
+        });
+        expect([
+            await unset.backend.detect(),
+            await missing.backend.detect()
+        ]).to.deep.equal([{ available: true }, { available: true }]);
+        expect([
+            unset.backend.image,
+            missing.backend.image,
+            unset.build.count,
+            missing.build.count
+        ]).to.deep.equal([BUILT, BUILT, 1, 1]);
+    });
+
+    it("reports docker's own error, not a missing image, when the runner image cannot be inspected", async function () {
+        const { backend, build } = dockerBackendForRunnerImage({
+            server: {},
+            image: CONFIGURED,
+            inspectError: "Cannot connect to the Docker daemon"
+        });
+        const detected = await backend.detect();
+        expect(detected.available).to.equal(false);
+        expect(detected.reason).to.include(
+            "Cannot connect to the Docker daemon"
+        );
+        expect(build.count).to.equal(0);
+    });
+
+    it("fails a linux host without user namespaces before building any runner image", async function () {
+        const { backend, build } = dockerBackendForRunnerImage({
+            server: {},
+            image: undefined,
+            linuxWithoutUserns: true
+        });
+        expect(await backend.detect()).to.deep.equal({
+            available: false,
+            reason: "Docker user namespaces or rootless mode are required"
+        });
+        expect(build.count).to.equal(0);
+    });
+
+    it("refuses to start the worker server when its runner image build fails", async function () {
+        const { backend } = dockerBackendForRunnerImage({
+            server: { buildFails: true },
+            image: undefined
+        });
+        expect(await backend.detect()).to.deep.equal({
+            available: false,
+            reason: "docker build exited with 3"
+        });
+    });
+
+    it("points the strict docker tools at a server restart for a runner image that is not on the host", async function () {
+        const detected = await dockerBackendWithImageLabels(
+            null,
+            undefined,
+            "Error: No such image"
+        ).detect();
+        expect(detected).to.deep.equal({
+            available: false,
+            reason:
+                `Runner image sha256:${"f".repeat(64)} is not on this host. ` +
+                "Restart `yarn test:parallel:server`, which rebuilds it, or run " +
+                "`yarn test:parallel:image`, then point SCP_TEST_RUNNER_IMAGE at the new image ID"
+        });
+    });
+
+    it("returns the built runner image ID and leaves no scratch directory, and carries docker's status on a failed build", function () {
+        const idFiles: string[] = [];
+        const idFile = (args: string[]) => {
+            const file = args[args.indexOf("--iidfile") + 1];
+            idFiles.push(file);
+            return file;
+        };
+        const built = buildRunnerImage(repoRoot(), [], (args: string[]) => {
+            fs.writeFileSync(idFile(args), `${BUILT}\n`);
+            return { status: 0 };
+        });
+        let failed: unknown;
+        try {
+            buildRunnerImage(repoRoot(), [], (args: string[]) => {
+                idFile(args);
+                return { status: 3 };
+            });
+        } catch (error) {
+            failed = error;
+        }
+        expect({
+            built,
+            failedExitCode: (failed as { exitCode?: number }).exitCode,
+            scratchLeft: idFiles.map((file) =>
+                fs.existsSync(path.dirname(file))
+            )
+        }).to.deep.equal({
+            built: BUILT,
+            failedExitCode: 3,
+            scratchLeft: [false, false]
+        });
+    });
+
+    it("exits yarn test:parallel:image with 1 when docker cannot run", function () {
+        const empty = fs.mkdtempSync(path.join(os.tmpdir(), "no-docker-"));
+        try {
+            const result = spawnSync(
+                process.execPath,
+                [
+                    path.join(
+                        repoRoot(),
+                        "scripts/e2e-parallel/distributed/buildRunnerImage.js"
+                    )
+                ],
+                { encoding: "utf8", env: { ...process.env, PATH: empty } }
+            );
+            expect(result.status).to.equal(1);
+        } finally {
+            fs.rmSync(empty, { recursive: true, force: true });
+        }
+    });
+
+    it("points the strict docker tools at a server restart when no runner image is configured", async function () {
+        const { backend } = dockerBackendForRunnerImage({ image: undefined });
+        expect(await backend.detect()).to.deep.equal({
+            available: false,
+            reason:
+                "No runner image is configured. Restart `yarn test:parallel:server`, which rebuilds it, or run " +
+                "`yarn test:parallel:image`, then point SCP_TEST_RUNNER_IMAGE at the new image ID"
+        });
+    });
+
+    it("hands the worker server's image build to the docker backend it creates", async function () {
+        const workRoot = fs.mkdtempSync(
+            path.join(os.tmpdir(), "runner-image-create-")
+        );
+        let builds = 0;
+        try {
+            const manager = await IsolatedEnvironmentManager.create({
+                workRoot,
+                executionBackend: "docker",
+                runnerImage: undefined,
+                buildRunnerImage: () => {
+                    builds++;
+                    return BUILT;
+                },
+                // a rootless linux docker with no image yet
+                dockerRun: async (_command: string, args: string[]) => ({
+                    stdout: Buffer.from(
+                        args[0] === "info" ? '["name=rootless"]' : "[]"
+                    ),
+                    stderr: Buffer.alloc(0)
+                })
+            });
+            expect([manager.backend.image, builds]).to.deep.equal([BUILT, 1]);
+        } finally {
+            fs.rmSync(workRoot, { recursive: true, force: true });
+        }
     });
 
     it("builds the runner image with only flags that cannot change its contents, after the revision label", function () {
@@ -1220,3 +1422,5 @@ describe("unsafe-host browsers path", function () {
         );
     });
 });
+
+const CONFIGURED = `sha256:${"a".repeat(64)}`;

@@ -26,7 +26,8 @@ import { RootCreationControl } from "@test/fixtures/runtimeRpc/RootCreationContr
 import { MathTestSession } from "@test/harness";
 import {
     slotAccountIndex,
-    slotDeployerIndex
+    slotDeployerIndex,
+    slotDeployerSigner
 } from "@test/harness/core/slotAccounts";
 import {
     startHardhatNode,
@@ -36,7 +37,7 @@ import {
 import { waitFor } from "@test/utils/waitFor";
 import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
 import { expect } from "chai";
-import { ethers, NonceManager } from "ethers";
+import { ethers } from "ethers";
 import { ContractFactory } from "ethers";
 import type { Artifact } from "hardhat/types";
 
@@ -84,7 +85,7 @@ export async function prepareRuntimeSetup(options: {
         undefined,
         `m/44'/60'/0'/0/${slotAccountIndex(0)}`
     );
-    const deployerSigner = new NonceManager(deployerWallet.connect(provider));
+    const deployerSigner = slotDeployerSigner(deployerWallet.connect(provider));
     const runtimeSigner = runtimeWallet.connect(provider);
 
     const scmDeployment = await deployFullStack(deployerSigner, {

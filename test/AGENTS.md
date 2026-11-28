@@ -290,9 +290,14 @@ work; it does not cancel or dispose the feature operation.
   Diagnose and fix the ordering, detached-work, lifecycle, or event-barrier bug
   that made the test depend on extra protocol time.
 - The harness baseline `p2pTime` is 5 (Luka, 2026-10-10): one staging step under
-  load can idle the table past `p2pTime + agreementTime`. The per-test widenings
-  he approved are listed in `docs/spec/audit/verification.md` ("Test timing
-  inputs"); any new one needs his explicit approval and an entry there.
+  load can idle the table past `p2pTime + agreementTime`. The approved per-test
+  widenings are listed in `docs/spec/audit/verification.md` ("Test timing
+  inputs"); any new one needs Luke's explicit approval and an entry there.
+- Standing exception (Luke, 2026-11-21): a parachain test whose `evidenceTime`
+  is shorter than the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime` (10)
+  may be raised to 10 without asking, only after its log shows the chain refused
+  in-window work with `RaceConditionDisputeEvidencePeriodExpired`. Each raise
+  still gets an entry in that log.
 - Do not hardcode timeout values for protocol, event, status, sync, dispute, or
   snapshot waits. Omit the timeout when the action has a derived default, or use
   `h.event.protocolEventTimeoutMs(...)` when a lower-level API requires one.
@@ -340,14 +345,16 @@ with the suite still green.
 - Typecheck: `yarn tsc --noEmit -p tsconfig.json` (the `TestPeer`/control surface
   is fully typed — a removed/renamed field is a compile error, your free
   checklist).
-- Canonical full gate: `yarn test:parallel:distributed`, which runs the Mocha,
+- Canonical full gate: the command in root `AGENTS.md`
+  (`yarn test:parallel:distributed --parachain --test-parallel-script --test-browser`), which runs the Mocha,
   forge and browser tiers. Mocha files marked `@distributed-requires: lightClient`
   are left out of it and of CI; they run only locally with `--lc-tests`. Add `--e2e-only` to run only E2E tests (it drops the
   forge and browser tiers), or `--grep <regexp>` for the narrowest relevant
   task.
 - Browser gates and Mocha files marked `// @distributed-requires: browser` need
-  a protocol 14 or newer worker host whose runner image was built with
-  `yarn test:parallel:image`. Without one they are skipped after the discovery
+  a protocol 14 or newer worker host whose runner image matches its checkout's
+  `runner-image.Dockerfile` (the worker server rebuilds a stale one at
+  startup). Without one they are skipped after the discovery
   window with a warning that lists them; check a green run for it. A Mocha file
   that launches Chromium must carry that marker in its leading comments. See
   "Browser tests" in the root `README.md`.
@@ -369,6 +376,6 @@ with the suite still green.
   for cross-run comparison. Only the current run's dir is cleared. See root
   `AGENTS.md` ("Canonical test command and parallel run logs").
 - Distributed runner: start workers with `yarn test:parallel:server` and run the
-  canonical full gate with `yarn test:parallel:distributed`. See the "Distributed
+  canonical full gate from root `AGENTS.md`. See the "Distributed
   parallel tests" section in `README.md` for setup and options.
 - Narrow first: run the single `*.test.ts` you touched before the suite.

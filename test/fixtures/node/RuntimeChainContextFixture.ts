@@ -187,6 +187,56 @@ export async function assertStartupReplayGasReadFailure(
     }
 }
 
+/**
+ * Real runtime startup against the Math manager with MAX_TRANSACTION_GAS set
+ * `offset` gas from the manager's replay requirement. Returns that
+ * requirement, the startup failure, or undefined when the runtime started
+ * (it is disposed again), and whether every runtime root it started closed.
+ */
+export async function startWithTransactionCapFromReplayGas(
+    offset: bigint
+): Promise<{ replayGas: bigint; failure: unknown; rootsClosed: boolean }> {
+    await startRuntimeTransportModesFixture();
+    try {
+        const setup = await prepareRuntimeSetup({
+            runSdkInThread: false,
+            vmDedicatedThread: false,
+            readyOptions: {}
+        });
+        const replayGas = await setup.scm.getStateTransitionReplayGas();
+        const before = new Set(RootCreationControl.roots);
+        const startedRoots: AInternalRpcRoot[] = [];
+        let failure: unknown;
+        try {
+            const instance = await setupObservedP2pRuntime(
+                setup.scm,
+                setup.deployedStateMachine,
+                setup.deployStateMachine,
+                {
+                    ...setup.setupOptions,
+                    config: {
+                        ...setup.setupOptions.config,
+                        MAX_TRANSACTION_GAS: Number(replayGas + offset)
+                    }
+                },
+                { onRuntimeRoot: (root) => startedRoots.push(root) }
+            );
+            await instance.dispose();
+        } catch (error) {
+            failure = error;
+        }
+        const rootsClosed =
+            startedRoots.length > 0 &&
+            startedRoots.every(
+                (root) => !RootCreationControl.roots.has(root)
+            ) &&
+            [...RootCreationControl.roots].every((root) => before.has(root));
+        return { replayGas, failure, rootsClosed };
+    } finally {
+        await stopRuntimeTransportModesFixture();
+    }
+}
+
 export async function assertSubscriptionCleanup(
     subscribed: boolean
 ): Promise<void> {
