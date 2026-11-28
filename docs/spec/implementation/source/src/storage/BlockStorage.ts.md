@@ -10,6 +10,7 @@
   Contradicts: Timestamp clause violated here: unconditional overwrite in setter and merge — later replaces earlier; earliest-wins holds only upstream, so a later calldata copy bypasses it. See [`OQ-IMPL-BLOCKSTORAGE-TIMESTAMP-1-SMXDZS`](../../../open-questions.md#oq-impl-blockstorage-timestamp-1-smxdzs).
 - [`REQ-BLKSTORE-3-S9V2KC` (Tip tracking and bounded traversal)](../../../../specification/storage/blocks.md#req-blkstore-3-s9v2kc)
 - [`REQ-STOR-6-SKP0KM` (Value semantics at the store boundary)](../../../../specification/storage/durability.md#req-stor-6-skp0km)
+- [`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../../../../specification/storage/proof-store.md#req-proofstore-8-r38ky5)
 
 ## UNIT-TEST-BLOCK-STORAGE-1-FY94TH
 
@@ -61,3 +62,13 @@ Block merge and lookup mutations
 - [x] `UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P3` — returns false for absent timestamp targets in both overloads
 - [x] `UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P4` — updates timestamp and signatures through explicit storage keys
 - [x] `UNIT-TEST-BLOCK-STORAGE-32-DHXM4N.P5` — duplicate storage insertion keeps time when the incoming copy has none
+
+## UNIT-TEST-BLOCK-STORAGE-33-1C8V5X
+
+Range and fork deletes remove exactly the named blocks.
+
+- Setup: Store blocks 0..n of a fork, a block above the head stored without moving it, and a second fork; call `deleteBlocksInRange` and `deleteFork`.
+- Oracle: The returned snapshot hashes, the held heights and the latest height per fork.
+
+- [x] `UNIT-TEST-BLOCK-STORAGE-33-1C8V5X.P1` — `deleteBlocksInRange` of heights 1..2 of blocks 0..3: exactly those blocks are gone, their snapshot hashes are returned, the latest height stays 3
+- [x] `UNIT-TEST-BLOCK-STORAGE-33-1C8V5X.P2` — `deleteFork`: every block of the fork is gone, also one stored above its head, its latest height is -1, and another fork's blocks stay

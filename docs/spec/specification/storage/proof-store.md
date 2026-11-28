@@ -5,7 +5,8 @@
 > **Status:** Draft.
 > **Scope:** The two in-memory modules that keep proofs outside block history: the stored proof of
 > the active fork (what it holds, how it is started, advanced, seeded by synchronization, re-rooted
-> and reset, and how readers use it) and the proof evidence kept from audits and synchronization.
+> and reset, and how readers use it), the proof evidence kept from audits and synchronization, and
+> the pruning of block history that the stored proof makes possible.
 > Proof semantics: [state-proofs.md](../disputes/state-proofs.md). Shared storage rules:
 > [durability.md](./durability.md).
 
@@ -194,6 +195,28 @@ returned. A dispute replay's executed tail is block history, not evidence: it is
 coordinate without moving the head, and the first block stored at a coordinate is kept
 ([`REQ-SP-10-JMVHTB`](../disputes/state-proofs.md#req-sp-10-jmvhtb)).
 
+**<a id="req-proofstore-8-r38ky5"></a>`REQ-PROOFSTORE-8-R38KY5` — History pruning.** Pruning is a node
+setting that is off by default; when it is off, nothing is deleted. When it is on, the node MUST
+delete history in two phases, each in one step that no write can interleave:
+
+- **Below the anchor (phase 1).** After a re-root writes the record at a new chain anchor, the node
+  deletes the blocks, snapshots, states and membership change points of the record's fork below that
+  anchor. It keeps the anchor block with its snapshot and state, and the fork genesis with its state,
+  which synchronization serving needs. When the local mirror's chain anchor leaves a fork, the node
+  deletes that fork's whole history the same way, its genesis included. Neither delete runs while
+  the local mirror holds a dispute on that fork; there is no delay after the adoption.
+- **Skipped by a proven final hop (phase 2).** After each write of the stored proof by an advance, a
+  synchronization install or a reset, the node deletes the blocks and states above the record's
+  anchor and below its final point. It keeps the final-point block, the tail and every snapshot;
+  those snapshots go with phase 1.
+
+A state is keyed by its hash and can back several snapshots, so a state is deleted only when no
+other held snapshot references it. Pruning never deletes message blocks, block calldata, queue
+entries, fraud proofs, proof evidence or the stored proof. Pruned data is absent, never evidence
+([`OQ-SPEC-PROOFSTORE-11-9X8JFG` (Missing-evidence policy with pruned storage)](../open-questions.md#oq-spec-proofstore-11-9x8jfg)); a later verified proof that carries a pruned hop merges
+without restoring the dropped history. The retention bounds are
+[`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](durability.md#req-stor-4-mf6ft6).
+
 ## Assumptions and constraints
 
 - The stored proof uses the milestone form and verification rules of
@@ -209,9 +232,11 @@ coordinate without moving the head, and the first block stored at a coordinate i
 - Direct access is the aim. The stored proof spares the walk over history, but its size grows with
   the hops kept between anchor advances
   ([`OQ-SPEC-PROOFSTORE-10-66ZDB2` (Snapshot updates that bound the stored proof)](../open-questions.md#oq-spec-proofstore-10-66zdb2)).
-- Nothing is pruned by these modules. What may be pruned below the anchor and between hops is
+- Pruning ([`REQ-PROOFSTORE-8-R38KY5`](proof-store.md#req-proofstore-8-r38ky5)) follows the decisions on
   [`OQ-SPEC-PROOFSTORE-1-H52WPZ` (Retention rule for pruning below the on-chain snapshot)](../open-questions.md#oq-spec-proofstore-1-h52wpz) and
-  [`OQ-SPEC-PROOFSTORE-2-218XFC` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-218xfc).
+  [`OQ-SPEC-PROOFSTORE-2-218XFC` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-218xfc). It is off by default, and it is not combined with
+  persistence of the stores
+  ([`OQ-SPEC-PROOFSTORE-9-7CNC80` (Restart durability of the stored proof and proof evidence)](../open-questions.md#oq-spec-proofstore-9-7cnc80)).
 - Absent data is never evidence; each reader has its own rule
   ([`OQ-SPEC-PROOFSTORE-11-9X8JFG` (Missing-evidence policy with pruned storage)](../open-questions.md#oq-spec-proofstore-11-9x8jfg), resolved). The conflict check counts only stored blocks on the
   hash-linked run that ends at the executed head
@@ -263,6 +288,13 @@ trust boundary is proof intake: a received proof is untrusted until it verifies.
   chain's until a later re-root passes or a synchronization replaces the record. Residual: a
   synchronization to a final point equal to the record's does not replace it, so a node with no
   later final point can keep that older anchor.
+- **Pruned history.** With pruning on, the node gives up what the deleted history gave: double-sign
+  detection and exact-height checks at pruned heights, an audit replay from a pruned final point (that
+  proof is not judged, [`REQ-SP-9-RNXP56`](../disputes/state-proofs.md#req-sp-9-rnxp56)), and the participant union of the anchor block
+  and of the final-point block for a late signature, which reads the block below. Fraud proofs, proof
+  evidence and the stored proof are kept apart and are never pruned. Residual: a fork the chain
+  anchor leaves through a cross-fork adoption still carries its dispute in the mirror at that
+  moment, so its history is kept rather than deleted.
 - **Growth.** Hops that change membership accumulate between anchor advances, and a participant
   that forces many membership changes grows every peer's stored proof and the disputes built from
   it. The bound is the snapshot update and the dispute size limits
@@ -495,6 +527,47 @@ write and another fork's drop, and is removed with its fork.
 <a id="req-proofstore-7-b5pw2p.t1.p8"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P8` — A signing stop survives a refused and an accepted record on its fork and the drop of another fork.
 
 <a id="req-proofstore-7-b5pw2p.t1.p9"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P9` — Dropping a fork removes its signing stop with its records and keeps another fork's stop.
+
+#### <a id="req-proofstore-8-r38ky5.t1"></a>`REQ-PROOFSTORE-8-R38KY5.T1`
+
+**Requirements / invariants:**
+
+[`REQ-PROOFSTORE-8-R38KY5`](proof-store.md#req-proofstore-8-r38ky5)
+
+**Setup and stimulus:**
+
+Run a channel with pruning on and with it off: finalize several blocks, let the chain adopt a
+snapshot, re-root with and without a dispute mirrored on the fork, move the anchor to a reduced
+fork, then synchronize a new peer, audit an honest dispute, a side-chain dispute and a dispute whose
+final point the auditor pruned.
+
+**Expected result:**
+
+Off deletes nothing. On deletes exactly the phase 1 and phase 2 sets and keeps the listed points;
+synchronization, audits, kills and reductions still work, and an auditor without the pruned base
+does not judge that proof but still lands its own dispute.
+
+**Required permutations:**
+
+<a id="req-proofstore-8-r38ky5.t1.p1"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P1` — Pruning off (the default): final points advance and every block, snapshot and state stays.
+
+<a id="req-proofstore-8-r38ky5.t1.p2"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P2` — Pruning on, final points advance: the blocks and states between the anchor and the final point are gone; their snapshots, the final-point block with its state and the tail stay.
+
+<a id="req-proofstore-8-r38ky5.t1.p3"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P3` — Pruning on, a snapshot adoption moves the chain anchor: below it the blocks, snapshots and states are gone; the anchor block with its snapshot and state and the fork genesis with its state stay.
+
+<a id="req-proofstore-8-r38ky5.t1.p4"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P4` — Pruning on, a re-root at an anchor below the final point with no dispute mirrored: the history below the anchor is deleted, the anchor block stays.
+
+<a id="req-proofstore-8-r38ky5.t1.p5"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P5` — Pruning on, a re-root while the local mirror holds a dispute on the fork: nothing below the new anchor is deleted.
+
+<a id="req-proofstore-8-r38ky5.t1.p6"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P6` — Pruning on, a dispute moves the chain anchor from a fork it was adopted on to a reduced fork: the left fork, still disputed in the mirror, keeps its history at every honest peer.
+
+<a id="req-proofstore-8-r38ky5.t1.p7"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P7` — Pruning on, past several final points and an anchor advance: every participant keeps only the anchor block below its final point, and a new peer synchronizes from the pruned peers and follows the channel.
+
+<a id="req-proofstore-8-r38ky5.t1.p8"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P8` — Pruning on, past several final points and an anchor advance, honest peers dispute an invalid transition: no auditor stores a counter, and the reduction moves every honest peer to the next fork.
+
+<a id="req-proofstore-8-r38ky5.t1.p9"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P9` — Pruning on, a side-chain dispute that hops above a seated joiner's final point without the joiner's JOIN is still killed by the joiner's final-point regression counter.
+
+<a id="req-proofstore-8-r38ky5.t1.p10"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P10` — Pruning on, an auditor that pruned the state at the disputer's final point (its own final point and latest state are later) does not judge that proof, stores no counter and sends no kill, and its own dispute lands on chain.
 
 ## Future Work
 

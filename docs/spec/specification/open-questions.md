@@ -51,8 +51,8 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-JOIN-REJOIN-1-D506RT`](open-questions.md#oq-spec-join-rejoin-1-d506rt)           | Rejoin after eviction collects against the disputed snapshot                                                                                                | Shared poker client manager plan (2026-10-26) | [peer-communication/join-authorization.md](./peer-communication/join-authorization.md)                                                                                                                                     | Open (later)                      |
 | [`OQ-SPEC-REDUCE-SPECTATOR-1-1YWDC5`](open-questions.md#oq-spec-reduce-spectator-1-1ywdc5) | Spectator reduction without the reduced latest state snapshot                                                                                               | Shared poker client manager plan (2026-10-26) | [disputes/dispute-processing.md](./disputes/dispute-processing.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                       | Resolved                          |
 | [`OQ-SPEC-RELAY-1-SW2BKP`](open-questions.md#oq-spec-relay-1-sw2bkp)                       | Confirmation re-broadcast volume delays counter-signatures past the agreement window                                                                        | Six-player browser game (2026-10-27)          | [peer-communication/block-gossip.md](./peer-communication/block-gossip.md)                                                                                                                                                 | Open (later)                      |
-| [`OQ-SPEC-PROOFSTORE-1-H52WPZ`](open-questions.md#oq-spec-proofstore-1-h52wpz)             | Retention rule for pruning below the on-chain snapshot                                                                                                      | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Open                              |
-| [`OQ-SPEC-PROOFSTORE-2-218XFC`](open-questions.md#oq-spec-proofstore-2-218xfc)             | Pruning above the anchor and lost exact-height checks                                                                                                       | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Open                              |
+| [`OQ-SPEC-PROOFSTORE-1-H52WPZ`](open-questions.md#oq-spec-proofstore-1-h52wpz)             | Retention rule for pruning below the on-chain snapshot                                                                                                      | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Resolved                          |
+| [`OQ-SPEC-PROOFSTORE-2-218XFC`](open-questions.md#oq-spec-proofstore-2-218xfc)             | Pruning above the anchor and lost exact-height checks                                                                                                       | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Resolved                          |
 | [`OQ-SPEC-PROOFSTORE-3-GB6462`](open-questions.md#oq-spec-proofstore-3-gb6462)             | Which membership hops the stored proof keeps                                                                                                                | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [disputes/state-proofs.md](./disputes/state-proofs.md)                                                                                                                 | Resolved                          |
 | [`OQ-SPEC-PROOFSTORE-4-WJWVVW`](open-questions.md#oq-spec-proofstore-4-wjwvvw)             | Merging a received proof into a stored proof it does not extend                                                                                             | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                                       | Open                              |
 | [`OQ-SPEC-PROOFSTORE-5-KCS7YG`](open-questions.md#oq-spec-proofstore-5-kcs7yg)             | Old-fork data after a fork change                                                                                                                           | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md)                                                                                                                                                                         | Resolved                          |
@@ -862,29 +862,42 @@ implementation
 
 ## OQ-SPEC-PROOFSTORE-1-H52WPZ — Retention rule for pruning below the on-chain snapshot
 
-Open. The stored proof starts at the mirrored chain anchor ([`REQ-PROOFSTORE-1-V5KEYP` (One stored proof, for the active fork)](storage/proof-store.md#req-proofstore-1-v5keyp)), so blocks, snapshots,
-states, message blocks and change points below the anchor are no longer needed by it. Other readers
-may still need them: open dispute and evidence windows, an accepted synchronization duty, the
-participant union of the anchor block (which reads the snapshot of the block below it), a late valid
-confirmation of the anchor block, and the synchronization payload (fork genesis, its state, the
-outbound range to the fork genesis). Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) prune nothing; (2) prune
-strictly below the anchor once every window and duty over it has ended, keeping what the payload
-carries and the anchor block's union input; (3) as (2), with a fixed delay after the adoption.
-Blocking effect: no pruning below the anchor until decided; it is to be decided with pruning below
-the on-chain snapshot. Affected layers: storage durability
-([`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](storage/durability.md#req-stor-4-mf6ft6)).
+**Resolved (Ljuba, 2026-11-28, recommendation accepted):** option (2) with no delay. When a re-root
+writes the stored proof at a new chain anchor, the node deletes the blocks, snapshots, states and
+change points of that fork below the anchor, and when the mirror's anchor leaves a fork, that
+fork's history; neither runs while the local mirror holds a dispute on the fork. The anchor block
+with its state and the fork genesis with its state stay for synchronization serving; message
+blocks, calldata, queues, fraud proofs, proof evidence and the stored proof are never deleted.
+Pruning is a setting that is off by default. Rejected: (1) prune nothing, which the card's pruning
+rule replaces; (3) a fixed delay, since the card prunes when the anchor advances. Consequences: a
+late signature on the anchor block reads its union without the block below; a fork left through a
+cross-fork adoption is still disputed in the mirror and keeps its history. Recorded in
+[`REQ-PROOFSTORE-8-R38KY5` (History pruning)](storage/proof-store.md#req-proofstore-8-r38ky5) and [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](storage/durability.md#req-stor-4-mf6ft6); tests
+[`REQ-PROOFSTORE-8-R38KY5.T1.P3`](storage/proof-store.md#req-proofstore-8-r38ky5.t1.p3) to [`REQ-PROOFSTORE-8-R38KY5.T1.P6`](storage/proof-store.md#req-proofstore-8-r38ky5.t1.p6).
+
+Original question: the stored proof starts at the mirrored chain anchor, so history below it is no
+longer needed by it, while other readers may still need it (open windows, synchronization duty,
+the anchor block's union, a late confirmation of the anchor block, the synchronization payload).
+Owner: [storage/proof-store.md](./storage/proof-store.md).
 
 <a id="oq-spec-proofstore-2-218xfc"></a>
 
 ## OQ-SPEC-PROOFSTORE-2-218XFC — Pruning above the anchor and lost exact-height checks
 
-Open. Executed blocks between two hops of the stored proof, which no hop needs, could be pruned.
-At a pruned height the node then loses exact-height checks: same-height conflict detection, a
-not-latest-state check, and an exact final proof. Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) never prune above
-the anchor; (2) prune only gaps between hops, and treat a pruned height as absent, never as
-evidence ([`OQ-SPEC-PROOFSTORE-11-9X8JFG`](open-questions.md#oq-spec-proofstore-11-9x8jfg)); (3) as (2), also between the anchor and the first
-hop. Blocking effect: no pruning above the anchor until decided. Affected layers: storage
-durability, fraud proofs.
+**Resolved (Ljuba, 2026-11-25, adopted from the card; sub-points 2026-11-28):** option (3). After
+each write of the stored proof, the node deletes the blocks and states above the record's anchor
+and below its final point, which the proven final hop skips; the final-point block, the tail and
+every snapshot stay until the anchor passes them. A state is deleted only when no other held
+snapshot references it. A pruned height is absent, never evidence
+([`OQ-SPEC-PROOFSTORE-11-9X8JFG`](open-questions.md#oq-spec-proofstore-11-9x8jfg)). Rejected: (1) never prune above the anchor, which the card's
+Phase 2 replaces; (2) gaps between hops only, since the first hop skips history too. Consequences:
+same-height conflict detection, double-sign detection and exact final proofs are lost at pruned
+heights; provable heights are the stored proof's hop points and its latest point. Recorded in
+[`REQ-PROOFSTORE-8-R38KY5` (History pruning)](storage/proof-store.md#req-proofstore-8-r38ky5); tests [`REQ-PROOFSTORE-8-R38KY5.T1.P1`](storage/proof-store.md#req-proofstore-8-r38ky5.t1.p1),
+[`REQ-PROOFSTORE-8-R38KY5.T1.P2`](storage/proof-store.md#req-proofstore-8-r38ky5.t1.p2) and [`REQ-PROOFSTORE-8-R38KY5.T1.P7`](storage/proof-store.md#req-proofstore-8-r38ky5.t1.p7) to [`REQ-PROOFSTORE-8-R38KY5.T1.P10`](storage/proof-store.md#req-proofstore-8-r38ky5.t1.p10).
+
+Original question: executed blocks between two hops, which no hop needs, could be pruned, losing
+exact-height checks at a pruned height. Owner: [storage/proof-store.md](./storage/proof-store.md).
 
 <a id="oq-spec-proofstore-3-gb6462"></a>
 

@@ -26,6 +26,7 @@
 - [`INV-PROOFSTORE-2-4K6815` (The record may lag history but never lead it)](../../../../specification/storage/proof-store.md#inv-proofstore-2-4k6815)
 - [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../../../../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
 - [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../../../../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
+- [`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../../../../specification/storage/proof-store.md#req-proofstore-8-r38ky5)
 
 ## UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D
 

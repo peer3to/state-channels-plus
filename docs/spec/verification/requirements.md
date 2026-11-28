@@ -776,6 +776,9 @@ Specification cases tested: 1/1.
 [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
 Specification cases tested: 9/9.
 
+[`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../specification/storage/proof-store.md#req-proofstore-8-r38ky5)
+Specification cases tested: 10/10.
+
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.
 
@@ -975,7 +978,7 @@ Specification cases tested: 0/19.
 Specification cases tested: 0/4.
 
 [`REQ-STOR-4-MF6FT6` (Obligation-bounded retention)](../specification/storage/durability.md#req-stor-4-mf6ft6)
-Specification cases tested: 0/5.
+Specification cases tested: 5/5.
 
 [`REQ-STOR-5-T6EQSA` (Isolation, integrity, and versioned encoding)](../specification/storage/durability.md#req-stor-5-t6eqsa)
 Specification cases tested: 0/6.

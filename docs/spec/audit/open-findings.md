@@ -649,6 +649,23 @@ older anchor. Code-traced, not executed.
 the fallback; keep the record. Later fix, not selected for scheduling: a synchronization installs
 an equal final point when the record's anchor is below the chain anchor.
 
+## Pruned history and the persisted head fork
+
+<a id="find-store-prune-1-c47mrr"></a>
+
+### FIND-STORE-PRUNE-1-C47MRR — A reopen refuses the gaps that pruning between hops leaves
+
+With `PRUNE_HISTORY` on, the node deletes the blocks a proven final hop skips
+([`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../specification/storage/proof-store.md#req-proofstore-8-r38ky5)), so the head fork's stored blocks have gaps between the
+anchor block and the final point. The persistence layer of PR #596 (not on this branch) checks the
+head fork on reopen with `Storage.verifyHeadFork`, which throws "misses block" for any gap above
+the lowest stored block (its test "refuses a gap in the head fork's stored blocks"). Pruning plus
+persistence therefore fails closed on reopen. Both switches are off by default, so no default
+setup is affected. Reported from the review of #596; not traced in this tree.
+
+**Status:** Open (2026-11-28); for the persistence owner (Luke). Direction: the reopen check
+accepts the gaps below the stored proof's final point, since their absence is never evidence.
+
 ## Atomic state updates across the VM and storage
 
 <a id="find-state-2-4bh3y1"></a>
