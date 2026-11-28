@@ -30,6 +30,15 @@ contract StateChannelManagerProxy is StateChannelCommon {
     uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
     uint256 private constant DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 
+    // config words the proxy's own code reads, kept in code -> no cold SLOAD per call. The storage words stay: facets
+    // run under delegatecall and read the state machine, utility facet and participant maximum from storage, and
+    // consumerFacetAddress, read by no contract, holds its slot so the later slots the free lane reads keep their
+    // numbers (contracts.md assumptions)
+    AStateMachine private immutable codeStateMachine;
+    address private immutable codeUtilityFacet;
+    address private immutable codeConsumerFacet;
+    uint256 private immutable codeMaxChannelParticipants;
+
     constructor(
         address _stateMachineImplementation,
         address _disputeManagerFacet,
@@ -97,8 +106,6 @@ contract StateChannelManagerProxy is StateChannelCommon {
         _registerRoute(UtilityFacet.getOnChainThresholdSet.selector, _utilityFacet);
         _registerRoute(UtilityFacet.canParticipateInDisputes.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getStateSnapshot.selector, _utilityFacet);
-        _registerRoute(UtilityFacet.getOpenChannelCount.selector, _utilityFacet);
-        _registerRoute(UtilityFacet.getOpenChannelIds.selector, _utilityFacet);
         _registerRoute(UtilityFacet.getChannelBalance.selector, _utilityFacet);
         _registerRoute(UtilityFacet.isChannelOpen.selector, _utilityFacet);
         _registerRoute(UtilityFacet.isForkDisputed.selector, _utilityFacet);
@@ -132,6 +139,11 @@ contract StateChannelManagerProxy is StateChannelCommon {
         gasLimit = _disputeExecutionGasLimit == 0 ? DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT : _disputeExecutionGasLimit;
         maxChannelParticipants =
             _maxChannelParticipants == 0 ? DEFAULT_MAX_CHANNEL_PARTICIPANTS : _maxChannelParticipants;
+
+        codeStateMachine = AStateMachine(_stateMachineImplementation);
+        codeUtilityFacet = _utilityFacet;
+        codeConsumerFacet = _consumerFacet;
+        codeMaxChannelParticipants = maxChannelParticipants;
     }
 
     fallback() external {
@@ -165,7 +177,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
             block.timestamp <= maxTimestamp, RaceConditionBlockCalldataTimestampTooLate(maxTimestamp, block.timestamp)
         );
         bytes32 commitment = keccak256(abi.encode(signedBlock, block.timestamp));
-        Block memory _block = UtilityFacet(utilityFacetAddress).decodeBlock(signedBlock.encodedBlock);
+        Block memory _block = UtilityFacet(codeUtilityFacet).decodeBlock(signedBlock.encodedBlock);
 
         // Extract values for better readability
         bytes32 channelId = _block.transaction.header.channelId;
@@ -222,7 +234,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         }
 
         // set zero balance for on-chain deposits/withdrawals
-        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
+        Balance memory zeroBalance = _getStateMachine().getZeroBalance();
         {
             ChannelBalance storage channelBalance = channelBalances[openChannelData.channelId];
             channelBalance.totalDeposits = zeroBalance;
@@ -232,7 +244,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
             channelBalance.latestOutboundMessageBlockHeight = 0;
         }
         // verify threshold signature - must be from all participants - this is deterministic - no race condition on-chain
-        (bool isValid, string memory reason) = UtilityFacet(utilityFacetAddress)
+        (bool isValid, string memory reason) = UtilityFacet(codeUtilityFacet)
             .verifyThresholdSigned(
                 openChannelData.participants,
                 openChannelConfirmation.encodedOpenChannel,
@@ -272,8 +284,6 @@ contract StateChannelManagerProxy is StateChannelCommon {
 
         stateSnapshots[openChannelData.channelId] = genesisStateSnapshot;
 
-        _appendOpenChannel(openChannelData.channelId);
-
         emit ChannelOpened(openChannelData.channelId, genesisStateSnapshot, openChannelData.data);
     }
 
@@ -291,8 +301,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
     function withdrawAssetsComposable(ExitChannel memory exitChannel) public virtual onlySelf returns (bool) {
-        bytes memory result =
-            _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.withdraw, (exitChannel)));
+        bytes memory result = _delegatecall(codeConsumerFacet, abi.encodeCall(AConsumerFacet.withdraw, (exitChannel)));
         return abi.decode(result, (bool));
     }
 
@@ -302,14 +311,14 @@ contract StateChannelManagerProxy is StateChannelCommon {
         returns (bool, bytes memory encodedModifiedState, Message[] memory outboundMessages)
     {
         //channelId not used currently since all channels have the same SM - later they can be mapped to different ones
-        stateMachineImplementation.setState(encodedState);
+        _getStateMachine().setState(encodedState);
         (bool success, bytes memory response) =
-            address(stateMachineImplementation).call(abi.encodeCall(stateMachineImplementation.stateTransition, _tx));
+            address(_getStateMachine()).call(abi.encodeCall(AStateMachine.stateTransition, _tx));
         if (!success) _requireFundedReplay(response);
         if (success && response.length > 0) {
             (, outboundMessages) = abi.decode(response, (bool, Message[]));
         }
-        return (success, stateMachineImplementation.getState(), outboundMessages);
+        return (success, _getStateMachine().getState(), outboundMessages);
     }
 
     function multicall(bytes[] calldata calls) external returns (bytes[] memory results) {
@@ -360,7 +369,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
         Message[] memory messages = new Message[](joinChannels.length);
         for (uint256 i = 0; i < joinChannels.length; i++) {
             bytes memory result =
-                _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.deposit, (joinChannels[i])));
+                _delegatecall(codeConsumerFacet, abi.encodeCall(AConsumerFacet.deposit, (joinChannels[i])));
             if (!abi.decode(result, (bool))) revert ErrorJoinChannelAtomicFailure(i, joinChannels[i].participant);
             messages[i] = Message({
                 messageType: MESSAGE_TYPE_JOIN,
@@ -370,6 +379,16 @@ contract StateChannelManagerProxy is StateChannelCommon {
             });
         }
         return _appendInboundMessages(channelId, messages);
+    }
+
+    /// @dev Overrides `StateChannelCommon._getMaxChannelParticipants`: the proxy reads the copy in its code.
+    function _getMaxChannelParticipants() internal view virtual override returns (uint256) {
+        return codeMaxChannelParticipants;
+    }
+
+    /// @dev Overrides `StateChannelCommon._getStateMachine`: the proxy reads the copy in its code.
+    function _getStateMachine() internal view virtual override returns (AStateMachine) {
+        return codeStateMachine;
     }
 
     /// @dev A transition the machine rejected is an invalid transition and stays a verdict for
@@ -401,6 +420,6 @@ contract StateChannelManagerProxy is StateChannelCommon {
     ///     behaviour of falling through to the consumer facet.
     function _facetForSelector(bytes4 sig) internal view returns (address) {
         SelectorRoute memory route = selectorRoutes[sig];
-        return route.configured ? route.facet : consumerFacetAddress;
+        return route.configured ? route.facet : codeConsumerFacet;
     }
 }

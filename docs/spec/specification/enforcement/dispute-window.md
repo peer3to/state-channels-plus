@@ -57,7 +57,9 @@ force-expiry — with no other transition mutating a window.
 
 **<a id="req-enfdis-2-vv9fpr"></a>`REQ-ENFDIS-2-VV9FPR` — Bounded participation.** The per-address throttle and the one-post-per-window
 rule bound upload volume per identity; throttling MUST NOT block the first upload that opens a
-fork's window when the address is otherwise eligible and unthrottled.
+fork's window when the address is otherwise eligible and unthrottled. A throttle lasts until the channel's dispute data is cleared: the clear deletes
+every window and the throttle of every address in their `hasPosted`, so a cleared or reopened channel keeps no
+throttle ([`REQ-DIS-2-PKVZ7E`](../disputes/disputes.md#req-dis-2-pkvz7e)).
 
 ## Assumptions and constraints
 
@@ -77,7 +79,11 @@ manipulation perturbing the reduced set (the order-dependence concern tracked un
 [`INV-DIS-5-J1QZ92`](../disputes/disputes.md#inv-dis-5-j1qz92)/[`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../verification/open-questions.md#oq-4-jgdcnx) — this module records; the
 owner must resolve canonical ordering), spam via many identities (throttle is per-address only —
 Sybil bounds come from dispute eligibility), and timestamp manipulation at period edges (chain
-time is authoritative; boundary behavior per the owner's rules).
+time is authoritative; boundary behavior per the owner's rules). A clear of the channel's dispute data ends
+every throttle early, so a sender may upload once more after each clear. Any participant can post each newer
+threshold-signed milestone as its own same-fork update, so the bound is one extra upload per newer milestone, which
+normal operation supplies at the channel's block cadence. An upload on the current fork marks it disputed and blocks
+further same-fork clears, and windows on other forks are wiped by the next clear anyway.
 
 ## Verification and test plan
 

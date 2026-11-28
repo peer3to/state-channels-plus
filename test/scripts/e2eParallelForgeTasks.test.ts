@@ -463,6 +463,7 @@ describe("parallel forge task discovery", function () {
         const { tasks } = discoverForgeTasks(REPO_TEST_DIR);
         expect(tasks.map((task) => task.fullTitle)).to.have.members([
             "AStateMachineStipendTest",
+            "ChannelCleanCloseTest",
             "DepartedTimeoutCalldataPostedTest",
             "DisputeConflictsWithFinalStateTest",
             "DisputeFinalPointRegressionTest",
@@ -487,7 +488,6 @@ describe("parallel forge task discovery", function () {
             "StateChannelManagerProxyRegistrationTest",
             "StateProofChallengesTest",
             "StateProofWalkTest",
-            "StateSnapshotFacetOpenChannelRegistryTest",
             "StateSnapshotFacetSameForkTest",
             "StateSnapshotFacetUpdateForkTest",
             "StateSnapshotProofTargetTest",

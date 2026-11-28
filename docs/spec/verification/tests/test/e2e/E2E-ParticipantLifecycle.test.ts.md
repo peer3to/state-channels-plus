@@ -5,8 +5,8 @@ Test file: [test/e2e/E2E-ParticipantLifecycle.test.ts](../../../../../../test/e2
 ## Overview
 
 The suite walks both participant-set transitions end to end through the `MathTestSession` harness.
-It also opens several channels, closes one through the normal zero-participant snapshot path, and
-compares the lifecycle-event live set with paged manager enumeration. The participant cases cover
+It also closes a channel through the normal zero-participant snapshot path and reads the closed
+channel's balance tracker as zero on chain. The participant cases cover
 the exit path (`leaveChannel` → N/N snapshot → on-chain snapshot update demotes the exiter to
 SYNCED while the rest stay PARTICIPATING) and the join path (a synced spectator broadcasts a real
 join confirmation, flips to PENDING_PARTICIPANT before the transaction is mined, and is promoted
@@ -66,7 +66,7 @@ while the two founders author, and a block seats it as `PARTICIPATING`.
 ## Tests
 
 - `slash and removal are idempotent after local leave while the chain snapshot still lists the leaver`: REQ-SM-10-JD8TSF.T1.P3
-- `removes a normally closed channel from registry pages and the event-derived live set`: INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP.P1
+- `a normally closed channel keeps no balance tracker`: REQ-LIF-13-0MH9JW.T1.P6
 - `should demote exiting participant to SYNCED when state snapshot is updated on-chain`: UNIT-TEST-STATE-MANAGER-2-WSMPYS.P9
 - `a participant slashed by a dispute, with no leave call, gets onLeftChannel and does not abort`: REQ-LIF-10-QR8NQ9.T1.P20
 - `exiting participant does not sign blocks authored after its leave`: UNIT-TEST-STATE-MANAGER-2-WSMPYS.P7, REQ-BLOCK-PIPE-10-PHAKE2.T1.P3

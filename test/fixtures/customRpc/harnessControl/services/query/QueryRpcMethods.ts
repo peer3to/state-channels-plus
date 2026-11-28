@@ -159,17 +159,6 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return isOpen;
     }
 
-    public async getOpenChannelIds(): Promise<string[]> {
-        const count =
-            await this.service.sm.stateChannelManagerContract.getOpenChannelCount();
-        return (
-            await this.service.sm.stateChannelManagerContract.getOpenChannelIds(
-                0,
-                count
-            )
-        ).map(String);
-    }
-
     public getForkId(): string {
         return this.service.sm.forkId as string;
     }

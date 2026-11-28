@@ -2951,11 +2951,13 @@ machine, or record these as documented integrator obligations with review guidan
 [`JoinChannelFacet._processJoinChannel`](../implementation/source/contracts/V1/StateChannelDiamondProxy/JoinChannelFacet.sol.md)
 does not check that the channel is open. On a channel that was never opened, or is closed, the
 on-chain threshold set is empty and `verifyThresholdSigned` accepts zero signatures
-(`count == threshold == 0`), so `joinChannel` takes the deposit with no co-signature. On a channel
-that was never opened the appended inbound block has previous hash zero. On a channel that closed with
-no pending inbound block it links to the pruned former head and the joiner reads as pending; if the
-close left a join pending, that joiner forms the threshold set and the new block links to its block. A later `open` of that channel ID resets
-`channelBalances`, so the deposit leaves the channel's accounting.
+(`count == threshold == 0`), so `joinChannel` takes the deposit with no co-signature. The close
+deletes the balance tracker, so on a closed channel, as on one that was never opened, the appended
+inbound block has previous hash zero and height 1, and a join left pending by a fork-adoption close no
+longer forms the threshold set. The join writes channel state back after
+[`REQ-LIF-13-0MH9JW` (A clean close leaves no channel state)](../specification/settlement/lifecycle.md#req-lif-13-0mh9jw)
+emptied it. A later `open` of that channel ID resets `channelBalances`, so the deposit leaves the channel's
+accounting.
 [`REQ-MSG-10-7JS45Q` (Joining MUST carry the joiner's signature plus the full threshold set's…)](../specification/settlement/cross-layer-messages.md#req-msg-10-7js45q)
 is met only vacuously when the threshold set is empty; no requirement states that join and top-up
 need an open channel.

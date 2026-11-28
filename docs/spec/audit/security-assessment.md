@@ -795,3 +795,22 @@ Per-step checking does not prove constant total gas. Other existing findings rem
 unless separately revalidated. Documentation and mappings remain pending engineer review; this
 assessment grants no human approval and does not claim the repository's baseline coverage queues
 are empty.
+
+## Clean close, event-derived open set and throttle lifetime — 2026-11-28
+
+The manager no longer keeps an open-channel registry; the open set is rebuilt from `ChannelOpened` and
+zero-participant `StateSnapshotUpdated` events ([`REQ-LIF-8-2HDG3A` (Open-channel set from lifecycle events)](../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)).
+No production reader used the registry; an external lobby that paged it must read the events instead.
+The final close now also deletes the balance tracker, and every clear of a channel's dispute data deletes the
+throttle of each sender in the cleared windows ([`REQ-LIF-13-0MH9JW` (A clean close leaves no channel state)](../specification/settlement/lifecycle.md#req-lif-13-0mh9jw),
+[`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../specification/disputes/disputes.md#req-dis-2-pkvz7e)).
+A reopened ID therefore reads no stale head, total or throttle. Residual risk: one fallback calldata commitment
+per post stays after the close, and a close through an adopted fork that left inbound blocks above its head keeps
+those unreachable blocks. A cleared throttle lets a sender upload once more per clear. Any participant can post each
+newer signed milestone as its own same-fork clear, so the bound is one extra upload per newer milestone, not one per
+`evidenceTime`; an upload on the current fork blocks further same-fork clears, and windows on other forks are wiped by
+the next clear. Until [`FIND-JOIN-UNOPENED-1-BN4QYM`](open-findings.md#find-join-unopened-1-bn4qym) is fixed, a join
+on a closed channel ID writes channel state back. The proxy's own code now reads four configuration words from
+immutables set in its constructor, the same values the storage words hold. Only the constructor writes those
+words, so the two copies differ only if a consumer facet writes manager configuration storage, which adapter
+confinement already forbids. This assessment grants no human approval.

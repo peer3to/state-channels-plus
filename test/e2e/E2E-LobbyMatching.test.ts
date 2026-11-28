@@ -91,12 +91,6 @@ describe("E2E: lobby matching", function () {
             h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
             50
         );
-        const registry = await h
-            .control(h.peers[0])
-            .query.getOpenChannelIds()
-            .request();
-        expect(registry).to.include(channelIds[0]);
-        expect(new Set(registry).size).to.equal(registry.length);
         expect(attempts).to.have.length(2);
         const lowerIndex = h.network.lobbyRoleIndices()[0];
         let transactionCountsAfter: number[] = [];
@@ -257,11 +251,6 @@ describe("E2E: lobby matching", function () {
                 )
             )
         );
-        const registry = await h
-            .control(h.peers[0])
-            .query.getOpenChannelIds()
-            .request();
-        expect(uniqueIds.every((id) => registry.includes(id))).to.equal(true);
         for (let observer = 0; observer < h.peers.length; observer += 1) {
             for (let target = 0; target < h.peers.length; target += 1) {
                 if (observer === target) continue;
@@ -849,15 +838,6 @@ describe("E2E: lobby matching", function () {
                 h.event.protocolEventTimeoutMs({ withFirstBlockGrace: true }),
                 50
             );
-            const openChannelIds = await h
-                .control(h.peers[0])
-                .query.getOpenChannelIds()
-                .request();
-            expect(
-                openChannelIds.filter(
-                    (openChannelId: string) => openChannelId === channelIds[0]
-                )
-            ).to.have.length(1);
             expect(
                 await Promise.all([
                     h
@@ -1583,9 +1563,9 @@ describe("E2E: lobby matching", function () {
             expect(
                 await third.query.isChannelOpen(deadAttempt.channelId).request()
             ).to.equal(false);
-            const registry = await third.query.getOpenChannelIds().request();
-            expect(registry).to.include(newChannelId);
-            expect(registry).not.to.include(deadAttempt.channelId);
+            expect(
+                await third.query.isChannelOpen(newChannelId).request()
+            ).to.equal(true);
             expect(
                 await higher.query
                     .isBlacklisted(h.peers[thirdIndex].address)

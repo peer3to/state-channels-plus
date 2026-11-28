@@ -1,5 +1,6 @@
 pragma solidity ^0.8.8;
 
+import {Vm} from "forge-std/Vm.sol";
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
@@ -272,6 +273,79 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         assertFalse(
             diamond.isUncommittedInboundMessageBlock(DEADLINE_CHANNEL_ID, genesis), "genesis block reads uncommitted"
         );
+    }
+
+    // the snapshot, the balance tracker and the genesis inbound record
+    function test_open_twoSeats_writesSeventeenFreshSlots() public {
+        vm.startStateDiffRecording();
+        diamond.open(_deadlineOpenConfirmation());
+        assertEq(_freshSlotsOf(address(diamond), vm.stopAndReturnStateDiff()), 17, "fresh slots");
+    }
+
+    // the proxy's own code reads its configuration from code: no access to the storage words
+    // maxChannelParticipants (5), stateMachineImplementation (6), consumerFacetAddress (14), utilityFacetAddress (15)
+    function test_open_readsNoConfigurationWordFromStorage() public {
+        // a layout change fails here, not by checking unrelated slots
+        assertEq(uint256(vm.load(address(diamond), bytes32(uint256(5)))), MAX_CHANNEL_PARTICIPANTS, "slot 5");
+        assertEq(vm.load(address(diamond), bytes32(uint256(6))), _word(address(stateMachine)), "slot 6");
+        assertEq(vm.load(address(diamond), bytes32(uint256(14))), _word(address(consumerFacet)), "slot 14");
+        assertEq(vm.load(address(diamond), bytes32(uint256(15))), _word(address(utilityFacet)), "slot 15");
+        vm.startStateDiffRecording();
+        diamond.open(_deadlineOpenConfirmation());
+        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+        uint256 storageAccesses;
+        for (uint256 i = 0; i < accesses.length; i++) {
+            for (uint256 j = 0; j < accesses[i].storageAccesses.length; j++) {
+                Vm.StorageAccess memory access = accesses[i].storageAccesses[j];
+                if (access.account != address(diamond)) continue;
+                storageAccesses += 1;
+                uint256 slot = uint256(access.slot);
+                assertTrue(slot != 5 && slot != 6 && slot != 14 && slot != 15, "configuration word read from storage");
+            }
+        }
+        assertGt(storageAccesses, 0, "the open touched channel storage");
+        _assertOpenedWithDeposits();
+    }
+
+    // the parachain free lane reads these manager slots by number (its `set_target` deployment record): evidenceTime (3),
+    // stateSnapshots (18) for the snapshot's participants and disputeData (20) for a window's evidence timestamps
+    function test_freeLaneSlots_holdEvidenceTimeSnapshotParticipantsAndWindowTimestamps() public {
+        diamond.open(_deadlineOpenConfirmation());
+        address d = address(diamond);
+        assertEq(uint256(vm.load(d, bytes32(uint256(3)))), diamond.getEvidenceTime(), "evidenceTime slot");
+
+        // snapshotData.participants sits at slot 2 of stateSnapshots[channel]
+        bytes32 participantsSlot = bytes32(uint256(keccak256(abi.encode(DEADLINE_CHANNEL_ID, uint256(18)))) + 2);
+        assertEq(uint256(vm.load(d, participantsSlot)), 2, "participant count slot");
+        bytes32 firstParticipant = keccak256(abi.encode(participantsSlot));
+        assertEq(vm.load(d, firstParticipant), _word(vm.addr(SIGNER_PK)), "first participant slot");
+        assertEq(
+            vm.load(d, bytes32(uint256(firstParticipant) + 1)), _word(vm.addr(SECOND_SIGNER_PK)), "second participant"
+        );
+
+        // an upload opens the window: disputeWindowMap sits at slot 1 of disputeData[channel], and slots 1 and 2 of the
+        // window hold evidence.creationTimestamp and evidence.lastEvidenceSubmissionTimestamp
+        StateSnapshot memory snapshot = diamond.getStateSnapshot(DEADLINE_CHANNEL_ID);
+        Dispute memory dispute;
+        dispute.input.channelId = DEADLINE_CHANNEL_ID;
+        dispute.input.forkId = snapshot.forkId;
+        dispute.input.disputer = vm.addr(SIGNER_PK);
+        dispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        dispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
+        DisputeConfirmation memory confirmation;
+        confirmation.signedDispute.encodedDispute = abi.encode(dispute);
+        confirmation.signedDispute.signature = _sign(SIGNER_PK, confirmation.signedDispute.encodedDispute);
+        vm.prank(vm.addr(SIGNER_PK));
+        diamond.uploadDispute(confirmation);
+
+        bytes32 windows = bytes32(uint256(keccak256(abi.encode(DEADLINE_CHANNEL_ID, uint256(20)))) + 1);
+        uint256 window = uint256(keccak256(abi.encode(snapshot.forkId, windows)));
+        assertEq(uint256(vm.load(d, bytes32(window + 1))), block.timestamp, "window creation slot");
+        assertEq(uint256(vm.load(d, bytes32(window + 2))), block.timestamp, "window last evidence slot");
+    }
+
+    function _word(address account) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(account)));
     }
 
     function _deadlineOpenConfirmation() internal view returns (OpenChannelConfirmation memory) {

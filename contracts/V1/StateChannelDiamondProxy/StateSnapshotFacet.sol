@@ -117,11 +117,12 @@ contract StateSnapshotFacet is StateChannelCommon {
 
         // Check if channel should be closed (0 participants remaining)
         if (newSnapshot.snapshotData.participants.length == 0) {
-            _removeOpenChannel(channelId);
             // Clear storage when channel is closed (0 participants)
             _clearStorage(channelId, newSnapshot.snapshotData.latestInboundMessageBlockHash, true);
-            // Clear the state snapshot
+            // Clear the state snapshot and the balance tracker -> a same-fork close keeps only fallback commitments;
+            // a fork-adoption close also keeps the unconsumed inbound blocks above the snapshot's inbound head
             delete stateSnapshots[channelId];
+            delete channelBalances[channelId];
             // TODO! send all remaining funds to the treasury
         } else if (
             disputeData[channelId].disputeWindowMap[newSnapshot.forkId].evidence.creationTimestamp == 0

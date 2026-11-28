@@ -7,7 +7,7 @@
 - [`REQ-CONTRACT-ARCH-2-BE651C` (Shared validation)](../../../../../specification/enforcement/contracts.md#req-contract-arch-2-be651c)
 - [`INV-ENFFP-1-BGVZN4` (Slash set integrity)](../../../../../specification/enforcement/fraud-slashing.md#inv-enffp-1-bgvzn4)
 - [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../../../../../specification/disputes/disputes.md#req-dis-2-pkvz7e)
-- [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+- [`REQ-LIF-13-0MH9JW` (A clean close leaves no channel state)](../../../../../specification/settlement/lifecycle.md#req-lif-13-0mh9jw)
 - [`INV-MSG-1-36Y41Q` (Each stream is one hash-linked chain per channel)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-1-36y41q)
 - [`REQ-MSG-2-7YAD1A` (A dispute's claimed inbound tip MUST be an ancestor of the chain tip with…)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-2-7yad1a)
 - [`REQ-DIS-4-6J6YYG` (Reduction runs only after the kill period expires and consumes exactly the…)](../../../../../specification/disputes/disputes.md#req-dis-4-6j6yyg)
@@ -108,20 +108,3 @@ Shared predicates
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P79` — a join's persisted inbound block is found under the hash of the full emitted block; the same block with altered JOIN data reads as uncommitted
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P80` — the JOIN participants a join's record keeps make up the pending set: exactly the joiner
 - [x] `UNIT-TEST-STATE-CHANNEL-COMMON-1-WJ73FK.P81` — a join after an earlier join writes exactly 5 fresh (zero-to-nonzero) slots: link, packed height and timestamp, deposit total, joiners length and the joiner
-
-## UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7
-
-Enumerable live-channel registry
-
-- Setup: Open and fully close real channels through proxy/facet entry points, then read public pages.
-- Oracle: Successful opens append once; failed opens do not mutate; final close removes first/middle/last, repairs the moved index, tolerates repeat, permits one clean reopen, and matches lifecycle events.
-
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P1` — append order and safe paging
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P2` — duplicate-open rollback
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P3` — remove first and repair moved index
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P4` — remove middle
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P5` — remove last
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P6` — repeated final close is a no-op
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P7` — reopen appends exactly once
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P8` — full lifecycle event set equals paged registry
-- [x] `UNIT-TEST-OPEN-CHANNEL-REGISTRY-1-KFDPM7.P9` — TypeScript event query reconstructs successful opens and matches paged reads

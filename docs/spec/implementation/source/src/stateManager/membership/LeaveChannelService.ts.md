@@ -35,7 +35,7 @@ Terminal leave state machine
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P23` — Both founders get `onLeftChannel` after the last exit closes the channel and status becomes NOT_OPENED
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P24` — Leaving an unobserved join waits for authorization expiry, then settles SYNCED with `onLeftChannel` and no dispute
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P25` — JOIN observation while leave waits changes it to member exit handling; explicit disposal stops the unfinished member leave
-- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P26` — Both founders leave through the public runtime API, both get `onLeftChannel`, the channel disappears from the open-channel registry and on-chain participants become empty
+- [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P26` — Both founders leave through the public runtime API, both get `onLeftChannel`, the channel is closed on chain and on-chain participants become empty
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P27` — With an unconsumed on-chain JOIN blocking exit snapshot updates, both founders submit self-removal disputes on the original fork without changing the chain snapshot first; each gets `onLeftChannel` and reduction seats the sole joiner
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P28` — After an uncertain join submission preserves local pending status but never lands, leave waits for authorization expiry and resolves SYNCED with the address absent from both on-chain participant sets
 - [x] `UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9.P29` — a leave that settles while its exit's posts are blocked ends the exit: the leave watchdog starts no self-removal dispute and no further post runs

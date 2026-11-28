@@ -64,7 +64,10 @@ gates — zero channel id, threshold shortfall, deposit composition — are cove
 A genesis-record case opens the same two-party channel, decodes the emitted genesis inbound block and
 asserts the chain finds it under the hash of that full block, the snapshot's inbound head is that
 hash at height 1 with total deposits `500`, no participant is pending, and the block does not read
-as uncommitted.
+as uncommitted. Two cases record a state diff of a valid two-seat open: it writes exactly 17 fresh manager
+slots (the snapshot, the balance tracker and the genesis inbound record), and it touches none of the manager's
+configuration storage words 5, 6, 14 and 15 while the channel opens with its deposits; that case first reads
+those words and requires the configured participant maximum, state machine, consumer and utility facet there.
 
 ## Tests
 
@@ -82,3 +85,6 @@ as uncommitted.
 - `test_open_afterDeadline_revertsWithOpenChannelExpired`: REQ-ENFADM-4-2NN96F.T1.P3, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19
 - `test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20
 - `test_open_storesTheGenesisRecordUnderTheFullBlockHash`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P25
+- `test_open_twoSeats_writesSeventeenFreshSlots`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P31
+- `test_open_readsNoConfigurationWordFromStorage`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P32
+- `test_freeLaneSlots_holdEvidenceTimeSnapshotParticipantsAndWindowTimestamps`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P33
