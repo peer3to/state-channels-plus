@@ -99,6 +99,12 @@ describe("Unit: AgreementManager stored proof", function () {
         await assertReRootKeepsHopAboveAnchor(TestSession.getHarness());
     });
 
+    it("a re-root at the snapshot below the stored final point while the anchor's state and the blocks below the final point are gone → the re-root from the stored own hop passes: the anchor moves there, the hop and the final point with its state are kept", async function () {
+        await assertReRootKeepsHopAboveAnchor(TestSession.getHarness(), {
+            withoutRestartHistory: true
+        });
+    });
+
     it("a reset at the genesis of a reduced fork → its stored proof is that genesis alone with its state, and the old fork's is gone", async function () {
         await assertGenesisResetStartsStoredProof(TestSession.getHarness());
     });

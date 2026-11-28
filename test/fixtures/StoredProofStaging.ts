@@ -191,9 +191,9 @@ export async function assertNonChangeAdvanceKeepsOneHop(
 
     const view = await storedProofView(h, 0);
 
-    expect(view!.hopHeights.map(([pointHeight]) => pointHeight)).to.deep.equal(
-        [finalized.height]
-    );
+    expect(view!.hopHeights.map(([pointHeight]) => pointHeight)).to.deep.equal([
+        finalized.height
+    ]);
     expect(view!.finalized.hash).to.equal(finalized.hash);
 }
 
@@ -224,10 +224,7 @@ export async function persistSideChainSyncEvidence(
         requester,
         async (sm, args, { Codec, Type }) => {
             const am = sm.agreementManager;
-            const served = Codec.decode(
-                args.encodedPayload,
-                Type.SyncPayload
-            );
+            const served = Codec.decode(args.encodedPayload, Type.SyncPayload);
             const evidence = {
                 genesisStateSnapshotData:
                     served.latestForkGenesisSnapshot.snapshotData,
@@ -584,10 +581,14 @@ export async function assertForkChangeResetsStoredProof(
  * Three peers finalize blocks 0..2. Peer 0's stored proof, rooted at the
  * fork genesis, is re-rooted at the snapshot of the block below its final
  * point: the anchor moves there, and the hop above it and the final point
- * with its state are kept.
+ * with its state are kept. With `withoutRestartHistory`, the peer first
+ * loses what a restart at the new anchor needs: the anchor's state and the
+ * blocks below the final point (as pruning between hops leaves it); the
+ * re-root from the stored hops alone must still pass.
  */
 export async function assertReRootKeepsHopAboveAnchor(
-    h: MathPeerTestHarness
+    h: MathPeerTestHarness,
+    options?: { withoutRestartHistory?: boolean }
 ): Promise<void> {
     await h.lifecycle.start(3, 0);
     const peerIndices = h.peers.map((peer) => peer.index);
@@ -606,18 +607,40 @@ export async function assertReRootKeepsHopAboveAnchor(
     expect(before!.hopHeights).to.have.lengthOf(1);
     expect(before!.finalized.height).to.be.greaterThan(0);
     const anchorHeight = before!.finalized.height - 1;
+    const stored = await h
+        .control(peer)
+        .query.getStateSnapshotStructAt(forkId, anchorHeight)
+        .request();
+    const anchorSnapshot = StateSnapshot.from(
+        Codec.decode(stored!.encodedSnapshot, Type.StateSnapshot)
+    );
+    const anchor = String(anchorSnapshot.hash);
+    if (options?.withoutRestartHistory) {
+        expect(
+            await h
+                .control(peer)
+                .stub.deleteStoredState(anchorSnapshot.stateMachineStateHash)
+                .request(),
+            "the anchor's state is dropped"
+        ).to.equal(true);
+        const { prunedHeights } = await h
+            .control(peer)
+            .stub.pruneStoredBlocksBelowAnchor(forkId, before!.finalized.height)
+            .request();
+        expect(prunedHeights, "the blocks below the final point").to.include(
+            anchorHeight
+        );
+    }
 
-    const anchor = await h.execOnHost(
+    await h.execOnHost(
         peer,
         async (sm, args) => {
-            const snapshot = sm.storage.getStateSnapshot({
-                forkId: args.forkId,
-                height: args.anchorHeight
-            })!;
+            const snapshot = sm.storage.stateSnapshots.getStateSnapshotByHash(
+                args.anchor
+            )!;
             await sm.agreementManager.reRootStoredProof(snapshot);
-            return String(snapshot.hash);
         },
-        { forkId, anchorHeight }
+        { anchor }
     );
     const after = await storedProofView(h, peer.index, forkId);
 
