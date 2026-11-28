@@ -1,6 +1,7 @@
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";
 // @spec-test-coverage-ignore: shared deployment helpers for test files; declares no runnable case, so no specification or implementation IDs apply
 import Clock from "@/Clock";
+import { buildOpenChannel } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { hash } from "@/utils";
 import { routedFacets } from "@/utils/routedFacets";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
@@ -49,11 +50,13 @@ export const createJoinChannelTestObject = (
     return jc;
 };
 
-export const createOpenChannelTestObject = (
+export const createOpenChannelTestObject = async (
+    manager: StateChannelManagerInterface,
     participants: AddressLike[],
-    options?: TestObjectOptions
-): OpenChannelStruct => {
-    const { channelId, initialBalance } = options ?? {};
+    // genesisStateHash overrides the hash the manager's genesis hook derives
+    options?: TestObjectOptions & { genesisStateHash?: string }
+): Promise<OpenChannelStruct> => {
+    const { channelId, initialBalance, genesisStateHash } = options ?? {};
     let currentTime = 0;
     try {
         currentTime = Clock.getTimeInSeconds();
@@ -66,7 +69,7 @@ export const createOpenChannelTestObject = (
         data: "0x00"
     }));
 
-    const oc: OpenChannelStruct = {
+    const terms = {
         channelId: channelId
             ? hash(
                   ethers.AbiCoder.defaultAbiCoder().encode(
@@ -78,10 +81,13 @@ export const createOpenChannelTestObject = (
         participants: participants,
         balances: balances,
         deadlineTimestamp: currentTime + 120, // 2 minutes from now
-        isAtomic: true,
         data: "0x00"
     };
-    return oc;
+    const { openChannel } = await buildOpenChannel(manager, terms);
+    return {
+        ...openChannel,
+        genesisStateHash: genesisStateHash ?? openChannel.genesisStateHash
+    };
 };
 
 /** Facet contract name -> deployed address of that facet behind the diamond. */

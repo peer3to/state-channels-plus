@@ -1,6 +1,11 @@
 import type { LobbyMatch } from "@/rpc/network/services/lobbyMatching/LobbyMatchingTypes";
 import { getChecksumAddress } from "@/utils";
-import type { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
+import { isLocalEvmExecutionFailure } from "@/utils/evmErrorHandler";
+import type { StateChannelManagerInterface } from "@typechain-types";
+import type {
+    JoinChannelStruct,
+    OpenChannelStruct
+} from "@typechain-types/contracts/V1/types/DataTypes";
 import { ethers, type BytesLike } from "ethers";
 
 export type Address = string;
@@ -122,9 +127,6 @@ export function getOpenChannelProposalMismatch(
             return `balance ${i} data mismatch`;
         }
     }
-    if (decoded.isAtomic !== true) {
-        return "isAtomic must be true";
-    }
     if (
         ethers.hexlify(decoded.data) !== ethers.hexlify(expected.data ?? "0x")
     ) {
@@ -139,4 +141,64 @@ export function getOpenChannelProposalMismatch(
         return "deadline out of range";
     }
     return null;
+}
+
+/** The joins `open` deposits for these terms, in participant order. */
+export function openChannelJoins(
+    terms: Pick<
+        OpenChannelStruct,
+        "channelId" | "participants" | "balances" | "deadlineTimestamp"
+    >
+): JoinChannelStruct[] {
+    return terms.participants.map((participant, i) => ({
+        channelId: terms.channelId,
+        participant,
+        deadlineTimestamp: terms.deadlineTimestamp,
+        balance: terms.balances[i]
+    }));
+}
+
+/**
+ * The genesis the consumer facet's pure hook derives from these joins, run on
+ * the local diamond (a local copy of the consumer facet's code, no chain
+ * call), or undefined when it fails inside the EVM. A failure outside the
+ * EVM (the executor) rethrows.
+ */
+export async function deriveGenesisState(
+    localDiamond: Pick<StateChannelManagerInterface, "openChannelGenesis">,
+    joins: JoinChannelStruct[],
+    openingData: BytesLike
+): Promise<string | undefined> {
+    try {
+        return await localDiamond.openChannelGenesis(joins, openingData);
+    } catch (error) {
+        // inside the EVM (a revert, or out of gas under the same local cap on
+        // every runtime) no genesis derives; a failure outside it rethrows
+        if (!isLocalEvmExecutionFailure(error)) throw error;
+        return undefined;
+    }
+}
+
+/**
+ * The signed opening for these terms, with the hash of the genesis the
+ * consumer facet's hook derives, and that genesis.
+ */
+export async function buildOpenChannel(
+    localDiamond: Pick<StateChannelManagerInterface, "openChannelGenesis">,
+    terms: Omit<OpenChannelStruct, "genesisStateHash">
+): Promise<{ openChannel: OpenChannelStruct; encodedGenesisState: string }> {
+    const encodedGenesisState = await deriveGenesisState(
+        localDiamond,
+        openChannelJoins(terms),
+        terms.data
+    );
+    if (encodedGenesisState === undefined)
+        throw new Error("genesis hook reverted");
+    return {
+        openChannel: {
+            ...terms,
+            genesisStateHash: ethers.keccak256(encodedGenesisState)
+        },
+        encodedGenesisState
+    };
 }

@@ -41,6 +41,7 @@ contract LocalDiamond is StateChannelManagerProxy {
         address _joinChannelFacet,
         address _stateProofFacet,
         address _utilityFacet,
+        address _consumerFacet,
         uint256 _p2pTime,
         uint256 _agreementTime,
         uint256 _chainFallbackTime,
@@ -58,7 +59,8 @@ contract LocalDiamond is StateChannelManagerProxy {
             _joinChannelFacet,
             _stateProofFacet,
             _utilityFacet,
-            address(0), // Use 0x00 for consumer facet in local environment
+            // a local copy of the deployed consumer facet's code, so its pure genesis hook runs locally
+            _consumerFacet,
             _p2pTime,
             _agreementTime,
             _chainFallbackTime,
@@ -73,11 +75,12 @@ contract LocalDiamond is StateChannelManagerProxy {
     function onChannelOpened(
         bytes32 channelId,
         StateSnapshot calldata stateSnapshot,
-        bytes calldata, /* encodedState */
         uint256 blockNumber,
         uint256 logIndex
     ) external {
-        if (!_acceptEvent(channelId, CHANNEL_OPENED_FAMILY, bytes32(0), blockNumber, logIndex)) return;
+        if (!_acceptEvent(channelId, CHANNEL_OPENED_FAMILY, bytes32(0), blockNumber, logIndex)) {
+            return;
+        }
         console.log("onChannelOpened");
         // Store the genesis state snapshot
         stateSnapshots[channelId] = stateSnapshot;

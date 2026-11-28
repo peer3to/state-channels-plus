@@ -39,7 +39,7 @@ const matchingProposal = (): OpenChannelStruct =>
             { amount: 700n, data: "0x" }
         ],
         deadlineTimestamp: 1030n,
-        isAtomic: true,
+        genesisStateHash: "0x" + "44".repeat(32),
         data: "0x"
     }) as unknown as OpenChannelStruct;
 
@@ -84,14 +84,6 @@ describe("getOpenChannelProposalMismatch", function () {
         expect(
             getOpenChannelProposalMismatch(decoded, expected, deadline)
         ).to.match(/channelId mismatch/);
-    });
-
-    it("rejects non-atomic opens", function () {
-        const decoded = matchingProposal();
-        decoded.isAtomic = false;
-        expect(
-            getOpenChannelProposalMismatch(decoded, expected, deadline)
-        ).to.match(/isAtomic/);
     });
 
     it("rejects opening data that differs from the locally derived data", function () {

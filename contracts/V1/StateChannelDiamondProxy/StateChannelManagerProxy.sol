@@ -195,8 +195,7 @@ contract StateChannelManagerProxy is StateChannelCommon {
     function open(OpenChannelConfirmation calldata openChannelConfirmation) public virtual {
         OpenChannel memory openChannelData = abi.decode(openChannelConfirmation.encodedOpenChannel, (OpenChannel));
         require(openChannelData.channelId != bytes32(0), ErrorInvalidJoinChannel());
-        (bool isOpen,) = _isChannelOpen(openChannelData.channelId);
-        require(!isOpen, RaceConditionChannelAlreadyOpen(openChannelData.channelId));
+        require(!_isChannelOpen(openChannelData.channelId), RaceConditionChannelAlreadyOpen(openChannelData.channelId));
         // Opening terms are valid up to and including their deadline, the same boundary as joinChannel
         require(
             openChannelData.deadlineTimestamp >= block.timestamp,
@@ -206,6 +205,10 @@ contract StateChannelManagerProxy is StateChannelCommon {
         require(
             openChannelData.participants.length <= _getMaxChannelParticipants(),
             ErrorTooManyParticipants(openChannelData.participants.length, _getMaxChannelParticipants())
+        );
+        require(
+            openChannelData.participants.length >= 2,
+            ErrorAtLeastTwoParticipantsRequired(openChannelData.participants.length)
         );
 
         // reject duplicate participants
@@ -247,30 +250,20 @@ contract StateChannelManagerProxy is StateChannelCommon {
             });
         }
 
-        (MessageBlock memory inboundBlock, Balance memory newTotalDeposits, JoinChannel[] memory processedJoins) =
-            StateChannelManagerProxy(address(this)).depositAssetsComposable(joinChannels, openChannelData.isAtomic);
+        (MessageBlock memory inboundBlock, Balance memory newTotalDeposits) = _depositAssetsComposable(joinChannels);
 
-        require(processedJoins.length >= 2, ErrorAtLeastTwoParticipantsRequired(processedJoins.length));
-        bytes32 inboundHead = keccak256(abi.encode(inboundBlock));
-        bytes memory result = _delegatecall(
-            consumerFacetAddress,
-            abi.encodeCall(AConsumerFacet.openChannelGenesis, (processedJoins, openChannelData.data))
-        );
-        (bytes memory genesisState, address[] memory participants) = abi.decode(result, (bytes, address[]));
-
+        // the participants agreed the genesis off-chain; the chain records its signed hash
         SnapshotData memory genesisSnapshotData = SnapshotData({
             originForkId: bytes32(0),
-            stateMachineStateHash: keccak256(genesisState),
-            participants: participants,
-            latestInboundMessageBlockHash: inboundHead,
+            stateMachineStateHash: openChannelData.genesisStateHash,
+            participants: openChannelData.participants,
+            latestInboundMessageBlockHash: keccak256(abi.encode(inboundBlock)),
             latestInboundMessageBlockHeight: inboundBlock.blockHeight,
             latestOutboundMessageBlockHash: bytes32(0),
             latestOutboundMessageBlockHeight: 0,
             totalDeposits: newTotalDeposits,
             totalWithdrawals: zeroBalance
         });
-
-        channelBalances[openChannelData.channelId].latestInboundMessageBlockHeight = inboundBlock.blockHeight;
 
         bytes32 forkId = keccak256(abi.encode(genesisSnapshotData));
         StateSnapshot memory genesisStateSnapshot = StateSnapshot({
@@ -281,53 +274,19 @@ contract StateChannelManagerProxy is StateChannelCommon {
 
         _appendOpenChannel(openChannelData.channelId);
 
-        emit ChannelOpened(openChannelData.channelId, genesisStateSnapshot, genesisState);
+        emit ChannelOpened(openChannelData.channelId, genesisStateSnapshot, openChannelData.data);
     }
 
     // ********** public/external DIAMOND functions **********
 
-    // @dev Callable only by diamond facets - performs the deposit of the specific assets by interpreting `joinChannel` - returns bool success
-    function depositAssetsComposable(JoinChannel[] memory joinChannels, bool isAtomic)
+    // @dev Callable only by diamond facets - deposits every `joinChannel` atomically - returns the inbound JOIN block and the new deposit totals
+    function depositAssetsComposable(JoinChannel[] memory joinChannels)
         public
         virtual
         onlySelf
-        returns (
-            MessageBlock memory messageBlock,
-            Balance memory newTotalDeposits,
-            JoinChannel[] memory successfulJoins
-        )
+        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
     {
-        require(joinChannels.length > 0, ErrorNoJoinChannelProvided());
-        bytes32 channelId = joinChannels[0].channelId;
-
-        JoinChannel[] memory filteredJoinChannels = new JoinChannel[](joinChannels.length);
-        uint256 successfulJoinCount = 0;
-        for (uint256 i = 0; i < joinChannels.length; i++) {
-            bytes memory result =
-                _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.deposit, (joinChannels[i])));
-            bool success = abi.decode(result, (bool));
-            if (!success && isAtomic) revert ErrorJoinChannelAtomicFailure(i, joinChannels[i].participant);
-            if (success) {
-                filteredJoinChannels[successfulJoinCount++] = joinChannels[i];
-            }
-        }
-        require(successfulJoinCount > 0, ErrorNoSuccessfulJoinChannel());
-        // Resize the array to the number of successful joins - only ok for shrinking the array
-        filteredJoinChannels = _shrinkJoinChannelArray(filteredJoinChannels, successfulJoinCount);
-
-        // Build message block representing the inbound joins
-        Message[] memory messages = new Message[](successfulJoinCount);
-        for (uint256 i = 0; i < successfulJoinCount; i++) {
-            messages[i] = Message({
-                messageType: MESSAGE_TYPE_JOIN,
-                participant: filteredJoinChannels[i].participant,
-                balance: filteredJoinChannels[i].balance,
-                data: abi.encode(filteredJoinChannels[i])
-            });
-        }
-        (messageBlock, newTotalDeposits) = _appendInboundMessages(channelId, messages);
-
-        return (messageBlock, newTotalDeposits, filteredJoinChannels);
+        return _depositAssetsComposable(joinChannels);
     }
 
     /// @dev Callable only by diamond facets - performs the withdrawal of the specific assets by interpreting `exitChannel` - returns bool success
@@ -389,6 +348,29 @@ contract StateChannelManagerProxy is StateChannelCommon {
     }
 
     // ********** private/internal functions **********
+
+    function _depositAssetsComposable(JoinChannel[] memory joinChannels)
+        internal
+        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
+    {
+        require(joinChannels.length > 0, ErrorNoJoinChannelProvided());
+        bytes32 channelId = joinChannels[0].channelId;
+
+        // Build message block representing the inbound joins; any failed deposit reverts the whole batch
+        Message[] memory messages = new Message[](joinChannels.length);
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            bytes memory result =
+                _delegatecall(consumerFacetAddress, abi.encodeCall(AConsumerFacet.deposit, (joinChannels[i])));
+            if (!abi.decode(result, (bool))) revert ErrorJoinChannelAtomicFailure(i, joinChannels[i].participant);
+            messages[i] = Message({
+                messageType: MESSAGE_TYPE_JOIN,
+                participant: joinChannels[i].participant,
+                balance: joinChannels[i].balance,
+                data: abi.encode(joinChannels[i])
+            });
+        }
+        return _appendInboundMessages(channelId, messages);
+    }
 
     /// @dev A transition the machine rejected is an invalid transition and stays a verdict for
     /// the caller. A machine frame that refused to run without its full stipend, or that ran out

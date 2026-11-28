@@ -15,6 +15,7 @@
 - [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
 - [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)
 - [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+- [`REQ-LIF-11-KEEN0N` (Open records the agreed commitment)](../../../../../specification/settlement/lifecycle.md#req-lif-11-keen0n)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
   Contradicts: `fallback` delegatecalls every unregistered selector to the consumer facet, so its `deposit`/`withdraw` are externally callable ([`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../../../../open-questions.md#oq-17-6z5q0j)).
@@ -31,22 +32,20 @@
 
 Opening and calldata posting
 
-- Setup: Open with valid/dup/zero ids, unanimous and short signatures, atomic and partial deposits, terms at and past their opening deadline, a duplicate open after the deadline; post calldata within/after the window, as non-author, and twice
+- Setup: Open with valid/dup/zero ids, unanimous and short signatures, one participant, succeeding and failing deposits, a consumer whose genesis hook reverts, non-empty opening data, terms at and past their opening deadline, a duplicate open after the deadline and a reopen after a full close; post calldata within/after the window, as non-author, and twice
 - Oracle: Only valid unanimous opens within their deadline store genesis; an open stores the genesis inbound record under the full emitted block's hash; posting guards enforce author/no-overwrite/deadline; with valid unanimous signatures, fewer balances than participants reverts the open with panic `0x32`, and an `address(0)` participant slot reverts at the unanimous signature check; either way no channel opens ([`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag))
 
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P1` — valid open
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P2` — duplicate channel id
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P3` — short threshold
-- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P4` — atomic deposits open
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P4` — a failing deposit reverts the whole open, naming its index and participant
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P5` — non-author post revert
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P6` — with valid unanimous signatures, fewer balances than participants reverts the open with panic `0x32` and no channel opens ([`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag))
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P7` — zero channel id
-- [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P8` — partial-deposit open
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P9` — overwrite post revert
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P10` — post-deadline post revert
 - [ ] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P11` — every real participant signs and the `address(0)` slot carries a signature from a key outside the list: the open reverts at the unanimous signature check and no channel opens ([`DEF-1-92NTAG`](../../../../../audit/open-findings.md#def-1-92ntag))
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12` — duplicate participants rejected
-- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P13` — partial-deposit open revert carries the count of SUCCESSFUL joins, not the submitted participant count
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P14` — overwrite post revert carries the fork id, transaction count, posting participant and the stored commitment
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P15` — non-author post revert carries the block author and the actual sender
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P16` — a participant list larger than the channel's configured participant maximum is rejected, naming the requested and permitted sizes
@@ -58,6 +57,11 @@ Opening and calldata posting
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P22` — a canonical post stores the signed-block/timestamp commitment, including a retry at a previously rejected key
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P24` — an admitted open emits inbound JOIN message data equal to the canonical encoding of each admitted join
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P25` — an open stores the genesis inbound block under the hash of the full emitted block: it is found, it is the snapshot's inbound head at height 1 with the open's deposit total, no participant is pending and the block does not read as uncommitted
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P26` — fewer than two participants reverts naming the participant count before any deposit
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P27` — open stores the signed genesis hash, the terms' participants, the deposit tip and the inclusion time, and the fork id hashes the snapshot data
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P28` — open succeeds with a consumer whose genesis hook reverts, so it never calls the hook
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P29` — `ChannelOpened` carries the stored snapshot and the opening data
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P30` — the already-open check passes after a full close, so the ID opens again
 
 ## UNIT-TEST-MANAGER-PROXY-2-KJRMB8
 
@@ -75,12 +79,10 @@ Selector routing, interface agreement and confinement
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P7` — every routed state-snapshot selector resolves to that facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P8` — every routed join-channel selector resolves to that facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P9` — every routed state-proof selector resolves to that facet
-- [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P10` — a consumer-facet call reaches the consumer facet through the fallback
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P10` — a consumer-facet call reaches the consumer facet through the fallback: the genesis hook answers through the diamond as on the facet
 - [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P11` — withdrawAssetsComposable direct revert
 - [ ] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P12` — executeStateTransition direct revert
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P13` — atomic deposit failure rolls back prior adapter effects
-- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P14` — non-atomic deposit filters failures and appends only successful deposits
-- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P15` — all-failed deposit batch reverts without an inbound block
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P16` — empty deposit batch reverts before adapter execution
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P17` — every routed utility-view selector resolves to the utility facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P18` — the utility facet's stateless helpers are absent from the routing table
@@ -99,6 +101,7 @@ Selector routing, interface agreement and confinement
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P32` — constructor rejects a codeless routed target with the exact selector and address
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P33` — a registered selector executes on a deployed facet
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34` — routed open-channel count and page selectors resolve through the utility facet
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P36` — a deposit batch whose deposits all succeed appends one JOIN message per deposit and advances the inbound head and totals
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P35` — an atomic deposit failure reached through `joinChannel` names the failing batch index and that join’s participant
 
 ## UNIT-TEST-MANAGER-PROXY-3-C3NY4X

@@ -5,11 +5,13 @@ import "../StateChannelManagerInterface.sol";
 import "./StateChannelManagerStorage.sol";
 
 abstract contract AConsumerFacet is StateChannelManagerStorage {
-    function openChannelGenesis(JoinChannel[] memory successfulJoinChannels, bytes memory optionalOpeningData)
+    /// @dev The genesis state for the opening joins; every signer and observer calls it off-chain, `open` never does.
+    ///     The SDK runs it on a local copy of this facet's code, so it must call no other contract (no external library).
+    function openChannelGenesis(JoinChannel[] memory joinChannels, bytes memory optionalOpeningData)
         external
         pure
         virtual
-        returns (bytes memory encodedGenesisState, address[] memory participants);
+        returns (bytes memory encodedGenesisState);
 
     function deposit(JoinChannel memory joinChannel) external virtual returns (bool);
 

@@ -40,10 +40,3 @@ function _shrinkExitChannelArray(ExitChannel[] memory arr, uint256 newLength) pu
     }
     return arr;
 }
-
-function _shrinkJoinChannelArray(JoinChannel[] memory arr, uint256 newLength) pure returns (JoinChannel[] memory) {
-    assembly ("memory-safe") {
-        mstore(arr, newLength)
-    }
-    return arr;
-}

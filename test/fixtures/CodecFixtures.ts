@@ -45,7 +45,7 @@ export const codecValues = {
             { amount: 30n, data: factory.hexString(4) }
         ],
         deadlineTimestamp: 41n,
-        isAtomic: true,
+        genesisStateHash: factory.hash(),
         data: factory.hexString(3)
     }),
     blockConfirmation: () => factory.blockConfirmation(),

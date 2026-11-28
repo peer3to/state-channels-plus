@@ -3,6 +3,7 @@ import {
     OPEN_CHANNEL_DEADLINE_SECONDS,
     OPEN_CHANNEL_MIN_REMAINING_SECONDS,
     compareAddresses,
+    buildOpenChannel,
     deriveNegotiatedChannelId,
     getOpenChannelProposalMismatch,
     type Address
@@ -58,8 +59,10 @@ type MatchedAttempt = LobbyMatch & {
     proposalRequestInFlight: boolean;
     openingSubmissionStarted: boolean;
     observedOpenHandoff: boolean;
-    /** This runtime's ChannelOpened handling (genesis install) finished. */
+    /** This runtime's ChannelOpened handling finished; a listed participant installed its genesis first. */
     ownGenesisInstalled: boolean;
+    /** The genesis this runtime derived for the terms it signed. */
+    encodedSignedGenesisState?: string;
     classifyObservedOpening?: Promise<void>;
     timeoutHandle?: ReturnType<typeof setTimeout>;
     unsubscribeDisconnected?: () => void;
@@ -170,7 +173,7 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
 
     /**
      * Application opening data placed in `OpenChannel.data` and handed to the
-     * consumer facet's genesis hook on-chain. The default root opens with no
+     * consumer facet's genesis hook by every participant and observer. The default root opens with no
      * data. A custom root overrides this to supply its genesis; the result
      * MUST be a pure function of the agreed channel, participants, and
      * balances, because the lower address builds the proposal with it and the
@@ -431,6 +434,44 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             this.protocolFailure(attempt, `proposal mismatch: ${mismatch}`);
             throw new Error(`Proposal mismatch: ${mismatch}`);
         }
+        let expected: OpenChannelStruct;
+        let encodedExpectedGenesisState: string;
+        try {
+            ({
+                openChannel: expected,
+                encodedGenesisState: encodedExpectedGenesisState
+            } = await buildOpenChannel(
+                this.p2pManager.stateManager.diamondStateMachine
+                    .localDiamondContract,
+                {
+                    channelId: attempt.channelId,
+                    participants,
+                    balances,
+                    deadlineTimestamp: decoded.deadlineTimestamp,
+                    data: expectedData
+                }
+            ));
+        } catch (error) {
+            // after the lower signed, a failure here burns the opening window;
+            // the lower counts it at the deadline
+            await this.clearAttempt(
+                attempt,
+                `genesis unavailable: ${errorMessage(error)}`,
+                this.failureOutcome(attempt)
+            );
+            throw new Error("Genesis unavailable");
+        }
+        if (this.state.attempt !== attempt) {
+            return { status: "submitted" };
+        }
+        if (
+            ethers.hexlify(decoded.genesisStateHash) !==
+            expected.genesisStateHash
+        ) {
+            this.protocolFailure(attempt, "genesis state hash mismatch");
+            throw new Error("Genesis state hash mismatch");
+        }
+        attempt.encodedSignedGenesisState = encodedExpectedGenesisState;
 
         const { signature } = await SignatureUtils.signOpenChannel(
             decoded,
@@ -512,6 +553,17 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
         );
     }
 
+    /** The genesis this runtime derived and signed for `channelId`, while its attempt lasts. */
+    public encodedSignedGenesisState(channelId: BytesLike): string | undefined {
+        const attempt = this.state.attempt;
+        if (
+            !attempt ||
+            ethers.hexlify(attempt.channelId) !== ethers.hexlify(channelId)
+        )
+            return undefined;
+        return attempt.encodedSignedGenesisState;
+    }
+
     private async runLowerAddressNegotiation(
         attempt: MatchedAttempt
     ): Promise<void> {
@@ -566,14 +618,32 @@ export default class OpenChannelNegotiationService extends ANetworkRpcService<
             if (this.state.attempt !== attempt) return;
             const deadlineTimestamp =
                 Clock.getTimeInSeconds() + OPEN_CHANNEL_DEADLINE_SECONDS;
-            const openChannel: OpenChannelStruct = {
+            const openingTerms = {
                 channelId: attempt.channelId,
                 participants,
                 balances,
                 deadlineTimestamp,
-                isAtomic: true,
                 data
             };
+            let openChannel: OpenChannelStruct;
+            try {
+                const built = await buildOpenChannel(
+                    this.p2pManager.stateManager.diamondStateMachine
+                        .localDiamondContract,
+                    openingTerms
+                );
+                openChannel = built.openChannel;
+                attempt.encodedSignedGenesisState = built.encodedGenesisState;
+            } catch (error) {
+                // nothing is signed yet, so neither peer is penalized
+                await this.clearAttempt(
+                    attempt,
+                    `genesis unavailable: ${errorMessage(error)}`,
+                    this.failureOutcome(attempt)
+                );
+                return;
+            }
+            if (this.state.attempt !== attempt) return;
             const { encoded, signature } = await SignatureUtils.signOpenChannel(
                 openChannel,
                 this.p2pManager.stateManager.signer

@@ -441,6 +441,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
     /**
      * Creates a standalone EVM state machine
      * @param deployStateMachine A deployer that creates the replicated state machine locally
+     * @param consumerFacetCode The deployed consumer facet's code: the local diamond runs its pure genesis hook
      * @param contractInterface The interface of the state machine contract
      * @returns A new EvmStateMachine instance
      */
@@ -448,6 +449,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         contractExecutor: AContractExecutor,
         localStateMachineAddress: Address,
         diamondStateMachineAddress: Address,
+        consumerFacetCode: ethers.BytesLike,
         contractInterface: ethers.Interface,
         signer: Signer,
         timeConfig: TimeConfig,
@@ -467,6 +469,7 @@ class EvmDiamondStateMachine extends ADiamondStateMachine {
         const diamondResult = await deployLocalDiamondWithStateMachineAddress(
             diamondStateMachineAddress,
             localSigner,
+            consumerFacetCode,
             timeConfig,
             disputeExecutionGasLimit
         );

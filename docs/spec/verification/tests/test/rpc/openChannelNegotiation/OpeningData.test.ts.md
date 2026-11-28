@@ -5,7 +5,8 @@ Exercises: [OpenChannelNegotiationService.ts](../../../../../implementation/sour
 
 ## Overview
 
-Each test starts one runtime with a custom RPC root and drives it through a worker-side probe.
+Each test starts one runtime with a custom RPC root on a Math consumer whose genesis folds in the
+opening data (`OpeningDataMathConsumerFacet`) and drives it through a worker-side probe.
 The probe registers a peer wallet on the chosen side of the address order, commits an ordinary
 matched negotiation with balances 321 (local) and 700 (peer), and plays the peer's side of the
 term exchange and proposal by hand: as the higher peer it answers the local proposal and submits
@@ -19,12 +20,43 @@ the agreed terms in address order for the root), the proposal data, the `opened`
 chain-open state. The failure tests fail the hook and check the whole result: thrown error (none
 for the lower role, "Opening data unavailable" for the higher), `retry` outcome, attempt and
 selected channel ID cleared, no proposal frame, no open, and no blacklist, strike or close. The
-late-settlement tests hold the hook, cancel the attempt with `dispose` (outcome `cancelled`),
+late-settlement tests hold the hook, clear the attempt (outcome `retry`),
 start a replacement with a new peer, then resolve or reject the held call; they check that the
 replacement is still the current attempt with its channel selection, deadline handle and pending
 outcome, that the old attempt produced no proposal and no open (and, for the higher role, what its
 pending proposal returned), and that the replacement then opens. The last test adds the chain
 participant set of the replacement and the old peer's blacklist, strikes and transport state.
+
+The default and derived success tests also return the proposal's genesis hash, the hash the genesis
+hook derives for the signed terms and the hash the chain recorded; the lower-role tests check all three
+are equal, the higher-role tests check the chain's against the derived one. The success tests count the genesis hook calls that reach the chain until the outcome: none for the
+lower role, one for the higher role, the probe's own proposal hash, so both roles derive locally. The derived tests also check
+that the signed hash differs from the hash the hook derives for the same terms with empty data, and that
+the runtime installed a genesis with the chain's hash. One
+more altered-proposal test sends the deriving higher role the agreed data with the genesis hash of empty
+data: refused as a genesis mismatch, the proposer blacklisted, no open. Two genesis-failure tests
+agree a peer balance of `MaxUint256`, which the real Math hook rejects on its checked sum, and check the
+same whole result as the derivation failures ("Genesis unavailable" for the higher role). Two
+altered-proposal tests send the higher role a proposal with a hash it never derived, or with the
+counterparty balance changed to `MaxUint256`: both are refused, the proposer blacklisted and the attempt
+cleared with no open; the balance case fails as a balance mismatch, so the term check runs before the
+hook.
+
+The countersign-failure test plays the higher peer against a lower-address runtime: the lower derives
+the hash through the real Math hook, signs and sends the proposal, and the probe answers it with the
+error "Genesis unavailable". The probe captures the opening-deadline task the lower scheduled and runs
+it: the proposal's hash equals the hook's, the peer has no strike before the deadline and one after it,
+is not blacklisted, the attempt ends `retry` and cleared, and the channel never opens.
+
+Four more late-settlement tests hold the old attempt's genesis hook call instead of its opening data
+(the probe holds the hook's call on the runtime's local executor) and resolve or reject it after the replacement started,
+with the same oracle as the late derivation results. The higher-role stale proposal carries a junk
+genesis hash, so a resolved late call that reached the hash check would refuse it and blacklist the old
+peer; the test asserts it is answered as submitted with no blacklist or strike. The foreign-open test plays a lower-address runtime whose
+higher peer opens the derived channel ID first with a key of its own and a hash no genesis derives
+from: the attempt ends `retry`, the peer is blacklisted, and the runtime is neither disposed nor holds
+the opened fork. Its targeted twin selects a random channel ID first and negotiates for it: the attempt
+ends `observed-target-open`, the peer is not blacklisted, and the runtime keeps running with no fork.
 
 `INV-NEG-1-6FW90P.T1.P1` (exact match co-signed) and `.P10` (locally derived non-empty data
 accepted) are covered by the higher-role tests, where the runtime receives the proposal. No
@@ -32,14 +64,26 @@ specification permutation names the stale-attempt rule; it is covered only at th
 
 ## Tests
 
-- `lower address proposes empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1
-- `higher address accepts empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P2, INV-NEG-1-6FW90P.T1.P1
+- `lower address proposes empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P1, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P12, INV-NEG-1-6FW90P.T1.P16, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P28
+- `higher address accepts empty opening data by default and opens`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P2, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P13, INV-NEG-1-6FW90P.T1.P1, UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P29
 - `lower address derives opening data from the exact agreed terms`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P3
 - `higher address derives opening data from the exact agreed terms`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P4, INV-NEG-1-6FW90P.T1.P10
+- `the lower address whose genesis hook rejects the agreed balances clears the attempt without blacklisting the peer or proposing`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P16, INV-NEG-1-6FW90P.T1.P14
+- `the higher address whose genesis hook rejects the agreed balances clears the attempt without blacklisting, co-signing or opening`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P17, INV-NEG-1-6FW90P.T1.P15
+- `the lower address whose signed proposal the higher cannot countersign for its own genesis failure counts one close at the deadline without blacklisting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P25, REQ-NEG-4-ZQ0985.T1.P20
+- `blacklists and clears a proposal whose genesis hash differs from the locally computed genesis`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P14, INV-NEG-1-6FW90P.T1.P12
+- `blacklists a proposal carrying the agreed opening data whose genesis hash the hook derives from empty data`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P27, INV-NEG-1-6FW90P.T1.P19
+- `blacklists a proposal whose altered counterparty balance the genesis hook would reject`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P15, INV-NEG-1-6FW90P.T1.P13
+- `an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P20, REQ-NEG-2-ED48TZ.T1.P8
+- `a targeted attempt whose channel another participant set opens with a hash no genesis derives from hands off to the observed open without aborting`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P23, REQ-NEG-2-ED48TZ.T1.P9
 - `lower address derivation failure clears the attempt without a proposal or penalty`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P5
-- `higher address derivation failure clears the attempt without co-signing or penalty`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P6
+- `higher address derivation failure clears the attempt without co-signing or penalizing the proposer`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P6
 - `lower address late derivation result after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P7
 - `lower address late derivation failure after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P8
 - `higher address late derivation result after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P9
 - `higher address late derivation failure after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P10
+- `lower address late genesis hash after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P18
+- `higher address late genesis hash after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P19
+- `lower address late genesis hook failure after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P21
+- `higher address late genesis hook failure after cancellation keeps the replacement attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P22
 - `replacement opens without a signature or penalty from the cancelled attempt`: UNIT-TEST-OPEN-NEGOTIATION-SERVICE-2-KVTMDA.P11

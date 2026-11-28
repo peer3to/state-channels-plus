@@ -126,7 +126,7 @@ Specification cases tested: 0/8.
 Specification cases tested: 1/7. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7.
 
 [`INV-NEG-1-6FW90P` (Negotiated-terms-only signing)](../specification/peer-communication/channel-negotiation.md#inv-neg-1-6fw90p)
-Specification cases tested: 3/11. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
+Specification cases tested: 9/16. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9.
 
 [`INV-RPC-1-SJS2T6` (Identity-bound dispatch)](../specification/peer-communication/rpc.md#inv-rpc-1-sjs2t6)
 Specification cases tested: 3/6. Untested: T1.P2, T1.P4, T1.P5.
@@ -435,7 +435,7 @@ Specification cases tested: 6/7. Untested: T1.P2.
 Specification cases tested: 6/7. Untested: T1.P5.
 
 [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
-Specification cases tested: 4/4.
+Specification cases tested: 3/3.
 
 [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)
 Specification cases tested: 4/4.
@@ -620,6 +620,12 @@ Specification cases tested: 9/9.
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 Specification cases tested: 41/41.
 
+[`REQ-LIF-11-KEEN0N` (Open records the agreed commitment)](../specification/settlement/lifecycle.md#req-lif-11-keen0n)
+Specification cases tested: 7/7.
+
+[`REQ-LIF-12-TSXRBG` (Observers install the agreed genesis)](../specification/settlement/lifecycle.md#req-lif-12-tsxrbg)
+Specification cases tested: 13/13.
+
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.
 
@@ -738,10 +744,10 @@ Specification cases tested: 8/9. Untested: T1.P6.
 Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P5.
 
 [`REQ-NEG-2-ED48TZ` (Chain-observed completion)](../specification/peer-communication/channel-negotiation.md#req-neg-2-ed48tz)
-Specification cases tested: 3/7. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
+Specification cases tested: 5/9. Untested: T1.P1, T1.P2, T1.P3, T1.P4.
 
 [`REQ-NEG-4-ZQ0985` (Committed-attempt admission and recovery)](../specification/peer-communication/channel-negotiation.md#req-neg-4-zq0985)
-Specification cases tested: 17/18. Untested: T1.P6.
+Specification cases tested: 18/19. Untested: T1.P6.
 
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.

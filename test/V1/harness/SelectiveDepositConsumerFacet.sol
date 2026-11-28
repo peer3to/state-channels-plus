@@ -5,20 +5,15 @@ import {AConsumerFacet} from "../../../contracts/V1/StateChannelDiamondProxy/ACo
 import "../../../contracts/V1/types/DataTypes.sol";
 
 /// A consumer facet that rejects a zero-amount deposit and counts the ones it
-/// accepts, so the proxy's real deposit loop can be driven to a partial
-/// outcome. Etched over the deployed consumer facet by the open and deposit
+/// accepts, so the proxy's real deposit loop can be driven to a failed
+/// outcome. Its genesis hook reverts, so an etched open proves `open` never
+/// calls it. Etched over the deployed consumer facet by the open and deposit
 /// suites.
 contract SelectiveDepositConsumerFacet is AConsumerFacet {
     bytes32 private constant DEPOSIT_COUNT_SLOT = keccak256("state-channels-plus.test.deposit-count");
 
-    function openChannelGenesis(JoinChannel[] memory, bytes memory)
-        external
-        pure
-        override
-        returns (bytes memory encodedGenesisState, address[] memory participants)
-    {
-        participants = new address[](0);
-        return (encodedGenesisState, participants);
+    function openChannelGenesis(JoinChannel[] memory, bytes memory) external pure override returns (bytes memory) {
+        revert("open must not compute the genesis");
     }
 
     function deposit(JoinChannel memory joinChannel) external override returns (bool) {

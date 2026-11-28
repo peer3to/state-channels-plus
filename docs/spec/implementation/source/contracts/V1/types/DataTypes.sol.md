@@ -9,3 +9,4 @@
 - [`INV-HIST-3-T17T78` (Snapshots commit to inbound and outbound message-stream tips)](../../../../../specification/protocol-model/history-and-commitments.md#inv-hist-3-t17t78)
 - [`REQ-MSG-1-AY3A77` (Snapshots MUST commit both stream tips + totals)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77)
 - [`REQ-DATA-2-A5HMZP` (Field and collection ordering, duplicate policy, optionality, and nested-byte…)](../../../../../specification/protocol-model/data-types.md#req-data-2-a5hmzp)
+- [`REQ-LIF-11-KEEN0N` (Open records the agreed commitment)](../../../../../specification/settlement/lifecycle.md#req-lif-11-keen0n)

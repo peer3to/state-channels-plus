@@ -47,6 +47,10 @@ is exactly what that clause leaves to the integrator. The specification-level ro
 operations themselves, so none is assigned here; the evidence maps to the proxy's implementation
 obligations instead.
 
+The consumer facet's genesis hook is declared on the interface and reached only through the
+fallback of last resort: one case resolves its selector to the consumer facet and calls it through the
+diamond, and the result equals the Math consumer facet's own answer for the same joins.
+
 ## Tests
 
 - `uses the canonical routed-facet inventory for every deployed facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P30
@@ -69,4 +73,5 @@ obligations instead.
 - `declares the implementing function's state mutability for every interface function`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P27
 - `declares the implementing function's full signature for every interface function`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P28
 - `resolves an unknown selector to the consumer facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P22
+- `routes the genesis hook through the fallback to the consumer facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P10
 - `keeps the proxy's own selectors out of the routing table`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P23

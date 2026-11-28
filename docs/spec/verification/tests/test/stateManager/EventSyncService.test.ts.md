@@ -47,6 +47,12 @@ head read that fails rejects with its error; and a head read that never settles 
 false at the timeout and at the abort. Each case that subscribes checks that no block
 listener is left behind.
 
+The empty-store recovery case drops the lagging peer's `InboundMessagesProcessed` logs from before
+the open: the genesis rebuild in `ChannelOpened` recovers the lost genesis join log into the empty store,
+so the tip equals the chain snapshot's inbound head before the probe recovers the next block. The
+start-block hold case also checks that the non-participant observer installed the genesis it rebuilt:
+its live state hash equals the opened snapshot's.
+
 ## Tests
 
 - `authoritative slash recovery returns no change for an empty chain set`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P34, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P5
@@ -57,7 +63,7 @@ listener is left behind.
 - `joins concurrent calldata recovery onto one chain query`: none
 - `run already held → returned with no chain query`: none
 - `missed inbound log → recovered by query, the run becomes walkable`: REQ-MSGSTORE-1-6ME9D7.T2.P2
-- `logs recovered into an empty inbound store set its tip to the recovered head`: REQ-MSGSTORE-1-6ME9D7.T2.P1
+- `the genesis rebuild recovers a lost genesis join log into an empty store, and a later recovery moves the tip`: REQ-MSGSTORE-1-6ME9D7.T2.P1
 - `only the inbound log we do not hold is dispatched`: none
 - `the widening span stays inside the watermark and the chain`: none
 - `gap survives recovery → undefined, no throw`: none

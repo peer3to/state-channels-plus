@@ -6,8 +6,7 @@ import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelMa
 import {SelectiveDepositConsumerFacet} from "../harness/SelectiveDepositConsumerFacet.sol";
 import {
     ErrorJoinChannelAtomicFailure,
-    ErrorNoJoinChannelProvided,
-    ErrorNoSuccessfulJoinChannel
+    ErrorNoJoinChannelProvided
 } from "../../../contracts/V1/StateChannelDiamondProxy/Errors.sol";
 import "../../../contracts/V1/types/DataTypes.sol";
 
@@ -39,7 +38,7 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
         // the zero-amount join is the second one, so index 1 is what fails
         vm.expectRevert(abi.encodeWithSelector(ErrorJoinChannelAtomicFailure.selector, uint256(1), vm.addr(BOB_PK)));
         vm.prank(address(diamond));
-        diamond.depositAssetsComposable(joins, true);
+        diamond.depositAssetsComposable(joins);
 
         assertEq(_depositCount(), 0);
         ChannelBalance memory channelBalance = diamond.getChannelBalance(CHANNEL_ID);
@@ -47,37 +46,24 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
         assertEq(channelBalance.totalDeposits.amount, 0);
     }
 
-    function test_depositAssetsComposable_nonAtomicFiltersFailedDeposit() public {
-        JoinChannel[] memory joins = _joins(100, 0);
+    function test_depositAssetsComposable_allSucceed_appendsOneJoinMessagePerDeposit() public {
+        JoinChannel[] memory joins = _joins(100, 50);
 
         vm.prank(address(diamond));
-        (MessageBlock memory messageBlock, Balance memory totalDeposits, JoinChannel[] memory successfulJoins) =
-            diamond.depositAssetsComposable(joins, false);
+        (MessageBlock memory messageBlock, Balance memory totalDeposits) = diamond.depositAssetsComposable(joins);
 
-        assertEq(successfulJoins.length, 1);
-        assertEq(successfulJoins[0].participant, joins[0].participant);
-        assertEq(messageBlock.messages.length, 1);
+        assertEq(messageBlock.messages.length, 2);
         assertEq(messageBlock.messages[0].participant, joins[0].participant);
+        assertEq(messageBlock.messages[1].participant, joins[1].participant);
+        assertEq(keccak256(messageBlock.messages[1].data), keccak256(abi.encode(joins[1])));
         assertEq(messageBlock.blockHeight, 1);
-        assertEq(totalDeposits.amount, 100);
-        assertEq(_depositCount(), 1);
+        assertEq(totalDeposits.amount, 150);
+        assertEq(_depositCount(), 2);
 
         ChannelBalance memory channelBalance = diamond.getChannelBalance(CHANNEL_ID);
+        assertEq(channelBalance.latestInboundMessageBlockHash, keccak256(abi.encode(messageBlock)));
         assertEq(channelBalance.latestInboundMessageBlockHeight, 1);
-        assertEq(channelBalance.totalDeposits.amount, 100);
-    }
-
-    function test_depositAssetsComposable_allFailedRejected() public {
-        JoinChannel[] memory joins = _joins(0, 0);
-
-        vm.expectRevert(ErrorNoSuccessfulJoinChannel.selector);
-        vm.prank(address(diamond));
-        diamond.depositAssetsComposable(joins, false);
-
-        assertEq(_depositCount(), 0);
-        ChannelBalance memory channelBalance = diamond.getChannelBalance(CHANNEL_ID);
-        assertEq(channelBalance.latestInboundMessageBlockHeight, 0);
-        assertEq(channelBalance.totalDeposits.amount, 0);
+        assertEq(channelBalance.totalDeposits.amount, 150);
     }
 
     function test_depositAssetsComposable_emptyBatchRejected() public {
@@ -85,7 +71,7 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
 
         vm.expectRevert(ErrorNoJoinChannelProvided.selector);
         vm.prank(address(diamond));
-        diamond.depositAssetsComposable(joins, false);
+        diamond.depositAssetsComposable(joins);
 
         assertEq(_depositCount(), 0);
     }
@@ -94,7 +80,7 @@ contract StateChannelManagerProxyDepositTest is DiamondHarness {
         JoinChannel[] memory joins = _joins(100, 100);
 
         vm.expectRevert("Only self (facet) can call this (diamond) function");
-        diamond.depositAssetsComposable(joins, false);
+        diamond.depositAssetsComposable(joins);
 
         assertEq(_depositCount(), 0);
     }

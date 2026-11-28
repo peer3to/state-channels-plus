@@ -1,6 +1,7 @@
 import StateSnapshot from "@/models/StateSnapshot";
+import { openChannelJoins } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { Bytes } from "@/types/types";
-import { SignatureUtils } from "@/utils";
+import { Codec, SignatureUtils, Type } from "@/utils";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
     deployMathChannelProxyFixture,
@@ -51,7 +52,7 @@ describe("StateChannelManagerProxy", function () {
         jc2Signed = await SignatureUtils.signJoinChannel(jc2, secondSigner);
 
         // Create open channel test objects
-        openChannel = createOpenChannelTestObject([
+        openChannel = await createOpenChannelTestObject(mathChannelManager, [
             firstSigner.address,
             secondSigner.address
         ]);
@@ -63,7 +64,8 @@ describe("StateChannelManagerProxy", function () {
 
     describe("Open Channel - MathStateChannel", function () {
         it("enumerates successful opens in append order with safe page boundaries", async function () {
-            const secondOpenChannel = createOpenChannelTestObject(
+            const secondOpenChannel = await createOpenChannelTestObject(
+                mathChannelManager,
                 [firstSigner.address, secondSigner.address],
                 { channelId: "open-channel-registry-second" }
             );
@@ -185,6 +187,101 @@ describe("StateChannelManagerProxy", function () {
                     openChannel.channelId
                 );
             });
+            const opened = receipt!.logs
+                .map((log) => mathChannelManager.interface.parseLog(log))
+                .find((parsed) => parsed?.name === "ChannelOpened")!;
+            expect(opened.args.openingData).to.equal(openChannel.data);
+            expect(
+                opened.args.stateSnapshot.snapshotData.stateMachineStateHash
+            ).to.equal(openChannel.genesisStateHash);
+        });
+
+        it("the joins built off-chain for the terms are the JOIN messages open stores, in participant order", async function () {
+            const receipt = await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: openChannelSigned.encoded,
+                    signatures: await Promise.all(
+                        [firstSigner, secondSigner].map((signer) =>
+                            SignatureUtils.signOpenChannel(
+                                openChannel,
+                                signer
+                            ).then((s) => s.signature as Bytes)
+                        )
+                    )
+                })
+            ).wait();
+            const inbound = receipt!.logs
+                .map((log) => mathChannelManager.interface.parseLog(log))
+                .find((parsed) => parsed?.name === "InboundMessagesProcessed")!;
+
+            expect(
+                inbound.args.messageBlock.messages.map(
+                    (message: { data: string }) => message.data
+                )
+            ).to.deep.equal(
+                openChannelJoins(openChannel).map((join) =>
+                    Codec.encode(join, Type.JoinChannel)
+                )
+            );
+        });
+
+        it("8 participants - success records the signed genesis commitment", async function () {
+            const participants = (await ethers.getSigners()).slice(0, 8);
+            const terms = await createOpenChannelTestObject(
+                mathChannelManager,
+                participants.map((signer) => signer.address),
+                { channelId: "open-eight-participants" }
+            );
+            const signed = await Promise.all(
+                participants.map((signer) =>
+                    SignatureUtils.signOpenChannel(terms, signer)
+                )
+            );
+
+            await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: signed[0].encoded,
+                    signatures: signed.map((s) => s.signature as Bytes)
+                })
+            ).wait();
+
+            const snapshot = await mathChannelManager.getStateSnapshot(
+                terms.channelId
+            );
+            expect(snapshot.snapshotData.participants).to.deep.equal(
+                participants.map((signer) => signer.address)
+            );
+            expect(snapshot.snapshotData.stateMachineStateHash).to.equal(
+                terms.genesisStateHash
+            );
+        });
+
+        it("opens with a genesis hash no genesis derives from: the chain records it unchecked", async function () {
+            const junkHash = ethers.id("no genesis derives from this");
+            const terms = await createOpenChannelTestObject(
+                mathChannelManager,
+                [firstSigner.address, secondSigner.address],
+                { channelId: "open-unchecked-hash", genesisStateHash: junkHash }
+            );
+            const signed = await Promise.all(
+                [firstSigner, secondSigner].map((signer) =>
+                    SignatureUtils.signOpenChannel(terms, signer)
+                )
+            );
+
+            await (
+                await mathChannelManager.open({
+                    encodedOpenChannel: signed[0].encoded,
+                    signatures: signed.map((s) => s.signature as Bytes)
+                })
+            ).wait();
+
+            const snapshot = await mathChannelManager.getStateSnapshot(
+                terms.channelId
+            );
+            expect(snapshot.snapshotData.stateMachineStateHash).to.equal(
+                junkHash
+            );
         });
 
         it("2 participants signatures not inorder - success", async function () {
@@ -318,18 +415,11 @@ describe("StateChannelManagerProxy", function () {
             });
             const openReceipt = await openTx.wait();
 
-            const parsedOpenEvent = openReceipt?.logs
-                .map((log) => {
-                    try {
-                        return mathChannelManager.interface.parseLog(log);
-                    } catch {
-                        return null;
-                    }
-                })
-                .find((parsed) => parsed && parsed.name === "ChannelOpened");
-            expect(parsedOpenEvent, "ChannelOpened event not found").to.exist;
-            const channelOpenedEvent = parsedOpenEvent!;
-            const genesisState = channelOpenedEvent.args.encodedState as string;
+            expect(openReceipt?.status).to.equal(1);
+            const genesisState = await mathChannelManager.openChannelGenesis(
+                openChannelJoins(openChannel),
+                openChannel.data
+            );
 
             const forcedAmount = 250n;
             const join = {
@@ -622,10 +712,10 @@ describe("StateChannelManagerProxy", function () {
 
         it("2 participants channelId cannot be 0x0 - fail", async function () {
             // Create OpenChannel with channelId = 0x0
-            const invalidOpenChannel = createOpenChannelTestObject([
-                firstSigner.address,
-                secondSigner.address
-            ]);
+            const invalidOpenChannel = await createOpenChannelTestObject(
+                mathChannelManager,
+                [firstSigner.address, secondSigner.address]
+            );
             invalidOpenChannel.channelId =
                 "0x0000000000000000000000000000000000000000000000000000000000000000";
 
@@ -653,12 +743,14 @@ describe("StateChannelManagerProxy", function () {
 
         it("2 participants amount 0 - success with zero balance", async function () {
             // Create OpenChannel with amount 0
-            const openChannelWithZeroBalance = createOpenChannelTestObject(
-                [firstSigner.address, secondSigner.address],
-                {
-                    initialBalance: 0
-                }
-            );
+            const openChannelWithZeroBalance =
+                await createOpenChannelTestObject(
+                    mathChannelManager,
+                    [firstSigner.address, secondSigner.address],
+                    {
+                        initialBalance: 0
+                    }
+                );
 
             const res = await mathChannelManager.open({
                 encodedOpenChannel: await SignatureUtils.signOpenChannel(

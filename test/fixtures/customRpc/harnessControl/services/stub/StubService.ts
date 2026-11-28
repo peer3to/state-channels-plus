@@ -3,7 +3,10 @@ import { EvidenceComparisonRecorder } from "./node/EvidenceComparisonRecorder";
 import { LiveBlockRetentionRecorder } from "./node/LiveBlockRetentionRecorder";
 import StubRpcMethods from "./StubRpcMethods";
 import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
-import { localExecutorConnection } from "../mirror/MirrorService";
+import {
+    interceptLocalGenesisHook,
+    localExecutorConnection
+} from "../mirror/MirrorService";
 import { recoverSigner } from "@/cache";
 import Clock from "@/Clock";
 import type DisputeBuilder from "@/disputeManager/DisputeBuilder";
@@ -63,6 +66,7 @@ import type {
 import type { DisputeFraudProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import {
     type ContractTransactionResponse,
+    dataSlice,
     getBytes,
     hexlify,
     id,
@@ -866,6 +870,10 @@ export class StubService extends ANetworkRpcService<
     private failedDisputeCommittedCalls = 0;
     /** Dispute-log handlings held in flight until a dispute log query answered. */
     disputeCommittedHandlingGate?: StubGate;
+    /** Inbound-log handlings held in flight until the inbound hold is restored. */
+    inboundMessageHandlingGate?: StubGate;
+    /** Restores the local genesis hook a `failGenesisHook` intercepts. */
+    private genesisHookRestore?: () => void;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Every contract log held by `holdContractLogs`, first delivery each, in arrival order. */
@@ -5117,6 +5125,30 @@ export class StubService extends ANetworkRpcService<
         if (original === undefined) return false;
         this.chainProvider.call = original as typeof this.chainProvider.call;
         this.stubOriginals.delete("onChainSlashesRead");
+        return true;
+    }
+
+    /**
+     * Make the local diamond's genesis hook fail: a real revert (the call runs
+     * with its arguments cut), or `message` thrown outside the EVM, as the
+     * executor itself failing.
+     */
+    failGenesisHook(message: string, failure: "revert" | "executor"): void {
+        this.restoreGenesisHook();
+        this.genesisHookRestore = interceptLocalGenesisHook(
+            this.sm,
+            async (data, forward) => {
+                if (failure === "executor") throw new Error(message);
+                return forward(dataSlice(data, 0, 4));
+            }
+        );
+    }
+
+    restoreGenesisHook(): boolean {
+        const restore = this.genesisHookRestore;
+        if (!restore) return false;
+        restore();
+        this.genesisHookRestore = undefined;
         return true;
     }
 

@@ -55,21 +55,16 @@ contract JoinChannelFacetHarness is JoinChannelFacet, DisputeWindowSeeding {
         depositShouldFail = shouldFail;
     }
 
-    function depositAssetsComposable(JoinChannel[] memory joinChannels, bool)
+    function depositAssetsComposable(JoinChannel[] memory joinChannels)
         external
-        returns (
-            MessageBlock memory messageBlock,
-            Balance memory newTotalDeposits,
-            JoinChannel[] memory successfulJoins
-        )
+        returns (MessageBlock memory messageBlock, Balance memory newTotalDeposits)
     {
         if (depositShouldFail) {
             revert ErrorJoinChannelAtomicFailure(STUB_FAILURE_INDEX, STUB_FAILURE_PARTICIPANT);
         }
         depositCalled = true;
         depositedParticipant = joinChannels[0].participant;
-        successfulJoins = joinChannels;
-        return (messageBlock, newTotalDeposits, successfulJoins);
+        return (messageBlock, newTotalDeposits);
     }
 
     /// Exposes the internal snapshot reads so the facet's storage effects can be asserted directly.

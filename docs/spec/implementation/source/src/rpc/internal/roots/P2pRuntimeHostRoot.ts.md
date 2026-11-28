@@ -14,6 +14,7 @@
 - [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+- [`REQ-ENFSM-3-JZK0FB` (Genesis derivation)](../../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-3-jzk0fb)
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM
 

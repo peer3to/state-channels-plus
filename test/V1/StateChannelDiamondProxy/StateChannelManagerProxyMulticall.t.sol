@@ -118,8 +118,9 @@ contract StateChannelManagerProxyMulticallTest is DiamondHarness {
         uint256[] memory pks = new uint256[](2);
         pks[0] = SIGNER_PK;
         pks[1] = SECOND_SIGNER_PK;
-        return abi.encodeCall(
-            StateChannelManagerInterface.open, (_openChannelConfirmation(channelId, pks, new uint256[](2), true))
-        );
+        return
+            abi.encodeCall(
+                StateChannelManagerInterface.open, (_openChannelConfirmation(channelId, pks, new uint256[](2)))
+            );
     }
 }

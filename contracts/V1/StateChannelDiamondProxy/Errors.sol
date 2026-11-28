@@ -54,7 +54,6 @@ error ErrorJoinChannelParticipantAlreadyExists(bytes32 channelId, address partic
 error ErrorTopUpBalanceParticipantNotFound(bytes32 channelId, address participant);
 error ErrorTopUpBalanceParticipantSlashed(address participant);
 error ErrorNoJoinChannelProvided();
-error ErrorNoSuccessfulJoinChannel();
 error ErrorJoinChannelAtomicFailure(uint256 joinChannelIndex, address participant);
 
 //Inbound message

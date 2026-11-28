@@ -21,8 +21,17 @@ describe("OpenChannelNegotiationService opening data", function () {
 
         expect(result.proposalData).to.equal("0x");
         expect(result.derivationCalls).to.deep.equal([]);
+        // the proposer's hook runs on its local diamond
+        expect(result.chainGenesisCalls).to.equal(0);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
+        // the proposer signs the hash its hook derives for the signed terms
+        expect(result.proposalGenesisStateHash).to.equal(
+            result.derivedGenesisStateHash
+        );
+        expect(result.chainGenesisStateHash).to.equal(
+            result.proposalGenesisStateHash
+        );
     });
 
     it("higher address accepts empty opening data by default and opens", async function () {
@@ -33,8 +42,13 @@ describe("OpenChannelNegotiationService opening data", function () {
 
         expect(result.expectedData).to.equal("0x");
         expect(result.derivationCalls).to.deep.equal([]);
+        // only the probe's own proposal hash reaches the chain
+        expect(result.chainGenesisCalls).to.equal(1);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
+        expect(result.chainGenesisStateHash).to.equal(
+            result.derivedGenesisStateHash
+        );
     });
 
     it("lower address derives opening data from the exact agreed terms", async function () {
@@ -49,8 +63,24 @@ describe("OpenChannelNegotiationService opening data", function () {
             { amount: "700", data: "0x5678" }
         ]);
         expect(result.proposalData).to.equal(result.expectedData);
+        // the proposer's hook runs on its local diamond
+        expect(result.chainGenesisCalls).to.equal(0);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
+        expect(result.proposalGenesisStateHash).to.equal(
+            result.derivedGenesisStateHash
+        );
+        expect(result.chainGenesisStateHash).to.equal(
+            result.proposalGenesisStateHash
+        );
+        // the consumer's genesis depends on the data, so the signed hash is not the empty data's
+        expect(result.derivedGenesisStateHash).to.not.equal(
+            result.emptyDataGenesisStateHash
+        );
+        // the runtime installed a genesis with the chain's hash
+        expect(result.installedGenesisStateHash).to.equal(
+            result.chainGenesisStateHash
+        );
     });
 
     it("higher address derives opening data from the exact agreed terms", async function () {
@@ -64,8 +94,150 @@ describe("OpenChannelNegotiationService opening data", function () {
             { amount: "700", data: "0x5678" },
             { amount: "321", data: "0x1234" }
         ]);
+        // only the probe's own proposal hash reaches the chain
+        expect(result.chainGenesisCalls).to.equal(1);
         expect(result.outcomeStatus).to.equal("opened");
         expect(result.channelOpen).to.equal(true);
+        expect(result.chainGenesisStateHash).to.equal(
+            result.derivedGenesisStateHash
+        );
+        // the consumer's genesis depends on the data, so the signed hash is not the empty data's
+        expect(result.derivedGenesisStateHash).to.not.equal(
+            result.emptyDataGenesisStateHash
+        );
+        // the runtime installed a genesis with the chain's hash
+        expect(result.installedGenesisStateHash).to.equal(
+            result.chainGenesisStateHash
+        );
+    });
+
+    it("the lower address whose genesis hook rejects the agreed balances clears the attempt without blacklisting the peer or proposing", async function () {
+        const result = await fixture
+            .probe()
+            .probeGenesisFailure("lower")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "",
+            outcomeStatus: "retry",
+            attemptCleared: true,
+            channelIdCleared: true,
+            proposalFrames: 0,
+            channelOpen: false,
+            peerBlacklisted: false,
+            peerStrikes: 0,
+            peerTransportClosed: false
+        });
+    });
+
+    it("the higher address whose genesis hook rejects the agreed balances clears the attempt without blacklisting, co-signing or opening", async function () {
+        const result = await fixture
+            .probe()
+            .probeGenesisFailure("higher")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "Genesis unavailable",
+            outcomeStatus: "retry",
+            attemptCleared: true,
+            channelIdCleared: true,
+            proposalFrames: 0,
+            channelOpen: false,
+            peerBlacklisted: false,
+            peerStrikes: 0,
+            peerTransportClosed: false
+        });
+    });
+
+    it("the lower address whose signed proposal the higher cannot countersign for its own genesis failure counts one close at the deadline without blacklisting", async function () {
+        const result = await fixture
+            .probe()
+            .probeCountersignFailure()
+            .request();
+
+        // the lower derived the proposed hash through the real facet hook
+        expect(result).to.deep.equal({
+            proposalHashDerived: true,
+            strikesBeforeDeadline: 0,
+            outcomeStatus: "retry",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: false,
+            peerStrikes: 1
+        });
+    });
+
+    it("blacklists and clears a proposal whose genesis hash differs from the locally computed genesis", async function () {
+        const result = await fixture
+            .probe()
+            .probeAlteredProposal("genesis-hash")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "Genesis state hash mismatch",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: true
+        });
+    });
+
+    it("blacklists a proposal carrying the agreed opening data whose genesis hash the hook derives from empty data", async function () {
+        const result = await fixture
+            .probe()
+            .probeAlteredProposal("genesis-of-empty-data")
+            .request();
+
+        expect(result).to.deep.equal({
+            error: "Genesis state hash mismatch",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: true
+        });
+    });
+
+    it("blacklists a proposal whose altered counterparty balance the genesis hook would reject", async function () {
+        const result = await fixture
+            .probe()
+            .probeAlteredProposal("overflowing-balance")
+            .request();
+
+        // the terms check runs before the hook: an altered term, not a local failure
+        expect(result).to.deep.equal({
+            error: "Proposal mismatch: balance 0 amount mismatch",
+            attemptCleared: true,
+            channelOpen: false,
+            peerBlacklisted: true
+        });
+    });
+
+    it("an ordinary attempt whose channel ID the peer opens with another participant set and a hash no genesis derives from retries and blacklists the peer without aborting", async function () {
+        const result = await fixture
+            .probe()
+            .probeForeignGenesisOpen("ordinary")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result).to.deep.equal({
+            outcomeStatus: "retry",
+            channelOpen: true,
+            peerBlacklisted: true,
+            runtimeDisposed: false,
+            genesisInstalled: false
+        });
+    });
+
+    it("a targeted attempt whose channel another participant set opens with a hash no genesis derives from hands off to the observed open without aborting", async function () {
+        const result = await fixture
+            .probe()
+            .probeForeignGenesisOpen("targeted")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result).to.deep.equal({
+            outcomeStatus: "observed-target-open",
+            channelOpen: true,
+            peerBlacklisted: false,
+            runtimeDisposed: false,
+            genesisInstalled: false
+        });
     });
 
     it("lower address derivation failure clears the attempt without a proposal or penalty", async function () {
@@ -87,7 +259,7 @@ describe("OpenChannelNegotiationService opening data", function () {
         });
     });
 
-    it("higher address derivation failure clears the attempt without co-signing or penalty", async function () {
+    it("higher address derivation failure clears the attempt without co-signing or penalizing the proposer", async function () {
         const result = await fixture
             .probe()
             .probeDerivationFailure("higher")
@@ -162,6 +334,77 @@ describe("OpenChannelNegotiationService opening data", function () {
 
         expect(result.oldOutcome).to.equal("retry");
         expect(result.staleResult).to.equal("Opening data unavailable");
+        expect(result.oldChannelOpen).to.equal(false);
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.replacementChannelKept).to.equal(true);
+        expect(result.replacementTimeoutKept).to.equal(true);
+        expect(result.replacementOutcomePending).to.equal(true);
+        expect(result.replacementOutcome).to.equal("opened");
+        expect(result.replacementChannelOpen).to.equal(true);
+    });
+
+    it("lower address late genesis hash after cancellation keeps the replacement attempt", async function () {
+        const result = await fixture
+            .probe()
+            .probeStaleDerivation("lower", "resolve", "genesis")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result.oldOutcome).to.equal("retry");
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.replacementChannelKept).to.equal(true);
+        expect(result.replacementTimeoutKept).to.equal(true);
+        expect(result.replacementOutcomePending).to.equal(true);
+        expect(result.oldProposalFrames).to.equal(0);
+        expect(result.replacementOutcome).to.equal("opened");
+        expect(result.replacementChannelOpen).to.equal(true);
+    });
+
+    it("higher address late genesis hash after cancellation keeps the replacement attempt", async function () {
+        const result = await fixture
+            .probe()
+            .probeStaleDerivation("higher", "resolve", "genesis")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result.oldOutcome).to.equal("retry");
+        // the stale proposal's junk hash draws no mismatch verdict
+        expect(result.staleResult).to.equal("submitted");
+        expect(result.oldPeerBlacklisted).to.equal(false);
+        expect(result.oldPeerStrikes).to.equal(0);
+        expect(result.oldChannelOpen).to.equal(false);
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.replacementChannelKept).to.equal(true);
+        expect(result.replacementTimeoutKept).to.equal(true);
+        expect(result.replacementOutcomePending).to.equal(true);
+        expect(result.replacementOutcome).to.equal("opened");
+        expect(result.replacementChannelOpen).to.equal(true);
+    });
+
+    it("lower address late genesis hook failure after cancellation keeps the replacement attempt", async function () {
+        const result = await fixture
+            .probe()
+            .probeStaleDerivation("lower", "reject", "genesis")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result.oldOutcome).to.equal("retry");
+        expect(result.replacementCurrent).to.equal(true);
+        expect(result.replacementChannelKept).to.equal(true);
+        expect(result.replacementTimeoutKept).to.equal(true);
+        expect(result.replacementOutcomePending).to.equal(true);
+        expect(result.oldProposalFrames).to.equal(0);
+        expect(result.oldPeerBlacklisted).to.equal(false);
+        expect(result.replacementOutcome).to.equal("opened");
+        expect(result.replacementChannelOpen).to.equal(true);
+    });
+
+    it("higher address late genesis hook failure after cancellation keeps the replacement attempt", async function () {
+        const result = await fixture
+            .probe()
+            .probeStaleDerivation("higher", "reject", "genesis")
+            .request({ timeoutMs: fixture.openingTimeoutMs() });
+
+        expect(result.oldOutcome).to.equal("retry");
+        expect(result.staleResult).to.equal("Genesis unavailable");
+        expect(result.oldPeerBlacklisted).to.equal(false);
         expect(result.oldChannelOpen).to.equal(false);
         expect(result.replacementCurrent).to.equal(true);
         expect(result.replacementChannelKept).to.equal(true);

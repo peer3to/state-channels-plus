@@ -146,7 +146,10 @@ fresh `evidenceTime` challenge period at the replacement transaction's timestamp
 The proxy's fallback forwards every unmatched selector to the integrator's consumer facet, so
 `deposit`/`withdraw` are directly externally callable; an unguarded `withdraw` implementation
 would be drainable. Decide: a framework-level guard, or a documented integrator obligation with
-review guidance. See [enforcement/contracts.md](../specification/enforcement/contracts.md).
+review guidance. See [enforcement/contracts.md](../specification/enforcement/contracts.md). The SDK
+reads the consumer facet's address with `facetAddressForSelector(openChannelGenesis)` and runs the
+hook on a local copy through the local diamond's fallback, so a guard must keep that lookup naming
+the consumer facet and the local fallback routing the hook.
 
 <a id="oq-19-y8fdqx"></a>
 
@@ -158,11 +161,11 @@ call) and via the `DisputeInvalidBalanceInvariant` fraud proof. It is not run on
 the intended check sites, or record the omission as an accepted limitation with its risk. See
 [protocol/cross-layer-messages.md](../specification/settlement/cross-layer-messages.md) §6. Pairs with [`OQ-11-38S3SE` (Channel-balance invariant definition)](../specification/open-questions.md#oq-11-38s3se).
 
-Additional unchecked site: at `open()`, the consumer facet's
-`openChannelGenesis` return — the genesis state and participant list — is adopted without
-cross-checking the participants against the joins that actually deposited and without a balance
-check of the genesis state against total deposits. A buggy or hostile consumer can open a channel
-whose membership does not match depositors.
+Additional unchecked site: at `open()`, the manager adopts no consumer result. It records the
+genesis state hash the participants signed and takes the channel's participants from the signed
+terms; the consumer facet's `openChannelGenesis` returns no participant list and runs only
+off-chain, on every signer and observer. No party checks the genesis state's balance total against
+the deposits, so that check stays integrator-owned.
 
 <a id="oq-21-pezk9x"></a>
 

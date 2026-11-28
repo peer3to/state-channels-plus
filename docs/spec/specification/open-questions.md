@@ -357,7 +357,10 @@ Every protocol signature (blocks, transactions, joins, opens, disputes) is a pla
 EIP-191 `signMessage(keccak256(abi.encode(struct)))` — no EIP-712 domain, no chainId, no
 verifying-contract address, no protocol version, no object-type tag beyond the struct shape. And
 `OpenChannel.channelId` is caller-chosen. Consequence: signatures are replayable across manager
-deployments and across chains that host the same channelId. Decide the signed-domain policy
+deployments and across chains that host the same channelId. Opens, like every other signature,
+carry no deployment domain: since the open records the signed genesis hash unchecked, a replayed
+open also records a hash that deployment's derivation may not produce, so its deposits sit in a
+channel no runtime follows. Decide the signed-domain policy
 (bind protocol version, chain, manager deployment, object type; keep on-chain verification
 affordable) and the migration plan for proofs signed under the old scheme. Feeds the
 completeness review ([`OQ-5-4Q38M5` (Fraud-proof completeness security review)](../audit/open-questions.md#oq-5-4q38m5)). See

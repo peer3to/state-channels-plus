@@ -3232,8 +3232,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.heldSnapshotUpdatedArgs.length;
     }
 
-    /** Hold InboundMessagesProcessed events instead of handling them. */
-    public stubHoldInboundMessageEvents(): boolean {
+    /**
+     * Hold InboundMessagesProcessed events instead of handling them. With
+     * `inFlight` each dispatch stays pending and runs the real handler on
+     * restore.
+     */
+    public stubHoldInboundMessageEvents(inFlight = false): boolean {
         const eventHandler = this.service.sm.eventHandler;
         if (!this.service.stubOriginals.has("inboundMessageEvents")) {
             this.service.stubOriginals.set(
@@ -3241,10 +3245,18 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
                 eventHandler.onInboundMessagesProcessed.bind(eventHandler)
             );
         }
+        const handle = this.service.stubOriginals.get(
+            "inboundMessageEvents"
+        ) as typeof eventHandler.onInboundMessagesProcessed;
+        const gate = inFlight ? this.service.createGate() : undefined;
+        this.service.inboundMessageHandlingGate = gate;
         eventHandler.onInboundMessagesProcessed = (async (
-            ...args: unknown[]
+            ...args: Parameters<typeof handle>
         ) => {
             this.service.heldInboundMessageArgs.push(args);
+            if (!gate) return;
+            await gate.gate;
+            await handle(...args);
         }) as typeof eventHandler.onInboundMessagesProcessed;
         return true;
     }
@@ -3259,7 +3271,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         eventHandler.onInboundMessagesProcessed = restored;
         this.service.stubOriginals.delete("inboundMessageEvents");
         const held = this.service.heldInboundMessageArgs.splice(0);
-        if (replay) {
+        // in-flight dispatches run the real handler themselves
+        const gate = this.service.inboundMessageHandlingGate;
+        this.service.inboundMessageHandlingGate = undefined;
+        if (gate) {
+            gate.release();
+        } else if (replay) {
             for (const args of held) {
                 void (restored as (...a: unknown[]) => Promise<void>)(...args);
             }
@@ -3394,6 +3411,19 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public restoreOnChainSlashesRead(): boolean {
         return this.service.restoreOnChainSlashesRead();
+    }
+
+    /** Make the local diamond's genesis hook fail with `message`, as a local EVM revert or an executor failure. */
+    public stubFailGenesisHook(
+        message: string,
+        failure: "revert" | "executor"
+    ): boolean {
+        this.service.failGenesisHook(message, failure);
+        return true;
+    }
+
+    public restoreGenesisHook(): boolean {
+        return this.service.restoreGenesisHook();
     }
 
     /** Make every provider getLogs answer no logs, so no recovery query finds a missing log. */

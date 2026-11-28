@@ -24,6 +24,8 @@ abstract contract DiamondHarness is Test {
     UtilityFacet internal utilityFacet;
     FraudProofFacet internal fraudProofFacet;
     MathConsumerFacet internal consumerFacet;
+    // never etched, so signed opening terms carry the real Math genesis hash
+    MathConsumerFacet internal genesisReference;
     StateChannelManagerInterface internal deployedDiamond;
 
     // non-zero so tests check against a known value, not the contract default
@@ -63,6 +65,7 @@ abstract contract DiamondHarness is Test {
         StateProofFacet stateProof = StateProofFacet(vm.deployCode("StateProofFacet.sol:StateProofFacet"));
         utilityFacet = UtilityFacet(vm.deployCode("UtilityFacet.sol:UtilityFacet"));
         consumerFacet = MathConsumerFacet(vm.deployCode("MathConsumerFacet.sol:MathConsumerFacet"));
+        genesisReference = MathConsumerFacet(vm.deployCode("MathConsumerFacet.sol:MathConsumerFacet"));
 
         diamond = StateChannelManagerInterface(
             address(
@@ -167,17 +170,14 @@ abstract contract DiamondHarness is Test {
         return _makeSignedBlock(pk, channelId, forkId, 0, timestamp, previousBlockHash);
     }
 
-    /// An open-channel request signed by every listed participant. `isAtomic`
-    /// false lets a single deposit fail without reverting the whole batch, so a
-    /// caller can reach the guards that run after a partial open.
+    /// An open-channel request signed by every listed participant.
     function _openChannelConfirmation(
         bytes32 channelId,
         uint256[] memory participantPrivateKeys,
-        uint256[] memory amounts,
-        bool isAtomic
+        uint256[] memory amounts
     ) internal view returns (OpenChannelConfirmation memory) {
         return _openChannelConfirmationWithDeadline(
-            channelId, participantPrivateKeys, amounts, isAtomic, block.timestamp + 1 days
+            channelId, participantPrivateKeys, amounts, block.timestamp + 1 days
         );
     }
 
@@ -186,20 +186,26 @@ abstract contract DiamondHarness is Test {
         bytes32 channelId,
         uint256[] memory participantPrivateKeys,
         uint256[] memory amounts,
-        bool isAtomic,
         uint256 deadlineTimestamp
-    ) internal pure returns (OpenChannelConfirmation memory) {
+    ) internal view returns (OpenChannelConfirmation memory) {
         OpenChannel memory openChannel;
         openChannel.channelId = channelId;
         openChannel.participants = new address[](participantPrivateKeys.length);
         openChannel.balances = new Balance[](participantPrivateKeys.length);
         openChannel.deadlineTimestamp = deadlineTimestamp;
-        openChannel.isAtomic = isAtomic;
 
+        JoinChannel[] memory joins = new JoinChannel[](participantPrivateKeys.length);
         for (uint256 i = 0; i < participantPrivateKeys.length; i++) {
             openChannel.participants[i] = vm.addr(participantPrivateKeys[i]);
             openChannel.balances[i] = Balance({amount: amounts[i], data: ""});
+            joins[i] = JoinChannel({
+                channelId: channelId,
+                participant: openChannel.participants[i],
+                deadlineTimestamp: deadlineTimestamp,
+                balance: openChannel.balances[i]
+            });
         }
+        openChannel.genesisStateHash = keccak256(genesisReference.openChannelGenesis(joins, openChannel.data));
 
         bytes memory encodedOpenChannel = abi.encode(openChannel);
         bytes[] memory signatures = new bytes[](participantPrivateKeys.length);
@@ -212,9 +218,7 @@ abstract contract DiamondHarness is Test {
 
     function _openChannel(bytes32 channelId, uint256[] memory participantPrivateKeys) internal {
         deployedDiamond.open(
-            _openChannelConfirmation(
-                channelId, participantPrivateKeys, new uint256[](participantPrivateKeys.length), true
-            )
+            _openChannelConfirmation(channelId, participantPrivateKeys, new uint256[](participantPrivateKeys.length))
         );
     }
 

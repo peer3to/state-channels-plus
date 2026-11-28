@@ -34,6 +34,7 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
                         vm.deployCode("JoinChannelFacet.sol:JoinChannelFacet"),
                         vm.deployCode("StateProofFacet.sol:StateProofFacet"),
                         address(utilityFacet),
+                        address(0),
                         P2P_TIME,
                         0,
                         0,
@@ -111,20 +112,19 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
     }
 
     function test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent() public {
-        (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot, bytes memory genesisState) =
-            _openAndRecordGenesis();
+        (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot) = _openAndRecordGenesis();
         bytes32 genesisHead = keccak256(abi.encode(genesisBlock));
         assertEq(genesisSnapshot.snapshotData.latestInboundMessageBlockHash, genesisHead);
         uint256 beforeReplay = vm.snapshotState();
 
         // the open transaction's log order: InboundMessagesProcessed, then ChannelOpened
         localDiamond.onInboundMessagesProcessed(GENESIS_CHANNEL_ID, genesisBlock);
-        localDiamond.onChannelOpened(GENESIS_CHANNEL_ID, genesisSnapshot, genesisState, block.number, 1);
+        localDiamond.onChannelOpened(GENESIS_CHANNEL_ID, genesisSnapshot, block.number, 1);
         _assertGenesisMirrored(genesisBlock, genesisSnapshot);
 
         vm.revertToState(beforeReplay);
         // ChannelOpened alone stores no inbound block
-        localDiamond.onChannelOpened(GENESIS_CHANNEL_ID, genesisSnapshot, genesisState, block.number, 1);
+        localDiamond.onChannelOpened(GENESIS_CHANNEL_ID, genesisSnapshot, block.number, 1);
         assertFalse(mirror.hasInboundMessageBlock(GENESIS_CHANNEL_ID, genesisHead));
         // the inbound event after it stores the block and leaves the head at the snapshot's
         localDiamond.onInboundMessagesProcessed(GENESIS_CHANNEL_ID, genesisBlock);
@@ -132,10 +132,9 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
     }
 
     function test_onInboundMessagesProcessed_joinAfterGenesis_mirrorPendingMatchesChain() public {
-        (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot, bytes memory genesisState) =
-            _openAndRecordGenesis();
+        (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot) = _openAndRecordGenesis();
         localDiamond.onInboundMessagesProcessed(GENESIS_CHANNEL_ID, genesisBlock);
-        localDiamond.onChannelOpened(GENESIS_CHANNEL_ID, genesisSnapshot, genesisState, block.number, 1);
+        localDiamond.onChannelOpened(GENESIS_CHANNEL_ID, genesisSnapshot, block.number, 1);
 
         address joiner = vm.addr(JOINER_PK);
         JoinChannel memory join = JoinChannel({
@@ -192,19 +191,19 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
     /// block and snapshot its logs carry.
     function _openAndRecordGenesis()
         internal
-        returns (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot, bytes memory genesisState)
+        returns (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot)
     {
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = 300;
         amounts[1] = 200;
         vm.recordLogs();
-        deployedDiamond.open(_openChannelConfirmation(GENESIS_CHANNEL_ID, _twoPartyPrivateKeys(), amounts, true));
+        deployedDiamond.open(_openChannelConfirmation(GENESIS_CHANNEL_ID, _twoPartyPrivateKeys(), amounts));
         Vm.Log[] memory logs = vm.getRecordedLogs();
         genesisBlock = abi.decode(
             _logData(logs, StateChannelManagerEvents.InboundMessagesProcessed.selector, GENESIS_CHANNEL_ID),
             (MessageBlock)
         );
-        (genesisSnapshot, genesisState) = abi.decode(
+        (genesisSnapshot,) = abi.decode(
             _logData(logs, StateChannelManagerEvents.ChannelOpened.selector, GENESIS_CHANNEL_ID), (StateSnapshot, bytes)
         );
     }

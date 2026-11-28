@@ -800,7 +800,9 @@ export default class EventSyncService {
     }
 
     /** The key one contract log is scheduled under. */
-    private getEventKey(log: Log): string {
+    private getEventKey(
+        log: Pick<Log, "address" | "blockHash" | "transactionHash" | "index">
+    ): EventKey {
         // the block hash keeps a log re-mined in another block after a reorg
         // apart from the log it replaces
         return `${String(log.address).toLowerCase()}:${log.blockHash}:${log.transactionHash}:${log.index}`;
@@ -978,10 +980,19 @@ export default class EventSyncService {
         };
         switch (eventName) {
             case "ChannelOpened":
+                // the open's genesis JOIN log precedes it in its transaction
+                // -> let it store the join block, so the rebuild reads it locally
+                await Promise.allSettled(
+                    Array.from({ length: log.index }, (_, index) =>
+                        this.eventPromises.get(
+                            this.getEventKey({ ...log, index })
+                        )
+                    )
+                );
                 await this.eventHandler.onChannelOpened(
                     args.channelId,
                     args.stateSnapshot,
-                    args.encodedState,
+                    args.openingData,
                     coordinate
                 );
                 break;

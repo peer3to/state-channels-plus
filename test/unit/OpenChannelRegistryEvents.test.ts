@@ -14,11 +14,13 @@ describe("open-channel registry events", function () {
             await deployMathChannelProxyFixture(ethers);
         const { firstSigner, secondSigner } = await getSigners(ethers);
         const channels = [
-            createOpenChannelTestObject(
+            await createOpenChannelTestObject(
+                mathChannelManager,
                 [firstSigner.address, secondSigner.address],
                 { channelId: "event-registry-first" }
             ),
-            createOpenChannelTestObject(
+            await createOpenChannelTestObject(
+                mathChannelManager,
                 [firstSigner.address, secondSigner.address],
                 { channelId: "event-registry-second" }
             )

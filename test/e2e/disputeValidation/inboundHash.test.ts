@@ -1,3 +1,4 @@
+import { Status } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Bytes, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
@@ -153,11 +154,10 @@ describe("E2E: dispute validation / inboundHash", function () {
     // its own dispute is never provable fraud
     it("honest disputer whose inbound chain event lags → dispute survives, disputer not killed or slashed", async function () {
         const h = TestSession.getHarness();
-        const laggingIndex = 2;
         const attackerIndex = 1;
 
         // larger agreementTime avoids writer-timeout disputes racing the upload
-        await h.setup(3, {
+        await h.lifecycle.start(2, 0, {
             timeConfig: {
                 p2pTime: 2,
                 agreementTime: 8,
@@ -165,10 +165,13 @@ describe("E2E: dispute validation / inboundHash", function () {
                 evidenceTime: 4
             }
         });
-        // held from before the channel opens -> the lagging peer never stores
-        // inbound block 1, so its inbound store head can never move
-        await h.rpcStub.holdInboundMessageEvents(laggingIndex);
-        await h.lifecycle.openChannel();
+        // a spectator synced past the open never saw the genesis join block;
+        // with its inbound events held its store head never moves
+        const joiner = await h.join.addSpectatorDetached();
+        const laggingIndex = joiner.index;
+        const held = await h.rpcStub.holdInboundMessageEvents(laggingIndex);
+        await h.event.waitUntilPeerStatus(laggingIndex, Status.SYNCED);
+        await h.join.joinChannelWait({ joiner });
         const forkId = h.activeForkId!;
         await h.transition.advanceState({
             count: 2,
@@ -184,6 +187,14 @@ describe("E2E: dispute validation / inboundHash", function () {
             waitForFinalization: true
         });
         await h.assert.sync.peersInSyncWait();
+        // premise - the disputer's inbound store lags the snapshot it pins
+        expect(await held.heldCount()).to.be.greaterThan(0);
+        expect(
+            await h
+                .control(h.getPeer(laggingIndex))
+                .query.getLatestInboundMessageHash()
+                .request()
+        ).to.equal(null);
         h.event.resetEventSpies();
         h.contextApi.captureOriginalFork();
 

@@ -7,6 +7,7 @@ import {MESSAGE_TYPE_JOIN} from "../../../contracts/V1/types/MessageTypeHashes.s
 import {
     ErrorAtLeastTwoParticipantsRequired,
     ErrorDuplicateParticipant,
+    ErrorJoinChannelAtomicFailure,
     ErrorTooManyParticipants,
     RaceConditionChannelAlreadyOpen,
     RaceConditionOpenChannelExpired
@@ -20,9 +21,8 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
 
     uint256 internal constant SIGNER_PK = 0xA11CE;
     uint256 internal constant SECOND_SIGNER_PK = 0xB0B;
-    uint256 internal constant THIRD_SIGNER_PK = 0xCA401;
     bytes32 internal constant CHANNEL_ID = keccak256("duplicate-participants");
-    bytes32 internal constant PARTIAL_CHANNEL_ID = keccak256("partial-open");
+    bytes32 internal constant REJECTED_OPEN_CHANNEL_ID = keccak256("rejected-open");
     bytes32 internal constant DEADLINE_CHANNEL_ID = keccak256("open-deadline");
     // a deadline far from the default test timestamp, so the warp targets are unambiguous
     uint256 internal constant OPEN_DEADLINE = 1_000_000;
@@ -74,37 +74,105 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         }
     }
 
-    /// The count in the payload must be the number of SUCCESSFUL joins, not the
-    /// length of the submitted participant list. Three participants are
-    /// submitted and the consumer rejects two of the three deposits, so the two
-    /// numbers are 3 and 1 and cannot be confused.
-    function test_open_fewerThanTwoSuccessfulJoins_revertsWithSuccessfulJoinCount() public {
-        // the selective consumer rejects a zero-amount deposit, so the failing
-        // joins genuinely fail inside the proxy's real deposit loop
+    // fewer than two participants is rejected before any deposit: with a zero
+    // amount the selective consumer would otherwise fail the deposit first
+    function test_open_oneParticipant_revertsBeforeAnyDeposit() public {
         SelectiveDepositConsumerFacet selectiveConsumer = new SelectiveDepositConsumerFacet();
         vm.etch(address(consumerFacet), address(selectiveConsumer).code);
-
-        uint256[] memory participantPrivateKeys = new uint256[](3);
+        uint256[] memory participantPrivateKeys = new uint256[](1);
         participantPrivateKeys[0] = SIGNER_PK;
-        participantPrivateKeys[1] = SECOND_SIGNER_PK;
-        participantPrivateKeys[2] = THIRD_SIGNER_PK;
 
-        uint256[] memory amounts = new uint256[](3);
-        amounts[0] = 500; // the only deposit the consumer accepts
-        amounts[1] = 0;
-        amounts[2] = 0;
-
-        // non-atomic: an atomic batch reverts on the first failing deposit and
-        // never reaches the successful-join count guard
         OpenChannelConfirmation memory confirmation =
-            _openChannelConfirmation(PARTIAL_CHANNEL_ID, participantPrivateKeys, amounts, false);
+            _openChannelConfirmation(REJECTED_OPEN_CHANNEL_ID, participantPrivateKeys, new uint256[](1));
 
-        // The payload is the oracle: 1 is the number of deposits the consumer
-        // accepted, against 3 submitted addresses. A post-revert storage read
-        // would add nothing - the revert rolls every effect back, so it would
-        // hold for an implementation that never ran the deposit loop at all.
         vm.expectRevert(abi.encodeWithSelector(ErrorAtLeastTwoParticipantsRequired.selector, uint256(1)));
         diamond.open(confirmation);
+    }
+
+    // a failing deposit reverts the whole open, naming its index and participant
+    function test_open_failingDeposit_revertsTheWholeOpen() public {
+        SelectiveDepositConsumerFacet selectiveConsumer = new SelectiveDepositConsumerFacet();
+        vm.etch(address(consumerFacet), address(selectiveConsumer).code);
+        uint256[] memory participantPrivateKeys = new uint256[](2);
+        participantPrivateKeys[0] = SIGNER_PK;
+        participantPrivateKeys[1] = SECOND_SIGNER_PK;
+        uint256[] memory amounts = new uint256[](2);
+        amounts[0] = 500;
+        amounts[1] = 0; // the selective consumer rejects it
+
+        OpenChannelConfirmation memory confirmation =
+            _openChannelConfirmation(REJECTED_OPEN_CHANNEL_ID, participantPrivateKeys, amounts);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(ErrorJoinChannelAtomicFailure.selector, uint256(1), vm.addr(SECOND_SIGNER_PK))
+        );
+        diamond.open(confirmation);
+    }
+
+    function test_open_recordsTheSignedGenesisCommitment() public {
+        vm.warp(OPEN_DEADLINE - 7);
+        OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
+        OpenChannel memory terms = abi.decode(confirmation.encodedOpenChannel, (OpenChannel));
+        vm.recordLogs();
+        diamond.open(confirmation);
+        MessageBlock memory inbound = abi.decode(
+            _logData(
+                vm.getRecordedLogs(), StateChannelManagerEvents.InboundMessagesProcessed.selector, DEADLINE_CHANNEL_ID
+            ),
+            (MessageBlock)
+        );
+
+        StateSnapshot memory snapshot = diamond.getStateSnapshot(DEADLINE_CHANNEL_ID);
+        assertEq(snapshot.snapshotData.stateMachineStateHash, terms.genesisStateHash, "signed hash not recorded");
+        assertEq(snapshot.snapshotData.participants, terms.participants, "participants are not the terms'");
+        assertEq(snapshot.snapshotData.latestInboundMessageBlockHash, keccak256(abi.encode(inbound)));
+        assertEq(snapshot.snapshotData.latestInboundMessageBlockHeight, 1);
+        assertEq(snapshot.snapshotData.totalDeposits.amount, 500);
+        assertEq(snapshot.timestamp, OPEN_DEADLINE - 7, "not the inclusion time");
+        assertEq(snapshot.blockHeight, 0);
+        assertEq(snapshot.forkId, keccak256(abi.encode(snapshot.snapshotData)));
+    }
+
+    // the etched hook reverts, so the open succeeds only if the manager never calls it
+    function test_open_neverCallsTheGenesisHook() public {
+        SelectiveDepositConsumerFacet selectiveConsumer = new SelectiveDepositConsumerFacet();
+        vm.etch(address(consumerFacet), address(selectiveConsumer).code);
+        vm.warp(OPEN_DEADLINE);
+        OpenChannelConfirmation memory confirmation = _deadlineOpenConfirmation();
+
+        diamond.open(confirmation);
+
+        _assertOpenedWithDeposits();
+        assertEq(
+            diamond.getStateSnapshot(DEADLINE_CHANNEL_ID).snapshotData.stateMachineStateHash,
+            abi.decode(confirmation.encodedOpenChannel, (OpenChannel)).genesisStateHash
+        );
+    }
+
+    function test_open_emitsTheSnapshotAndTheOpeningData() public {
+        vm.warp(OPEN_DEADLINE);
+        OpenChannel memory terms = abi.decode(_deadlineOpenConfirmation().encodedOpenChannel, (OpenChannel));
+        terms.data = hex"beef";
+        bytes memory encodedTerms = abi.encode(terms);
+        OpenChannelConfirmation memory confirmation;
+        confirmation.encodedOpenChannel = encodedTerms;
+        confirmation.signatures = new bytes[](2);
+        confirmation.signatures[0] = _sign(SIGNER_PK, encodedTerms);
+        confirmation.signatures[1] = _sign(SECOND_SIGNER_PK, encodedTerms);
+        vm.recordLogs();
+
+        diamond.open(confirmation);
+
+        (StateSnapshot memory emitted, bytes memory openingData) = abi.decode(
+            _logData(vm.getRecordedLogs(), StateChannelManagerEvents.ChannelOpened.selector, DEADLINE_CHANNEL_ID),
+            (StateSnapshot, bytes)
+        );
+        assertEq(openingData, hex"beef", "event does not carry the opening data");
+        assertEq(
+            keccak256(abi.encode(emitted)),
+            keccak256(abi.encode(diamond.getStateSnapshot(DEADLINE_CHANNEL_ID))),
+            "event snapshot differs from storage"
+        );
     }
 
     // open() must reject a union larger than the enforced maximum. The client
@@ -206,17 +274,14 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         );
     }
 
-    function _deadlineOpenConfirmation() internal pure returns (OpenChannelConfirmation memory) {
+    function _deadlineOpenConfirmation() internal view returns (OpenChannelConfirmation memory) {
         uint256[] memory participantPrivateKeys = new uint256[](2);
         participantPrivateKeys[0] = SIGNER_PK;
         participantPrivateKeys[1] = SECOND_SIGNER_PK;
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = 300;
         amounts[1] = 200;
-        return
-            _openChannelConfirmationWithDeadline(
-                DEADLINE_CHANNEL_ID, participantPrivateKeys, amounts, true, OPEN_DEADLINE
-            );
+        return _openChannelConfirmationWithDeadline(DEADLINE_CHANNEL_ID, participantPrivateKeys, amounts, OPEN_DEADLINE);
     }
 
     function _assertOpenedWithDeposits() internal view {
@@ -241,7 +306,7 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
             oc.balances[i] = Balance({amount: 500, data: ""});
         }
         oc.deadlineTimestamp = block.timestamp + 120;
-        oc.isAtomic = true;
+        oc.genesisStateHash = keccak256("genesis");
         oc.data = "";
         return abi.encode(oc);
     }
@@ -256,7 +321,7 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         oc.balances[0] = Balance({amount: 500, data: ""});
         oc.balances[1] = Balance({amount: 500, data: ""});
         oc.deadlineTimestamp = block.timestamp + 120;
-        oc.isAtomic = true;
+        oc.genesisStateHash = keccak256("genesis");
         oc.data = "";
         return abi.encode(oc);
     }

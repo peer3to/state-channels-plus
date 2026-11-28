@@ -15,6 +15,7 @@
 - [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
+- [`REQ-LIF-12-TSXRBG` (Observers install the agreed genesis)](../../../../specification/settlement/lifecycle.md#req-lif-12-tsxrbg)
 
 ## UNIT-TEST-EVENT-HANDLER-1-RZ2C7W
 
@@ -49,3 +50,25 @@ Dispute-event branches
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29` — a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes whose window that update cleared: no dispute persisted, no reduction scheduled for the old fork, no event-pipeline failure, and its mirror holds the chain's snapshot
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P30` — a participant whose read node is behind the block of a fork's first dispute waits for that block instead of taking the missing window as cleared: then it requests the acknowledgment, fires `onDisputeStarted` once, audits the invalid dispute and its kill lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P31` — a participant disposed while its window read waits for a lagging read node: the runtime release ends the wait well before its deadline, no further read or wait follows, the dispute is not handled (no `onDisputeStarted`, no upload, no kill), and no runtime error is reported
+
+## UNIT-TEST-EVENT-HANDLER-2-Q270TR
+
+Genesis install on open
+
+- Setup: Open on chain with participants and a non-participant observer, through the harness or a lobby negotiation; select the channel on a fresh runtime only after the open and deliver `ChannelOpened` through the real event pipeline; swallow the genesis join log handling of a non-participant, a negotiating participant or a participant that negotiated nothing; fail the local genesis hook execution outside the EVM on a participant or a non-participant, or make a participant's revert; open with unanimous terms carrying a hash no genesis derives from; open on a consumer whose genesis folds in the opening data
+- Oracle: A negotiating participant installs the genesis it signed, checked against the chain's hash, without the genesis join block; any other runtime installs the matching rebuild with the chain's fork and state hash, from the event's opening data; a genesis join block the runtime never received is recovered from logs and stored before the install; a listed participant that cannot install the genesis (a reverting or failing hook execution, an unavailable join block, a different hash) aborts with no state set, no completed `onChannelOpened` and the event failed; a runtime outside the opened set stays running with no state set: it reports the open on a different hash, and fails the event on an unavailable join block or a failed execution, while the chain keeps the channel open
+
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P1` — a non-participant observer installs the rebuilt genesis: its fork and state hash equal the chain snapshot's
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P2` — a runtime that selected the channel after the open recovers the genesis join block from logs, stores it and installs the genesis
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P3` — an opened hash no genesis derives from aborts each listed participant: `onAbort` once, no `onSetState`, no completed `onChannelOpened`, the handler's failure surfaces once per participant
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P4` — a participant whose local genesis hook execution reverts aborts: `onAbort` once, the runtime closes, no `onSetState`, no completed `onChannelOpened`, the event fails with "Opened genesis rejected: hook reverted", while the other participants install
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P5` — a runtime outside the opened participant set observes an opened hash no genesis derives from: no `onAbort`, no `onSetState`, `onChannelOpened` once, the runtime stays open and holds no fork
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P10` — a runtime outside the opened set whose genesis join log handling stores nothing fails the event with "genesis join block unavailable": no `onAbort`, no `onSetState`, no completed `onChannelOpened`, the runtime stays open, while the participants install
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P14` — on a consumer whose genesis folds in the opening data, a non-participant observer installs the genesis of the signed data `0x00` the opened event carries: its fork and state hash equal the chain snapshot's, and the empty data's genesis has another hash
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P16` — a participant whose local genesis hook execution fails outside the EVM (the executor) aborts: `onAbort` once, the runtime closes, no `onSetState`, no completed `onChannelOpened`, the event fails with that error, while the other participants install
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P17` — a runtime outside the opened set whose local genesis hook execution fails outside the EVM fails the event with that error: no `onAbort`, no `onSetState`, no completed `onChannelOpened`, the runtime stays open
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P18` — the lower address negotiating through the lobby, whose genesis join log handling stores nothing, installs the genesis it signed: both joins resolve with the opened channel, its fork and state hash equal the chain's, no `onAbort`, and the genesis join block is still not stored
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P19` — a participant that negotiated nothing and whose genesis join log handling stores nothing aborts: `onAbort` once, no `onSetState`, no completed `onChannelOpened`, the event fails with "genesis join block unavailable", while the other participants install
+- [x] `UNIT-TEST-EVENT-HANDLER-2-Q270TR.P20` — the higher address negotiating through the lobby, whose genesis join log handling stores nothing, installs the genesis it signed: both joins resolve with the opened channel, its fork and state hash equal the chain's, no `onAbort`, and the genesis join block is still not stored
+
+No test for a participant whose signed genesis differs from the chain's hash: unreachable, the open needs this runtime's signature over the held hash, and it signs only the hash of the genesis it holds.

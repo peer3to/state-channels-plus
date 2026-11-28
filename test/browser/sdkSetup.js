@@ -12,6 +12,7 @@ import Clock from "@/Clock";
 import { createContractExecutor } from "@/evm/contractExecutor/createContractExecutor";
 import { setupP2pRuntime } from "@/evm/p2pRuntime/setupP2pRuntime";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
+import { buildOpenChannel } from "@/rpc/network/services/openChannelNegotiation/OpenChannelNegotiationHelpers";
 import { Codec, SignatureUtils, Type } from "@/utils";
 import { connectStateChannelManager } from "@/utils/stateChannelManager";
 import executorWorkerUrl from "@platform/contractExecutorRootUrl";
@@ -76,7 +77,11 @@ export async function deployStack(providerUrl, openExistingChannel) {
 
     const openConfirmedChannel = async () => {
         const latestBlock = await provider.getBlock("latest");
-        const openChannel = {
+        const manager = connectStateChannelManager(
+            scmDeployment.address,
+            deployerSigner
+        );
+        const terms = {
             channelId,
             participants: [deployerWallet.address, genesisPeerWallet.address],
             balances: [
@@ -84,17 +89,13 @@ export async function deployStack(providerUrl, openExistingChannel) {
                 { amount: 500n, data: "0x5678" }
             ],
             deadlineTimestamp: BigInt(latestBlock.timestamp + 120),
-            isAtomic: true,
             data: "0x"
         };
+        const { openChannel } = await buildOpenChannel(manager, terms);
         const signatures = await Promise.all(
             [deployerWallet, genesisPeerWallet].map((wallet) =>
                 SignatureUtils.signOpenChannel(openChannel, wallet)
             )
-        );
-        const manager = connectStateChannelManager(
-            scmDeployment.address,
-            deployerSigner
         );
         await (
             await manager.open({

@@ -3,6 +3,7 @@ import {
     EARLY_TIMEOUT_RECHECK_REASON,
     MISMATCH_TIMEOUT_RECHECK_REASON
 } from "@/stateManager/chainFallback/ParticipantTimeoutService";
+import { Status } from "@/types";
 import {
     DisputeFraudProofType,
     FraudProofType,
@@ -438,19 +439,22 @@ describe("Unit: DisputeManager", function () {
 
         it("inbound chain event lagging the pinned snapshot → the anchor comes from the snapshot, not the stale store head", async function () {
             const h = TestSession.getHarness();
-            await h.setup(3);
-            // held from before the channel opens -> peer 2's inbound store head
-            // never moves while ingest advances its snapshot to inbound block 2
-            const lagging = 2;
+            await h.lifecycle.start(2);
+            // a spectator synced past the open never saw the genesis join
+            // block; with its inbound events held its store head stays empty
+            // while ingest advances its snapshot after it joins
+            const joiner = await h.join.addSpectatorDetached();
+            const lagging = joiner.index;
             const held = await h.rpcStub.holdInboundMessageEvents(lagging);
-            await h.lifecycle.openChannel();
+            await h.event.waitUntilPeerStatus(lagging, Status.SYNCED);
+            await h.join.joinChannelWait({ joiner });
             const forkId = h.activeForkId!;
 
             await h.join.forceInboundJoinWait({
                 participant: h.getPeer(0).address,
                 observePeerIndices: [0, 1]
             });
-            // writers are peers 0 and 1 -> the lagging peer only ingests
+            // the next blocks consume the join and the top-up
             await h.transition.advanceState({
                 count: 2,
                 waitForFinalization: true
@@ -500,10 +504,11 @@ describe("Unit: DisputeManager", function () {
             // behind the snapshot the dispute pins
             expect(await held.heldCount()).to.be.greaterThan(0);
             expect(r.storedInboundHash).to.equal(null);
-            expect(r.snapshotInboundHeight).to.equal(2);
+            // genesis join block, the join, the top-up
+            expect(r.snapshotInboundHeight).to.equal(3);
             expect(r.slashable).to.equal(false);
-            // the anchor is copied from the pinned snapshot, not defaulted to
-            // zero by the empty store
+            // the anchor is copied from the pinned snapshot, not taken from
+            // the stale store head
             expect(r.inboundHash).to.equal(r.snapshotInboundHash);
             expect(r.inboundHeight).to.equal(r.snapshotInboundHeight);
         });

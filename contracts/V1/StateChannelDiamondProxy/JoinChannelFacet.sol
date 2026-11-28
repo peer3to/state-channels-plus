@@ -105,6 +105,6 @@ contract JoinChannelFacet is StateChannelCommon {
         // Deposit funds
         JoinChannel[] memory jcs = new JoinChannel[](1);
         jcs[0] = jc;
-        StateChannelManagerInterface(address(this)).depositAssetsComposable(jcs, true);
+        StateChannelManagerInterface(address(this)).depositAssetsComposable(jcs);
     }
 }

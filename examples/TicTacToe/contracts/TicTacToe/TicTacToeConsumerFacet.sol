@@ -13,11 +13,11 @@ import "./TicTacToeStateMachine.sol";
 contract TicTacToeConsumerFacet is AConsumerFacet {
     uint256 private constant DEFAULT_BET_AMOUNT = 50;
 
-    function openChannelGenesis(JoinChannel[] memory successfulJoinChannels, bytes memory optionalOpeningData)
+    function openChannelGenesis(JoinChannel[] memory joinChannels, bytes memory optionalOpeningData)
         external
         pure
         override
-        returns (bytes memory encodedGenesisState, address[] memory participants)
+        returns (bytes memory encodedGenesisState)
     {
         uint256 betAmount = DEFAULT_BET_AMOUNT;
         if (optionalOpeningData.length > 0) {
@@ -26,20 +26,19 @@ contract TicTacToeConsumerFacet is AConsumerFacet {
 
         TicTacToeState memory genesisState;
         genesisState.gameActive = true;
-        genesisState.participants = new address[](successfulJoinChannels.length);
-        genesisState.balances = new uint256[](successfulJoinChannels.length);
+        genesisState.participants = new address[](joinChannels.length);
+        genesisState.balances = new uint256[](joinChannels.length);
 
-        for (uint256 i = 0; i < successfulJoinChannels.length; i++) {
-            genesisState.participants[i] = successfulJoinChannels[i].participant;
-            genesisState.balances[i] = successfulJoinChannels[i].balance.amount;
+        for (uint256 i = 0; i < joinChannels.length; i++) {
+            genesisState.participants[i] = joinChannels[i].participant;
+            genesisState.balances[i] = joinChannels[i].balance.amount;
         }
 
         genesisState.currentPlayer = genesisState.participants[0];
         genesisState.movesCount = 0;
         genesisState.betAmount = betAmount;
 
-        bytes memory genesisStateEncoded = abi.encode(genesisState);
-        return (genesisStateEncoded, genesisState.participants);
+        return abi.encode(genesisState);
     }
 
     function deposit(JoinChannel memory) external pure override returns (bool) {

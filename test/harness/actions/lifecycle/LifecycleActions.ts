@@ -14,7 +14,7 @@ import { resolveTestTimeConfig } from "@test/harness/core/testTimeConfig";
 import { HarnessOptions } from "@test/harness/core/types";
 import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { OpenChannelStruct } from "@typechain-types/contracts/V1/types/DataTypes";
-import { BytesLike } from "ethers";
+import { BytesLike, TransactionReceipt } from "ethers";
 
 /**
  * Handles channel-related operations: open channel and bootstrap.
@@ -80,7 +80,7 @@ export class LifecycleActions<
         this.logger.info("Opening channel...");
         await Clock.init(this.harness.peers[0].signer.provider!);
 
-        const openChannel = this.buildOpenChannelStruct();
+        const openChannel = await this.buildOpenChannelStruct();
         const signatures = await this.signOpenChannelStruct(openChannel);
         return this.submitOpenChannel(openChannel, signatures);
     }
@@ -99,7 +99,7 @@ export class LifecycleActions<
         const participantAddresses = peerIndices.map(
             (index) => this.harness.getPeer(index).address
         );
-        const openChannel = this.buildOpenChannelStruct({
+        const openChannel = await this.buildOpenChannelStruct({
             participantAddresses
         });
         const signatures = await this.signOpenChannelStruct(
@@ -113,19 +113,55 @@ export class LifecycleActions<
         );
     }
 
+    /**
+     * Open the channel with `peerIndices` signing terms that carry
+     * `genesisStateHash`. Waits for the receipt only: no peer has to install a
+     * genesis state.
+     */
+    async openChannelWithGenesisHashWait(
+        peerIndices: number[],
+        genesisStateHash: string
+    ): Promise<TransactionReceipt | null> {
+        await Clock.init(this.harness.peers[0].signer.provider!);
+        const openChannel = await this.buildOpenChannelStruct({
+            participantAddresses: peerIndices.map(
+                (index) => this.harness.getPeer(index).address
+            ),
+            genesisStateHash
+        });
+        const signatures = await this.signOpenChannelStruct(
+            openChannel,
+            peerIndices
+        );
+        await this.harness.setChannelId(openChannel.channelId);
+        const tx = await this.harness.channelManager.open({
+            encodedOpenChannel: Codec.encode(openChannel, Type.OpenChannel),
+            signatures
+        });
+        return tx.wait();
+    }
+
     // ************** PRIVATE HELPERS ****************
 
-    private buildOpenChannelStruct(
-        args: { participantAddresses?: string[] } = {}
-    ): OpenChannelStruct {
+    private async buildOpenChannelStruct(
+        args: {
+            participantAddresses?: string[];
+            genesisStateHash?: string;
+        } = {}
+    ): Promise<OpenChannelStruct> {
         const participantAddresses =
             args.participantAddresses ??
             this.harness.peers.map((p) => p.address);
 
-        return createOpenChannelTestObject(participantAddresses, {
-            channelId: this.harness.options.channelId,
-            initialBalance: this.harness.options.initialBalance
-        });
+        return createOpenChannelTestObject(
+            this.harness.channelManager,
+            participantAddresses,
+            {
+                channelId: this.harness.options.channelId,
+                initialBalance: this.harness.options.initialBalance,
+                genesisStateHash: args.genesisStateHash
+            }
+        );
     }
 
     private async signOpenChannelStruct(

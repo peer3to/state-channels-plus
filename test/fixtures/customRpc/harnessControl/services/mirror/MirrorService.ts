@@ -1,14 +1,20 @@
 // @spec-test-coverage-ignore: fixture support; executable evidence belongs to its calling test declarations.
 import MirrorRpcMethods from "./MirrorRpcMethods";
 import type { HarnessControlRpcShape } from "../../HarnessControlRpc";
+import type AContractExecutor from "@/evm/contractExecutor/AContractExecutor";
+import type { ContractExecutionResult } from "@/evm/contractExecutor/AContractExecutor";
 import type RpcContractExecutor from "@/evm/contractExecutor/RpcContractExecutor";
 import type EvmDiamondStateMachine from "@/evm/EvmDiamondStateMachine";
 import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type NetworkTransport from "@/transport/NetworkTransport";
+import type { Bytes } from "@/types/types";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { RuntimeRpcControl } from "@test/fixtures/runtimeRpc/RuntimeRpcControl";
-import type { StateChannelManagerInterface } from "@typechain-types";
+import {
+    AConsumerFacet__factory,
+    type StateChannelManagerInterface
+} from "@typechain-types";
 import {
     type BaseContract,
     type BaseContractMethod,
@@ -126,18 +132,54 @@ const emptySide = (): MirrorReadSide => ({
     failureCodes: []
 });
 
-/** A peer's real connection to the executor runtime of its local diamond. */
-export function localExecutorConnection(sm: { diamondStateMachine: unknown }) {
+/** A peer's local contract executor, which runs its local diamond. */
+export function localExecutor(sm: {
+    diamondStateMachine: unknown;
+}): AContractExecutor {
     // Structural checks: importing these classes as values here closes an
     // import cycle through @/evm in some test entry orders.
     const machine = sm.diamondStateMachine as Partial<EvmDiamondStateMachine>;
     if (!machine.contractExecutor)
         throw new Error("The local diamond does not run on an executor");
-    const executor = machine.contractExecutor as RpcContractExecutor;
+    return machine.contractExecutor;
+}
+
+/** A peer's real connection to the executor runtime of its local diamond. */
+export function localExecutorConnection(sm: { diamondStateMachine: unknown }) {
+    const executor = localExecutor(sm) as RpcContractExecutor;
     if (!("contractExecutorRemoteRoot" in executor))
         throw new Error("The executor is not behind a runtime connection");
     // private: the executor client's connection to its runtime root
     return executor["contractExecutorRemoteRoot"];
+}
+
+/**
+ * Route the local diamond's genesis hook calls through `handle`, which gets
+ * the call's data and `forward` to run any data on the real executor at the
+ * call's address. Returns the restore.
+ */
+export function interceptLocalGenesisHook(
+    sm: { diamondStateMachine: unknown },
+    handle: (
+        data: Bytes,
+        forward: (data: Bytes) => Promise<ContractExecutionResult>
+    ) => Promise<ContractExecutionResult>
+): () => void {
+    const executor = localExecutor(sm);
+    const simulateCall = executor.simulateCall.bind(executor);
+    const selector =
+        AConsumerFacet__factory.createInterface().getFunction(
+            "openChannelGenesis"
+        ).selector;
+    executor.simulateCall = (data, contractAddress) =>
+        ethers.hexlify(data).startsWith(selector)
+            ? handle(data, (forwarded) =>
+                  simulateCall(forwarded, contractAddress)
+              )
+            : simulateCall(data, contractAddress);
+    return () => {
+        executor.simulateCall = simulateCall;
+    };
 }
 
 /**
