@@ -1137,6 +1137,48 @@ export async function commitBlockUnsignedByDisputer(
     return latestStoredHeight(h, disputerIndex);
 }
 
+/**
+ * The disputer's latest stored hop ends above the block it last signed: the
+ * next writer's block reaches every peer while the two others' broadcasts
+ * are muted, so no peer gets another's confirmation of it. The disputer then
+ * blacklists the following writer, whose next block (stored at the disputer
+ * unsigned, see `commitBlockUnsignedByDisputer`) carries the one signer the
+ * muted block lacks there. Returns the disputer and its latest height.
+ */
+export async function commitHopAboveDisputerSignature(h: MathPeerTestHarness) {
+    const forkId = h.activeForkId!;
+    const author = await h.query.getNextPeerToWrite();
+    const muted = h.peers.filter((peer) => peer.index !== author.index);
+    for (const peer of muted) await h.byzantine.stubBroadcast(peer.index);
+    // add() resolves after the author's own commit
+    await h.getPeer(author.index).p2pInstance.p2pContractInstance.add(1);
+    const mutedBlock = (await h
+        .control(h.getPeer(author.index))
+        .query.getLatestBlockBundle(forkId)
+        .request())!;
+    for (const peer of muted)
+        await h.event.waitForBlockConfirmationProcessed({
+            peerIndex: peer.index,
+            blockHash: mutedBlock.hash,
+            keepConnection: true
+        });
+    for (const peer of muted)
+        await h
+            .control(h.getPeer(peer.index))
+            .stub.restoreBroadcast()
+            .request();
+    const writer = await h.query.getNextPeerToWrite();
+    const disputer = muted.find((peer) => peer.index !== writer.index)!;
+    return {
+        disputer,
+        latestHeight: await commitBlockUnsignedByDisputer(
+            h,
+            writer,
+            disputer.index
+        )
+    };
+}
+
 /** The height of the peer's latest stored block on the active fork. */
 export async function latestStoredHeight(
     h: MathPeerTestHarness,

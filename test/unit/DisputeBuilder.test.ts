@@ -6,6 +6,7 @@ import { stageMissingParticipantSignature } from "@test/fixtures/LateSignatureSt
 import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
 import {
     commitBlockUnsignedByDisputer,
+    commitHopAboveDisputerSignature,
     dropStoredBlock,
     stageFinalThenUnfinalizedTail
 } from "@test/fixtures/ProofOwnerStaging";
@@ -494,6 +495,58 @@ describe("Unit: DisputeBuilder", function () {
             // hops, and no block this peer signed bounds the cut search
             expect(r.lastHopEndHeight).to.be.at.least(latestHeight - 1);
             expect(r.signedHeight).to.equal(null);
+            expect(r.isBuilt).to.equal(false);
+        });
+
+        it("a dispute above the upload cap whose cut height is held while its proof needs a lower block this peer does not hold → no dispute is built", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2, {
+                maxDisputeUploadBytes: BELOW_ANY_DISPUTE_UPLOAD_CAP
+            }); // blocks 0..1
+            const forkId = h.activeForkId!;
+            for (const peer of h.peers)
+                await h.rpcStub.suppressTimeoutCheck(peer.index);
+            const { disputer, latestHeight } =
+                await commitHopAboveDisputerSignature(h); // blocks 2..3
+            const cutHeight = latestHeight - 1;
+            const stored = await storedProofView(h, disputer.index);
+            // a gap below the cut height, as pruning leaves below a final
+            // point; the cut height's block stays held
+            await dropStoredBlock(h, disputer.index, cutHeight - 1);
+
+            const r = await h.execOnHost(
+                disputer,
+                async (sm, args) => {
+                    const result = await sm.disputeManager.constructDispute(
+                        args.forkId
+                    );
+                    return {
+                        isBuilt: result !== undefined,
+                        isCutBlockHeld:
+                            sm.storage.blocks.getBlock(
+                                args.forkId,
+                                args.cutHeight
+                            ) !== undefined,
+                        signedHeight:
+                            sm.agreementManager.getLatestSignedBlockByParticipant(
+                                args.forkId,
+                                sm.signerAddress
+                            )?.block.height ?? null
+                    };
+                },
+                { forkId, cutHeight }
+            );
+
+            // premise: the cut search reaches only the cut height, held, and
+            // every stored hop ends above it, so its proof needs the run
+            // below it
+            const hopHeights = JSON.stringify(stored?.hopHeights);
+            expect(r.signedHeight).to.equal(cutHeight);
+            expect(r.isCutBlockHeld).to.equal(true);
+            expect(
+                stored?.hopHeights.every((hop) => Math.max(...hop) > cutHeight),
+                hopHeights
+            ).to.equal(true);
             expect(r.isBuilt).to.equal(false);
         });
 

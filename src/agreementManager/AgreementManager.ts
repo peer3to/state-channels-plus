@@ -244,11 +244,16 @@ class AgreementManager {
         throw await this.belowAnchorError(forkId, blockHeight);
     }
 
-    /** `buildStateProof`, but undefined when `blockHeight` is below the anchor (this view is behind the chain) or no proof is stored. */
+    /**
+     * `buildStateProof`, but undefined when `blockHeight` is below the anchor
+     * (this view is behind the chain) or no proof is stored. With
+     * `heldTailOnly`, also undefined when a tail block is not held (pruned)
+     * instead of throwing.
+     */
     public async tryBuildStateProof(
         forkId: ForkId,
         blockHeight: BlockHeight,
-        options?: { finalizedOnly?: boolean }
+        options?: { finalizedOnly?: boolean; heldTailOnly?: boolean }
     ): Promise<BuiltStateProof | undefined> {
         const start = await this.getConstructionStart(forkId);
         const startHeight = this.getStartHeight(start);
@@ -273,9 +278,15 @@ class AgreementManager {
         if (!options?.finalizedOnly) {
             const last = hops.at(-1)?.milestone;
             const lastBlock = last && this.getLastBlockFromMilestone(last)!;
+            const tailStart = lastBlock ? lastBlock.height + 1 : startHeight;
+            if (
+                options?.heldTailOnly &&
+                !this.isRunHeld(forkId, tailStart, blockHeight)
+            )
+                return undefined;
             const tail = this.collectLinkedRun(
                 forkId,
-                lastBlock ? lastBlock.height + 1 : startHeight,
+                tailStart,
                 blockHeight,
                 lastBlock
             ).map((block) => block.blockConfirmationStruct);
@@ -2009,6 +2020,17 @@ class AgreementManager {
             const block = this.storage.blocks.getBlock(forkId, current);
             if (block) yield block;
         }
+    }
+
+    /** Whether every block of `forkId` from `from` through `to` is held. */
+    private isRunHeld(
+        forkId: ForkId,
+        from: BlockHeight,
+        to: BlockHeight
+    ): boolean {
+        for (let height = from; height <= to; height++)
+            if (!this.storage.blocks.getBlock(forkId, height)) return false;
+        return true;
     }
 
     /** Stored blocks `from`..`to` as one linked run; a missing or unlinked block throws. */
