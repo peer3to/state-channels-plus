@@ -57,4 +57,28 @@ export class ParticipantSetChangeStorage {
 
         return filteredChangePoints;
     }
+
+    // ====================================
+    // DELETE
+    // ====================================
+
+    /** Deletes the change points of `forkId` below `height`; returns how many. */
+    deleteChangePointsBelow(forkId: ForkId, height: BlockHeight): number {
+        const changePoints = this.map.get(forkId);
+        if (!changePoints) return 0;
+        let deletedCount = 0;
+        for (const changeHeight of changePoints)
+            if (changeHeight < height) {
+                changePoints.delete(changeHeight);
+                deletedCount++;
+            }
+        return deletedCount;
+    }
+
+    /** Deletes every change point of `forkId`; returns how many. */
+    deleteFork(forkId: ForkId): number {
+        const deletedCount = this.map.get(forkId)?.size ?? 0;
+        this.map.delete(forkId);
+        return deletedCount;
+    }
 }

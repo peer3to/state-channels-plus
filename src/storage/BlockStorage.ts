@@ -239,6 +239,47 @@ export class BlockStorage {
         return true;
     }
 
+    /**
+     * Deletes the stored blocks of `forkId` at `fromHeight`..`toHeight`
+     * (each as `deleteBlock` does). Returns their state snapshot hashes.
+     */
+    deleteBlocksInRange(
+        forkId: ForkId,
+        fromHeight: BlockHeight,
+        toHeight: BlockHeight
+    ): Hash[] {
+        const snapshotHashes: Hash[] = [];
+        for (
+            let height = Math.max(0, fromHeight);
+            height <= toHeight;
+            height++
+        ) {
+            const block = this.getBlock(forkId, height);
+            if (!block) continue;
+            this.deleteBlock(forkId, height);
+            snapshotHashes.push(block.stateSnapshotHash);
+        }
+        return snapshotHashes;
+    }
+
+    /**
+     * Deletes every stored block of `forkId`, also those stored above its
+     * latest height, and that height. Returns their state snapshot hashes.
+     */
+    deleteFork(forkId: ForkId): Hash[] {
+        const snapshotHashes: Hash[] = [];
+        for (const [blockHash, block] of this.hashToBlockMap) {
+            if (block.forkId !== forkId) continue;
+            this.hashToBlockMap.delete(blockHash);
+            this.coordinatesToBlockMap.delete(
+                this.coordinatesToKey(block.coordinates)
+            );
+            snapshotHashes.push(block.stateSnapshotHash);
+        }
+        this.forkIdToMaxHeightMap.delete(forkId);
+        return snapshotHashes;
+    }
+
     getNextBlockHeight(forkId: ForkId): BlockHeight {
         return this.getLatestBlockHeight(forkId) + 1;
     }

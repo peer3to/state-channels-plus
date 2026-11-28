@@ -1,5 +1,5 @@
 import StateSnapshot from "@/models/StateSnapshot";
-import { Hash, ForkId } from "@/types/types";
+import { BlockHeight, Hash, ForkId } from "@/types/types";
 
 type StateSnapshotHash = Hash;
 
@@ -51,5 +51,54 @@ export class StateSnapshotStorage {
 
     getGenesisSnapshotByForkId(forkId: ForkId): StateSnapshot | undefined {
         return this.genesisSnapshotByForkId.get(forkId);
+    }
+
+    /** The state hashes the held snapshots reference, except those of `excludedSnapshotHashes`. */
+    getReferencedStateHashes(
+        excludedSnapshotHashes: ReadonlySet<StateSnapshotHash> = new Set()
+    ): Set<Hash> {
+        const stateHashes = new Set<Hash>();
+        for (const [snapshotHash, snapshot] of this.snapshotsByHash)
+            if (!excludedSnapshotHashes.has(snapshotHash))
+                stateHashes.add(snapshot.stateMachineStateHash);
+        return stateHashes;
+    }
+
+    // ====================================
+    // DELETE
+    // ====================================
+
+    /**
+     * Deletes the snapshots of `forkId` below `height`; its genesis is kept.
+     * Returns the state hashes they referenced.
+     */
+    deleteSnapshotsBelow(forkId: ForkId, height: BlockHeight): Hash[] {
+        return this.deleteSnapshots(
+            (snapshot) =>
+                snapshot.forkID === forkId &&
+                !snapshot.isGenesis &&
+                snapshot.blockHeight < height
+        );
+    }
+
+    /**
+     * Deletes every snapshot of `forkId`, its genesis too. Returns the state
+     * hashes they referenced.
+     */
+    deleteFork(forkId: ForkId): Hash[] {
+        this.genesisSnapshotByForkId.delete(forkId);
+        return this.deleteSnapshots((snapshot) => snapshot.forkID === forkId);
+    }
+
+    private deleteSnapshots(
+        isDeleted: (snapshot: StateSnapshot) => boolean
+    ): Hash[] {
+        const stateHashes: Hash[] = [];
+        for (const [snapshotHash, snapshot] of this.snapshotsByHash) {
+            if (!isDeleted(snapshot)) continue;
+            this.snapshotsByHash.delete(snapshotHash);
+            stateHashes.push(snapshot.stateMachineStateHash);
+        }
+        return stateHashes;
     }
 }

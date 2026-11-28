@@ -17,10 +17,24 @@ import { StoredProofStorage } from "./StoredProofStorage";
 
 import { TimeoutStorage } from "./TimeoutStorage";
 import { Block, BlockCoordinates, StateSnapshot } from "@/models";
-import { ForkId, Bytes, BlockOrSnapshot, Hash } from "@/types/types";
+import {
+    ForkId,
+    Bytes,
+    BlockOrSnapshot,
+    Hash,
+    BlockHeight
+} from "@/types/types";
 import { Address } from "@/types/types";
 import { deepCopyProxy, getChecksumAddress } from "@/utils";
 import type { Logger } from "@/utils/logging/Logger";
+
+/** What one prune deleted, per store. */
+export type PrunedHistory = {
+    blockCount: number;
+    snapshotCount: number;
+    stateCount: number;
+    changePointCount: number;
+};
 
 export class Storage {
     public readonly blocks: BlockStorage;
@@ -70,6 +84,80 @@ export class Storage {
             new ProofEvidenceStorage(this.queues.maxChannelParticipants, logger)
         );
         return deepCopyProxy(this);
+    }
+
+    /**
+     * Deletes the history of `forkId` that a proven final hop skips: the
+     * blocks above `anchorHeight` (-1: the fork genesis) and below
+     * `finalHeight`, and their states. Their snapshots are kept until the
+     * anchor passes them; the anchor and final-point blocks are kept.
+     */
+    pruneSkippedHistory(
+        forkId: ForkId,
+        anchorHeight: BlockHeight,
+        finalHeight: BlockHeight
+    ): PrunedHistory {
+        const skippedSnapshotHashes = this.blocks.deleteBlocksInRange(
+            forkId,
+            anchorHeight + 1,
+            finalHeight - 1
+        );
+        const skippedStateHashes = skippedSnapshotHashes.flatMap(
+            (snapshotHash) =>
+                this.stateSnapshots.getStateSnapshotByHash(snapshotHash)
+                    ?.stateMachineStateHash ?? []
+        );
+        return {
+            blockCount: skippedSnapshotHashes.length,
+            snapshotCount: 0,
+            stateCount: this.deleteUnreferencedStates(
+                skippedStateHashes,
+                new Set(skippedSnapshotHashes)
+            ),
+            changePointCount: 0
+        };
+    }
+
+    /**
+     * Deletes the history of `forkId` below the anchor at `anchorHeight`:
+     * blocks, snapshots, their states and change points. The anchor block,
+     * its snapshot and state, and the fork genesis with its state are kept.
+     */
+    pruneBelowAnchor(forkId: ForkId, anchorHeight: BlockHeight): PrunedHistory {
+        const blockCount = this.blocks.deleteBlocksInRange(
+            forkId,
+            0,
+            anchorHeight - 1
+        ).length;
+        const deletedStateHashes = this.stateSnapshots.deleteSnapshotsBelow(
+            forkId,
+            anchorHeight
+        );
+        return {
+            blockCount,
+            snapshotCount: deletedStateHashes.length,
+            stateCount: this.deleteUnreferencedStates(deletedStateHashes),
+            changePointCount:
+                this.participantSetChanges.deleteChangePointsBelow(
+                    forkId,
+                    anchorHeight
+                )
+        };
+    }
+
+    /**
+     * Deletes the whole history of `forkId`: blocks, snapshots (its genesis
+     * too), their states and change points.
+     */
+    pruneFork(forkId: ForkId): PrunedHistory {
+        const blockCount = this.blocks.deleteFork(forkId).length;
+        const deletedStateHashes = this.stateSnapshots.deleteFork(forkId);
+        return {
+            blockCount,
+            snapshotCount: deletedStateHashes.length,
+            stateCount: this.deleteUnreferencedStates(deletedStateHashes),
+            changePointCount: this.participantSetChanges.deleteFork(forkId)
+        };
     }
 
     /**
@@ -255,5 +343,28 @@ export class Storage {
         }
 
         return previousBlockOrSnapshot.stateSnapshot!.timestamp;
+    }
+
+    /**
+     * Deletes each of `stateHashes` that no held snapshot references, except
+     * those of `excludedSnapshotHashes` (snapshots kept without their
+     * state). States are hash-keyed, so one state can back several
+     * snapshots. Returns how many were deleted.
+     */
+    private deleteUnreferencedStates(
+        stateHashes: Hash[],
+        excludedSnapshotHashes?: ReadonlySet<Hash>
+    ): number {
+        const referenced = this.stateSnapshots.getReferencedStateHashes(
+            excludedSnapshotHashes
+        );
+        let deletedCount = 0;
+        for (const stateHash of new Set(stateHashes))
+            if (
+                !referenced.has(stateHash) &&
+                this.stateMachineStates.deleteStateMachineState(stateHash)
+            )
+                deletedCount++;
+        return deletedCount;
     }
 }

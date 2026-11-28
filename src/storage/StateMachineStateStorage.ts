@@ -30,4 +30,13 @@ export class StateMachineStateStorage {
     getStateMachineState(hash: Hash): Bytes | undefined {
         return this.statesByHash.get(hash);
     }
+
+    // ====================================
+    // DELETE
+    // ====================================
+
+    /** Deletes the state of `hash`; false when none is held. */
+    deleteStateMachineState(hash: Hash): boolean {
+        return this.statesByHash.delete(hash);
+    }
 }
