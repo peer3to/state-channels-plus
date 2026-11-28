@@ -7,7 +7,7 @@ import { timeoutWaitTime } from "@/types";
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
-import { buildAndEncodeBlock } from "@test/factory";
+import { buildAndEncodeBlock, hash as randomHash } from "@test/factory";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type {
     DisputeSubmissionFailureSpec,
@@ -50,6 +50,31 @@ import type {
 import type { MilestoneProofStruct } from "@typechain-types/contracts/V1/types/ProofTypes";
 import { expect } from "chai";
 import { dataLength, MaxUint256, ZeroAddress } from "ethers";
+
+/**
+ * Makes `dispute`, which omits its auditing data, one `auditorIndex` cannot
+ * judge: its latest state hash names no state of its proof, and the auditor
+ * loses its snapshot of the last milestone's first block, so it holds no
+ * snapshot to prove the proof invalid on chain with.
+ */
+export async function makeProofUnjudgeable(
+    h: MathPeerTestHarness,
+    auditorIndex: number,
+    dispute: DisputeStruct
+): Promise<void> {
+    expect(
+        dispute.postedAuditingData,
+        "the dispute omits its auditing data"
+    ).to.equal(false);
+    dispute.input.latestStateSnapshotHash = randomHash();
+    const first = Block.fromBlockConfirmation(
+        dispute.input.stateProof.milestones.at(-1)!.blockConfirmations[0]
+    );
+    await h
+        .control(h.getPeer(auditorIndex))
+        .stub.deleteStoredSnapshot(first.stateSnapshotHash as Hash)
+        .request();
+}
 
 /**
  * Height of `peerIndex`'s latest locally finalized state (the first audit

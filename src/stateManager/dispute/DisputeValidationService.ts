@@ -103,7 +103,8 @@ export default class DisputeValidationService {
      * dispute that ends below the trusted final point is not replayed
      * backward. Absent local data is never evidence: a proof this peer
      * cannot judge for a missing own snapshot or replay base state stores no
-     * counter (`concludeNotJudged`). Other missing required local data and
+     * counter from the proof, only the checks that need no state
+     * (`concludeNotJudged`). Other missing required local data and
      * read errors throw, unless a final-history counter too large to send
      * was found: that counter is then stored.
      */
@@ -630,7 +631,8 @@ export default class DisputeValidationService {
      * (`verifyOutboundRun`) and the verified material persisted. A failure at
      * a lower tier falls through; at the chain tier it stores the counter
      * (false). A proof the chain tier cannot judge for absent local data
-     * stores none (`concludeNotJudged`, true when no other counter applies).
+     * stores no counter from the proof (`concludeNotJudged`, true when none
+     * of the checks that need no state applies).
      */
     private async verifyAndReplay(
         dispute: DisputeStruct,
@@ -1136,18 +1138,35 @@ export default class DisputeValidationService {
 
     /**
      * The end of an audit that cannot judge the proof for absent local data:
-     * no counter from the proof, only the state-free `DisputeNotLatestState`
-     * check. True when it applies no counter: the caller then treats the
-     * dispute as audited and may add its own evidence.
+     * no counter from the proof, only the checks that need no state:
+     * `DisputeNotLatestState`, a timeout not linked to the proof's latest
+     * state, and a timeout this peer's threshold-final state supersedes.
+     * True when it applies no counter: the caller then treats the dispute as
+     * audited and may add its own evidence.
      */
-    private concludeNotJudged(dispute: DisputeStruct): boolean {
+    private async concludeNotJudged(dispute: DisputeStruct): Promise<boolean> {
         const latestBlock = this.agreementManager.getLatestBlockFromStateProof(
             dispute.input.stateProof
         );
-        return !this.tryCreateDisputeNotLatestStateProof(
-            dispute,
-            latestBlock ? latestBlock.height : -1
-        );
+        if (
+            this.tryCreateDisputeNotLatestStateProof(
+                dispute,
+                latestBlock ? latestBlock.height : -1
+            )
+        )
+            return false;
+        if (dispute.input.timeout.participant == ethers.ZeroAddress)
+            return true;
+        if (
+            this.tryCreateTimeoutNotLinkedToLatestStateProof(
+                dispute,
+                latestBlock
+            )
+        )
+            return false;
+        return !(await this.tryCreateTimeoutSupersededByFinalStateProof(
+            dispute
+        ));
     }
 
     /** Stores `DisputeNotLatestState` when the disputer signed a block above `latestHeight`. */
@@ -1378,13 +1397,13 @@ export default class DisputeValidationService {
         );
 
         // [check] isLinked to stateProof
-        const expectedTimeoutHeight = latestBlock ? latestBlock.height + 1 : 0;
-        if (expectedTimeoutHeight !== coordinates.height) {
-            this.disputeFraudProofService.createTimeoutNotLinkedToLatestState(
-                dispute
-            );
+        if (
+            this.tryCreateTimeoutNotLinkedToLatestStateProof(
+                dispute,
+                latestBlock
+            )
+        )
             return false;
-        }
 
         // [check] isParticipantNext. The peek is one simulated call, so it
         // needs no lock.
@@ -1520,6 +1539,20 @@ export default class DisputeValidationService {
         // [check] a threshold-final state on this fork reaches the timeout height
         if (await this.tryCreateTimeoutSupersededByFinalStateProof(dispute))
             return false;
+        return true;
+    }
+
+    /** Stores `TimeoutNotLinkedToLatestState` when the timeout height is not the one after the proof's latest block. */
+    private tryCreateTimeoutNotLinkedToLatestStateProof(
+        dispute: DisputeStruct,
+        latestBlock: Block | undefined
+    ): boolean {
+        const expectedTimeoutHeight = latestBlock ? latestBlock.height + 1 : 0;
+        if (expectedTimeoutHeight === Number(dispute.input.timeout.blockHeight))
+            return false;
+        this.disputeFraudProofService.createTimeoutNotLinkedToLatestState(
+            dispute
+        );
         return true;
     }
 

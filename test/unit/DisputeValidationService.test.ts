@@ -12,6 +12,8 @@ import {
 import {
     auditTimeoutOfCalldataPostedBlock,
     holdReplayOnPredecessorState,
+    localFinalizedHeight,
+    makeProofUnjudgeable,
     postTimelyNextWriterTimeout,
     stageBlindPendingAuditor
 } from "@test/fixtures/DisputeAuditStaging";
@@ -28,6 +30,7 @@ import {
     resolveTestTimeConfig
 } from "@test/harness";
 import { DisputeTampering } from "@test/harness/actions/DisputeTamperingActions";
+import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { hexlify, ZeroHash } from "ethers";
 
@@ -2355,6 +2358,170 @@ describe("Unit: DisputeValidationService", function () {
             expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
                 "Timeout timestamp not found"
             );
+        });
+    });
+
+    // forged latest state hash + the auditor's lost snapshot: the chain
+    // walk has no evidence, so only the checks that need no state run
+    describe("proof not judged", function () {
+        it("stateProof truncated below the disputer's latest signed block, and the proof is not judged -> false + DisputeNotLatestState carrying that block", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 5);
+            const forkId = h.activeForkId!;
+            await h.tamper.stubConstructDispute(
+                0,
+                async (dispute, sm) => {
+                    await sm.p2pManager.localRpc.dispute.truncateStateProofToHeight(
+                        dispute,
+                        2
+                    );
+                },
+                { autoRestore: true }
+            );
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            await makeProofUnjudgeable(h, 1, dispute);
+            const disputer = h.getPeer(0).address;
+            const seen = await h.execOnHost(
+                h.getPeer(1),
+                async (sm, args) => {
+                    const result =
+                        sm.agreementManager.getLatestSignedBlockByParticipant(
+                            args.forkId,
+                            args.disputer
+                        );
+                    return { height: result ? result.block.height : -1 };
+                },
+                { forkId, disputer }
+            );
+            expect(seen.height).to.be.greaterThan(2);
+
+            const run = await h.dispute.auditDispute(1, dispute);
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.DisputeNotLatestState
+            );
+            const evidence = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.DisputeNotLatestState
+            );
+            const newerBlock = Codec.decode(evidence.encodedBlock, Type.Block);
+            expect(
+                Number(newerBlock.transaction.header.transactionCnt)
+            ).to.equal(seen.height);
+        });
+
+        it("dispute.input.timeout.blockHeight += 1, and the proof is not judged -> false + TimeoutNotLinkedToLatestState", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            for (const peer of h.peers)
+                await h.rpcStub.suppressTimeoutCheck(peer.index);
+            await h.tamper.plantFreshTimeoutForNextWriter(0);
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            await makeProofUnjudgeable(h, 1, dispute);
+
+            dispute.input.timeout.blockHeight =
+                Number(dispute.input.timeout.blockHeight) + 1;
+
+            const run = await h.dispute.auditDispute(1, dispute);
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.TimeoutNotLinkedToLatestState
+            );
+        });
+
+        it("control: a linked timeout above the auditor's final state, before its window reaches the chain, and the proof is not judged -> no timeout check that needs a state or the window runs: no throw, true, no proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            for (const peer of h.peers)
+                await h.rpcStub.suppressTimeoutCheck(peer.index);
+            await h.tamper.plantFreshTimeoutForNextWriter(0);
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            await makeProofUnjudgeable(h, 1, dispute);
+            expect(
+                (await localFinalizedHeight(h, 1)) ?? -1,
+                "the auditor's final state is below the timeout height"
+            ).to.be.lessThan(Number(dispute.input.timeout.blockHeight));
+
+            const run = await h.dispute.auditDispute(1, dispute);
+
+            expect(run).to.include({ outcome: "returned", isValid: true });
+            expect(run.storedProof).to.equal(undefined);
+            expect(run.disputeFraudProofCount).to.equal(0);
+        });
+
+        it("a departed participant's linked timeout at a height the auditor's final state reaches, and the proof is not judged -> false + TimeoutSupersededByFinalState, which the chain accepts", async function () {
+            const h = TestSession.getHarness();
+            await h.scenario.preDisputeSetup({
+                peerCount: 4,
+                transitionCount: 2
+            });
+            const forkId = h.activeForkId!;
+            for (const peer of h.peers)
+                await h.rpcStub.suppressTimeoutCheck(peer.index);
+            const alice = await h.query.getNextPeerToWrite();
+            // her exit post never lands: she stays chain-eligible
+            await h.rpcStub.holdSnapshotPostSend(alice.index);
+            await h.dispute.suppressDisputeInitiation([alice.index]);
+            const remaining = h.peers
+                .map((peer) => peer.index)
+                .filter((index) => index !== alice.index);
+            await h.transition.participantLeaveStateTransition({
+                leaverIndex: alice.index,
+                waitForPeers: remaining
+            });
+            const leaveHeight = (await h
+                .control(alice)
+                .query.getLatestBlockHeight(forkId)
+                .request())!;
+            // her leave block is final in her view: her dispute omits its data
+            await waitFor(
+                async () =>
+                    ((await localFinalizedHeight(h, alice.index)) ?? -1) >=
+                    leaveHeight,
+                h.event.protocolEventTimeoutMs()
+            );
+            await h.network.blacklistAndDisconnectPeer(alice.index);
+            // the others finalize past her last block without her
+            await h.transition.advanceState({
+                count: 2,
+                waitForPeers: remaining,
+                waitForFinalization: true
+            });
+            const auditorIndex = remaining[0]!;
+            expect(
+                (await localFinalizedHeight(h, auditorIndex)) ?? -1
+            ).to.be.at.least(leaveHeight + 1);
+            await h.control(alice).dispute.setForceExit(true).request();
+            const { dispute } = await h.dispute.fetchConstructedDispute(
+                alice.index
+            );
+            dispute.input.timeout.participant = h.getPeer(
+                remaining[1]!
+            ).address;
+            dispute.input.timeout.blockHeight = leaveHeight + 1;
+            await makeProofUnjudgeable(h, auditorIndex, dispute);
+
+            const run = await h.dispute.auditDispute(auditorIndex, dispute);
+
+            expect(run).to.include({ outcome: "returned", isValid: false });
+            expect(run.disputeFraudProofCount).to.equal(1);
+            expect(run.storedProof?.disputeFraudProofType).to.equal(
+                DisputeFraudProofType.TimeoutSupersededByFinalState
+            );
+            const proof = Codec.decode(
+                run.storedProof!.encodedProof,
+                DisputeFraudProofType.TimeoutSupersededByFinalState
+            );
+            expect(
+                await h.channelManager.isTimeoutSupersededByFinalState.staticCall(
+                    dispute,
+                    proof
+                )
+            ).to.equal(true);
         });
     });
 
