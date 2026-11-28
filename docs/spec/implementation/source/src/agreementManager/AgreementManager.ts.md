@@ -27,6 +27,7 @@
 - [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../../../../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
 - [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../../../../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
 - [`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../../../../specification/storage/proof-store.md#req-proofstore-8-r38ky5)
+  Partial: `dropLeftForkEvidence` deletes a left fork only once the mirror holds no dispute on it, and the mirror never clears a dispute window, so a left fork that was disputed keeps its history ([`FIND-MIRROR-DISPUTE-CLEAR-1-SEWPKN`](../../../../audit/open-findings.md#find-mirror-dispute-clear-1-sewpkn)).
 
 ## UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D
 
@@ -167,3 +168,13 @@ The final history of a received proof that a reverse-direction kill takes F from
 - Oracle: The conflict and regression points are the served hop point above the anchor with the crafted snapshot's hash, its proof ends at exactly that snapshot, no other height is proved, and the stored proof and the fork's proof evidence are unchanged
 
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-6-DWQN9W.P1` — a served hop point above the anchor is the only point for both kills, proved exactly by its hop prefix; another height has no proof; nothing is stored
+
+## UNIT-TEST-AGREEMENT-MANAGER-7-GJPZDX
+
+The proof evidence of a fork the chain anchor left lives until the node no longer executes that fork.
+
+- Setup: A pending auditor that holds a dispute's reduced head only as audit evidence gets an anchor event on its fork and then one on another fork while it still executes the first; four peers with pruning off adopt a snapshot, a dispute reduces the channel to the next fork while one honest peer's reduction attempts are held, the adoption reaches that peer, its reduction is released, and the chain adopts a snapshot of the next fork
+- Oracle: The left fork's reduce data and its proof evidence records at the held peer right after the anchor left the fork, and its record count after the next anchor event
+
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-7-GJPZDX.P1` — the anchor leaves the fork the auditor still executes: the reduced head held only as audit evidence still gives reduce data
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-7-GJPZDX.P2` — the anchor leaves the fork while the held peer still executes it: its records stay; after it follows the reduced fork, the next anchor event drops them all

@@ -28,6 +28,11 @@ is at height 2 and the chain accepts its proof, so inputs and proof come from th
 The reconstruction case names a snapshot hash absent from storage and asserts the exact rejection and
 no auditing data.
 
+The upload-cap gap case runs with a cap below any dispute: the disputer blacklists the next writer, so
+the writer's block 2 is stored unsigned by it, then the disputer drops its blocks below block 2. With
+the stored proof's last hop at or above block 1 and no held block it signed, construction returns no
+dispute and does not throw.
+
 Extra signatures on the unchanged latest block are not a changed input. The signature case stages a
 writer whose stored latest block lacks one participant's signature (one non-writer's broadcast is
 suppressed while the block is authored; no peer runs the timeout check). It constructs once, merges
@@ -65,4 +70,5 @@ peer 1's `onDisputeReducedResultCommitted`, and asserts peer 1 keeps no built di
 - `the final point's state held only in the stored proof → the dispute is built and its auditing data carries that state`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P19
 - `a dispute naming a snapshot absent from storage → rejects naming that snapshot, no auditing data`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P9
 - `a dispute above the deployed upload cap at every height this peer may dispute → no dispute is built`: REQ-DIS-2-PKVZ7E.T1.P36, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P17
+- `a dispute above the upload cap whose cut search reaches a height this peer holds no block at → no dispute is built`: REQ-DIS-2-PKVZ7E.T1.P40, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P20
 - `the latest dispute above the upload cap while the height this peer last signed fits → the dispute is cut to that height and the chain walks its proof`: REQ-DIS-2-PKVZ7E.T1.P37, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P18

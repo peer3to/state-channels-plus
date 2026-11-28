@@ -3324,6 +3324,15 @@ differ from the chain, against
 [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb). No
 peer-visible verdict change has been shown.
 
+**Effect on pruning (2026-11-28, executed):** with pruning on, a fork the chain anchor left is
+deleted only once the mirror holds no dispute on it
+([`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../specification/storage/proof-store.md#req-proofstore-8-r38ky5)). The anchor leaves a fork only
+through a reduction of a dispute on that fork, so its mirrored window always exists and is never
+cleared: after the reduced fork's own snapshot adoption cleared the chain's windows, every honest peer
+still read the left fork as disputed and kept its whole history (a four-peer pool run). The planned
+case [`REQ-PROOFSTORE-8-R38KY5.T1.P11`](../specification/storage/proof-store.md#req-proofstore-8-r38ky5.t1.p11) stays without a test until the mirror
+records the fork.
+
 **Proposed direction:** Record the fork in `disputedForks` when the mirror first creates its window,
 with a forge case that clears storage after a mirrored dispute.
 

@@ -354,7 +354,7 @@ Specification cases tested: 0/9.
 Specification cases tested: 4/15. Untested: T1.P2, T1.P4, T1.P6, T1.P7, T1.P8, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15.
 
 [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../specification/disputes/disputes.md#req-dis-2-pkvz7e)
-Specification cases tested: 25/40. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16.
+Specification cases tested: 26/41. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16.
 
 [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../specification/disputes/disputes.md#req-dis-3-c4kysf)
 Specification cases tested: 7/24. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P17, T1.P18, T1.P20, T1.P21.
@@ -774,10 +774,10 @@ Specification cases tested: 2/2.
 Specification cases tested: 1/1.
 
 [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
-Specification cases tested: 9/9.
+Specification cases tested: 11/11.
 
 [`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../specification/storage/proof-store.md#req-proofstore-8-r38ky5)
-Specification cases tested: 10/10.
+Specification cases tested: 10/11. Untested: T1.P11.
 
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.

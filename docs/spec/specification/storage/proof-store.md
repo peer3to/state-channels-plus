@@ -187,7 +187,9 @@ no dispute can carry a larger history. Only audit evidence adds final points for
 the conflict check of later audit evidence; sync evidence serves snapshot and state lookups; a record that would
 exceed that bound is refused and the refusal is logged, while a record replacing one with the same
 final point is accepted. A fork's audit and sync records stay until the local mirror's chain anchor
-leaves that fork. The proof evidence also keeps the forks on which a synchronization showed the node's
+has left that fork and the node no longer executes it: a fork the anchor leaves while the node is
+still on it keeps its records, and they are dropped at the first later anchor event at which the
+node is on another fork. The proof evidence also keeps the forks on which a synchronization showed the node's
 own history to be the side chain, so that the node signs nothing more there
 ([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)). Such a stop holds only for its fork; no later
 record, refusal or other fork's drop lifts it, and it is removed with the fork's records. A state is read from evidence only by its hash, and an empty state is never
@@ -203,8 +205,10 @@ delete history in two phases, each in one step that no write can interleave:
   deletes the blocks, snapshots, states and membership change points of the record's fork below that
   anchor. It keeps the anchor block with its snapshot and state, and the fork genesis with its state,
   which synchronization serving needs. When the local mirror's chain anchor leaves a fork, the node
-  deletes that fork's whole history the same way, its genesis included. Neither delete runs while
-  the local mirror holds a dispute on that fork; there is no delay after the adoption.
+  deletes that fork's whole history the same way, its genesis included, once it no longer executes
+  that fork. Neither delete runs while the local mirror holds a dispute on that fork; a left fork
+  whose history is not deleted yet is tried again at every later anchor event. There is no other
+  delay after the adoption.
 - **Skipped by a proven final hop (phase 2).** After each write of the stored proof by an advance, a
   synchronization install or a reset, the node deletes the blocks and states above the record's
   anchor and below its final point. It keeps the final-point block, the tail and every snapshot;
@@ -295,7 +299,8 @@ trust boundary is proof intake: a received proof is untrusted until it verifies.
   and of the final-point block for a late signature, which reads the block below. Fraud proofs, proof
   evidence and the stored proof are kept apart and are never pruned. Residual: a fork the chain
   anchor leaves through a cross-fork adoption still carries its dispute in the mirror at that
-  moment, so its history is kept rather than deleted.
+  moment, so its history is kept; it is deleted only at a later anchor event at which the mirror
+  holds no dispute on it.
 - **Growth.** Hops that change membership accumulate between anchor advances, and a participant
   that forces many membership changes grows every peer's stored proof and the disputes built from
   it. The bound is the snapshot update and the dispute size limits
@@ -500,14 +505,16 @@ A missing tail block makes construction fail.
 Store audit and sync records on several forks up to and past the sync bound; drop a fork; read
 states that a record does not hold. Keep a side chain from a synchronization under the chain's upload cap
 and under a cap its hops exceed. Stop signing on two forks, write and refuse records on one, drop the other
-or both.
+or both. Move the chain anchor off a fork while the node still executes it, holding a reduced head
+only as audit evidence, then again after the node has followed another fork.
 
 **Expected result:**
 
 Sync evidence is bounded per fork and refused at the bound; audit evidence is never refused or
 evicted; a dropped fork keeps nothing; an empty state is never returned; a side chain is kept
 only when its hops fit in a dispute upload. A signing stop holds only on its fork, survives every later
-write and another fork's drop, and is removed with its fork.
+write and another fork's drop, and is removed with its fork. A fork the anchor left keeps its records
+while the node is still on it, and loses them at the next anchor event after the node left it.
 
 **Required permutations:**
 
@@ -529,6 +536,10 @@ write and another fork's drop, and is removed with its fork.
 
 <a id="req-proofstore-7-b5pw2p.t1.p9"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P9` — Dropping a fork removes its signing stop with its records and keeps another fork's stop.
 
+<a id="req-proofstore-7-b5pw2p.t1.p10"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P10` — The chain anchor leaves a fork the node still executes: the fork's records stay, and a reduced head held only as its audit evidence still gives reduce data.
+
+<a id="req-proofstore-7-b5pw2p.t1.p11"></a>`REQ-PROOFSTORE-7-B5PW2P.T1.P11` — A fork the anchor left while the node was on it keeps its records until the node follows another fork; the next anchor event then drops them.
+
 #### <a id="req-proofstore-8-r38ky5.t1"></a>`REQ-PROOFSTORE-8-R38KY5.T1`
 
 **Requirements / invariants:**
@@ -539,8 +550,8 @@ write and another fork's drop, and is removed with its fork.
 
 Run a channel with pruning on and with it off: finalize several blocks, let the chain adopt a
 snapshot, re-root with and without a dispute mirrored on the fork, move the anchor to a reduced
-fork, then synchronize a new peer, audit an honest dispute, a side-chain dispute and a dispute whose
-final point the auditor pruned.
+fork and later adopt snapshots of it, then synchronize a new peer, audit an honest dispute, a
+side-chain dispute and a dispute whose final point the auditor pruned.
 
 **Expected result:**
 
@@ -569,6 +580,8 @@ does not judge that proof but still lands its own dispute.
 <a id="req-proofstore-8-r38ky5.t1.p9"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P9` — Pruning on, a side-chain dispute that hops above a seated joiner's final point without the joiner's JOIN is still killed by the joiner's final-point regression counter.
 
 <a id="req-proofstore-8-r38ky5.t1.p10"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P10` — Pruning on, an auditor that pruned the state at the disputer's final point (its own final point and latest state are later) does not judge that proof, stores no counter and sends no kill, and its own dispute lands on chain.
+
+<a id="req-proofstore-8-r38ky5.t1.p11"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P11` — Pruning on, the chain anchor left a fork that was still disputed in the mirror, and the node has followed the reduced fork: at the first later anchor event at which the mirror holds no dispute on the left fork, every honest peer deletes that fork's whole history.
 
 ## Future Work
 
