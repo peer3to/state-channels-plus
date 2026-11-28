@@ -7,8 +7,8 @@ Exercises: [LocalReadParser.ts](../../../../implementation/source/src/evm/p2pRun
 
 The suite gives `parseLocalRead` JSON-RPC payloads as a provider sends them and checks which reads
 the light client would answer itself. The oracle is the rule of
-[`REQ-LC-1-JT5PKT`](../../../../specification/runtime/light-client.md#req-lc-1-jt5pkt) and
-[`REQ-LC-2-PMY1VG`](../../../../specification/runtime/light-client.md#req-lc-2-pmy1vg): only a read at the
+`REQ-LC-1-JT5PKT` and
+`REQ-LC-2-PMY1VG`: only a read at the
 latest block, of the five methods, whose every field the local run honours, is answered locally;
 a pending read, a read at any other block, a call with a gas limit or a fee field, and anything
 malformed go to the node. For a call it also checks the decoded call (`parseCall`) and how each

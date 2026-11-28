@@ -37,7 +37,7 @@ declarations, added 2026-11-18) is the first suite that starts a peer3 node: eac
 binary `PEER3_NODE_BIN` names with the sidecar in front of it, and the runner discovers the file only with
 `--lc-tests`. Its declarations cover the three live cases of [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2) with the node's own
 receipt, block hash and storage read as oracles; they run outside CI
-([`OQ-47-8W9VT0`](../verification/open-questions.md#oq-47-8w9vt0)). `test/lightClient/LightClientEndpoints.test.ts`
+([`OQ-47-8W9VT0` (Live light client evidence outside CI)](../verification/open-questions.md#oq-47-8w9vt0)). `test/lightClient/LightClientEndpoints.test.ts`
 (3 declarations, local only) is marked out of specification scope: two declarations check the endpoint
 behaviour the sidecar stands in for, a block without a subscribed topic and a removed subscription, which no
 requirement states yet; one checks the failure "RPC node doesn't support LC endpoints" (Luka, 2026-11-18)

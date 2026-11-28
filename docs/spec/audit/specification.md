@@ -57,7 +57,7 @@ runtime constant the state does not hold; the document records that a wrong depo
 only. [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) states the read: the node's best block, one proof for everything asked at that block's
 hash, and only proven values returned. The best block is taken on the node's word, like a pushed header;
 binding a block to the chain stays future work. On 2026-11-20 the user decided how a node's own error
-fails a read, and [`REQ-STPROOF-5-HRDXEG`](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) was amended: a JSON-RPC error from the node fails the read with that error, not with
+fails a read, and [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) was amended: a JSON-RPC error from the node fails the read with that error, not with
 the failure of a proof, because a node that could not answer has not been shown to lie; a read at a block
 obtained earlier holds only while the node still keeps that block's state. Not specified yet: when a
 participant reads, what it keeps, and which node it turns to after a failed read.
