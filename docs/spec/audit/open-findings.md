@@ -649,6 +649,27 @@ older anchor. Code-traced, not executed.
 the fallback; keep the record. Later fix, not selected for scheduling: a synchronization installs
 an equal final point when the record's anchor is below the chain anchor.
 
+## Wrong posted finalized-state bytes
+
+<a id="find-audit-posted-state-1-0j61v1"></a>
+
+### FIND-AUDIT-POSTED-STATE-1-0J61V1 — Wrong posted finalized-state bytes blind an auditor without that state
+
+A dispute that posts its auditing data carries `latestFinalizedStateStateMachineState`, the full
+state of the proof's final point, for auditors that do not hold it. The chain never checks those
+bytes against the final point's state hash: the field is committed only through
+`disputeAuditingDataHash` (`DisputeTypes.sol` `DisputeAuditingData`), and no contract reads it. The
+auditor uses the bytes only when they hash to that state (`DisputeValidationService.getReplayBase`).
+Other bytes are no evidence, so an auditor that does not hold the state, for example a pending
+joiner, does not judge the tail ([`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56); test
+[`REQ-SP-9-RNXP56.T7.P9`](../specification/disputes/state-proofs.md#req-sp-9-rnxp56.t7.p9)). A disputer can therefore post other bytes and keep such an auditor from
+countering a forged tail. This is no regression: the audit used to throw for such a dispute,
+and no counter for wrong posted bytes exists. An auditor that holds the state uses its own, and a final-history
+counter runs before any replay. Pre-existing; code-traced.
+
+**Status:** Open (2026-11-28); a fix is a design change (an on-chain check of the posted bytes, or
+a counter for them), not selected.
+
 ## Pruned history and the persisted head fork
 
 <a id="find-store-prune-1-c47mrr"></a>
