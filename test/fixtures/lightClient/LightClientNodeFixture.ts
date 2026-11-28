@@ -6,11 +6,13 @@ import {
     type LightClientStorageBlock,
     type LightClientSubscription
 } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
+import { RpcNodeProxy } from "@test/fixtures/node/RpcNodeProxy";
 import {
     type NodeHandle,
     peer3NodeBin,
     startPeer3Node
 } from "@test/utils/nodeInfra";
+import { waitFor } from "@test/utils/waitFor";
 import {
     concat,
     HDNodeWallet,
@@ -21,6 +23,9 @@ import {
 
 /** What a light client test fails with on a node without the endpoints. */
 export const LIGHT_CLIENT_UNSUPPORTED = "RPC node doesn't support LC endpoints";
+
+/** The existential deposit of the peer3 runtime, a constant of it. */
+export const PEER3_EXISTENTIAL_DEPOSIT = 1_000_000_000n;
 
 /** The first account the peer3 test chain funds: the Hardhat mnemonic's. */
 const FUNDED_MNEMONIC =
@@ -113,6 +118,7 @@ export class LightClientNodeFixture {
     private readonly sidecar: LightClientSidecar;
     private readonly wallet: HDNodeWallet;
     private readonly sockets: JsonRpcSocket[] = [];
+    private readonly proxies: RpcNodeProxy[] = [];
     /** The funded account's next nonce; several transactions can share a block. */
     private nextNonce = 0;
 
@@ -158,6 +164,7 @@ export class LightClientNodeFixture {
 
     async stop(): Promise<void> {
         for (const socket of this.sockets) socket.close();
+        for (const proxy of this.proxies) await proxy.close();
         this.provider.destroy();
         await this.sidecar.close();
         this.node.stop();
@@ -174,6 +181,32 @@ export class LightClientNodeFixture {
     /** A socket to the node itself, which the fixture closes on stop. */
     connectToNode(): Promise<JsonRpcSocket> {
         return this.open(this.node.url);
+    }
+
+    /**
+     * A socket to the node through a proxy of its own, which the test makes
+     * answer in the node's place. The fixture closes both on stop.
+     */
+    async connectToNodeThroughProxy(): Promise<{
+        proxy: RpcNodeProxy;
+        socket: JsonRpcSocket;
+    }> {
+        const proxy = await RpcNodeProxy.start(this.node.url);
+        this.proxies.push(proxy);
+        return { proxy, socket: await this.open(proxy.url) };
+    }
+
+    /**
+     * Resolves once the node sealed its first block: the genesis header names
+     * no Ethereum block, so no proven read can start from it.
+     */
+    async firstBlockSealed(): Promise<void> {
+        await waitFor(async () => (await this.provider.getBlockNumber()) > 0);
+    }
+
+    /** The account that sends this fixture's transactions. */
+    get senderAddress(): string {
+        return this.wallet.address.toLowerCase();
     }
 
     /** Deploys a contract that stores what it is called with and logs the slot as its topic. */

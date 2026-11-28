@@ -105,6 +105,38 @@ Engineer decisions (Luke, 2026-11-20, PR #605):
   three workers running this branch's runner image (run-1229, 2026-11-24, 173 passing with the timeout,
   join, gas and dispute E2E files).
 
+[FrontierAccountProofVerifier.test.ts](../verification/tests/test/unit/FrontierAccountProofVerifier.test.ts.md)
+(18 declarations, added 2026-11-19) covers all 18 planned cases of [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64). Its positive oracles are
+proofs recorded from a peer3 dev node (`zero-fee-node` at d845dbfb, run locally that day) for five addresses
+at one block, with that node's own `eth_getTransactionCount`, `eth_getBalance` and `eth_getCode` answers.
+Balances with a frozen or reserved part were not recorded from the node, which holds none on the dev chain:
+those cases use hand-encoded account entries, so the rule for them rests on the cited runtime source, not on
+a chain answer. Each of 10 single-line faults put into the account verifier and the key derivations (each
+part of the balance rule, the field order, each refusal, each absent-entry answer, each key prefix) failed
+at least one declaration, and all passed with the source restored.
+
+[LightClientProvenReads.test.ts](../verification/tests/test/lightClient/LightClientProvenReads.test.ts.md) (12
+declarations: 6 added 2026-11-19, 6 added 2026-11-20) covers the six planned cases of [`REQ-STPROOF-5-HRDXEG.T1`](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg.t1) and the six of [`REQ-STPROOF-5-HRDXEG.T2`](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg.t2) on a peer3 node of each
+declaration's own, discovered only with `--lc-tests`. The oracles are the node's own block hash, Ethereum
+block and Ethereum reads at the same block. The refusals put the existing `RpcNodeProxy` in front of the
+node and make it answer one request in the node's place, with the node's real proof of an earlier block,
+with no proof or header, with a header or proof node whose hex is not whole bytes, with a header that
+carries no Ethereum block hash, with a proof of only some of the asked entries, or with a JSON-RPC error.
+For the first six declarations, each of eight single-line faults put into the reader (the block hash left
+out of the proof request, each shape check off, the empty-read shortcut off, a wrong key for the account,
+the code or a slot, the state root taken from another field) failed its declaration, and all passed with
+the source restored. For the six of 2026-11-20, four single-line faults were put into the reader together
+(a header hash accepted as any hex, the proof nodes' byte check off, a node error turned into an empty
+answer, the code key asked only with the account): five of the 12 declarations failed (`T2.P1`, `T2.P3`,
+`T2.P5`, `T2.P6` and `T1.P5`, which the byte check also guards), the other seven passed, and all 12 passed
+with the source restored. A fifth fault, run alone (the Ethereum block hash taken from another header
+field, so the digest is never checked), failed `T2.P2` and `T1.P1`, and the other ten passed. `T2.P4` had
+no fault of its own: the reader has no line that decides it, and the rule it exercises is the trie
+proof's refusal of a missing node, whose fault evidence is with the verifier suite above. Not covered: a
+distributed worker, as for the suite above, so CI does not run this suite yet; a node that gives the header
+of another chain. A read at the genesis block is refused like any header without an Ethereum block hash
+(`T2.P2`).
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.
