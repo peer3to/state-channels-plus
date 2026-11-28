@@ -352,7 +352,7 @@ describe("distributed mixed-protocol pool", function () {
         });
         const notice = run.warnings.join("\n");
         expect(notice).to.include(
-            "Skipping 2 hardhat task(s) that need lightClient: no connected worker supports the lightClient runner; a worker host on distributed protocol 16 or newer runs them."
+            "Skipping 2 hardhat task(s) that need lightClient: no connected worker provides lightClient; a worker host on distributed protocol 16 or newer runs them."
         );
         expect(notice).to.include("light client mocha 1");
     });
