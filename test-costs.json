@@ -6439,24 +6439,6 @@
       "peakRssGb": 0.632,
       "measurementReason": null
     },
-    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates at the latest block when only the pending block reverts the call": {
-      "durationMs": 8954,
-      "avgCores": 2.867,
-      "peakRssGb": 0.577,
-      "measurementReason": null
-    },
-    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates at the latest block with the sender's managed nonce while its own transaction is unsealed": {
-      "durationMs": 10310,
-      "avgCores": 2.5,
-      "peakRssGb": 0.58,
-      "measurementReason": null
-    },
-    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates gas at the pending block, for a call valid only after the latest block's second": {
-      "durationMs": 9897,
-      "avgCores": 2.612,
-      "peakRssGb": 0.59,
-      "measurementReason": null
-    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a call over to the next node when the first answers with its internal error": {
       "durationMs": 2077,
       "avgCores": 0.944,
@@ -6589,12 +6571,6 @@
       "peakRssGb": 1.137,
       "measurementReason": null
     },
-    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects an estimate the latest block also reverts, with the pending block's revert": {
-      "durationMs": 9035,
-      "avgCores": 2.779,
-      "peakRssGb": 0.577,
-      "measurementReason": null
-    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects startup over a log window that is not a positive integer without opening a node": {
       "durationMs": 12433,
       "avgCores": 0.984,
@@ -6617,12 +6593,6 @@
       "durationMs": 4317,
       "avgCores": 0.908,
       "peakRssGb": 0.637,
-      "measurementReason": null
-    },
-    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects with the latest block's revert when the node cannot build its pending block for the estimate": {
-      "durationMs": 7605,
-      "avgCores": 3.395,
-      "peakRssGb": 0.582,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider relays each matching log once from the node sockets": {
@@ -7207,16 +7177,22 @@
       "peakRssGb": 0.182,
       "measurementReason": null
     },
+    "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints pushes a block whose logs carry no subscribed topic with its header alone": {
+      "durationMs": 13162,
+      "avgCores": 1.066,
+      "peakRssGb": 0.531,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints pushes every block once and in block order": {
+      "durationMs": 9949,
+      "avgCores": 1.421,
+      "peakRssGb": 0.611,
+      "measurementReason": null
+    },
     "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints pushes no block to a removed subscription": {
       "durationMs": 8654,
       "avgCores": 1.45,
       "peakRssGb": 0.628,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints pushes no block whose logs carry no subscribed topic": {
-      "durationMs": 7889,
-      "avgCores": 1.544,
-      "peakRssGb": 0.61,
       "measurementReason": null
     },
     "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints throws at once when no peer3 node binary is named": {
@@ -7229,6 +7205,78 @@
       "durationMs": 2480,
       "avgCores": 3.403,
       "peakRssGb": 0.507,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel follows nothing on a node without the light client endpoints": {
+      "durationMs": 8127,
+      "avgCores": 1.712,
+      "peakRssGb": 0.563,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel gets the writes of a second channel of the contract once that channel is followed too": {
+      "durationMs": 20096,
+      "avgCores": 0.746,
+      "peakRssGb": 0.566,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel keeps a slot a block pushed without its write changed until the interval's proof finds it": {
+      "durationMs": 19592,
+      "avgCores": 0.707,
+      "peakRssGb": 0.607,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel proves a contract's storage at each block again once its channel is unfollowed": {
+      "durationMs": 11393,
+      "avgCores": 1.184,
+      "peakRssGb": 0.622,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel proves a followed contract's balance at the read's block, because only its storage is kept": {
+      "durationMs": 9976,
+      "avgCores": 1.383,
+      "peakRssGb": 0.575,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel proves a slot the pushed blocks wrote but no read held before": {
+      "durationMs": 9021,
+      "avgCores": 1.48,
+      "peakRssGb": 0.577,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel proves all held storage of a followed contract in one request when the pushed blocks do not reach the read's block": {
+      "durationMs": 12679,
+      "avgCores": 1.037,
+      "peakRssGb": 0.551,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel reads a followed contract's storage at a later block from the pushed blocks without a proof": {
+      "durationMs": 13197,
+      "avgCores": 1.051,
+      "peakRssGb": 0.563,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel refuses a pushed block that comes without the proof of its writes": {
+      "durationMs": 10871,
+      "avgCores": 1.237,
+      "peakRssGb": 0.61,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel refuses a pushed block whose write is not the proven one and proves the storage itself": {
+      "durationMs": 11794,
+      "avgCores": 1.198,
+      "peakRssGb": 0.577,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel runs a call over a followed contract's pushed storage without proving a slot": {
+      "durationMs": 12175,
+      "avgCores": 1.147,
+      "peakRssGb": 0.557,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientFollowedChannel.test.ts|Light client followed channel subscribes again on a socket that reopened and proves the held storage again": {
+      "durationMs": 19163,
+      "avgCores": 0.725,
+      "peakRssGb": 0.581,
       "measurementReason": null
     },
     "hardhat|test/lightClient/LightClientProvenReads.test.ts|Light client proven reads asks the node for no proof when a read asks nothing": {
@@ -7265,6 +7313,102 @@
       "durationMs": 8046,
       "avgCores": 1.52,
       "peakRssGb": 0.618,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers a call that reaches a second contract": {
+      "durationMs": 9240,
+      "avgCores": 1.41,
+      "peakRssGb": 0.877,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers a contract call from proven state with the node's own answer": {
+      "durationMs": 8407,
+      "avgCores": 1.608,
+      "peakRssGb": 0.941,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers a reverting call with the node's revert reason": {
+      "durationMs": 5365,
+      "avgCores": 2.507,
+      "peakRssGb": 0.937,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers from the block a mined transaction is in": {
+      "durationMs": 9772,
+      "avgCores": 1.369,
+      "peakRssGb": 0.886,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers storage, code, balance and nonce reads with the node's own answers": {
+      "durationMs": 7711,
+      "avgCores": 1.707,
+      "peakRssGb": 0.863,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers the block values a call reads as the node's block has them": {
+      "durationMs": 5165,
+      "avgCores": 2.414,
+      "peakRssGb": 0.658,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider asks the node for every read and logs one error when the node lists no light client endpoints": {
+      "durationMs": 7237,
+      "avgCores": 1.928,
+      "peakRssGb": 0.882,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider asks the node, logs an error and counts the failure when a proof is refused": {
+      "durationMs": 6681,
+      "avgCores": 2.009,
+      "peakRssGb": 0.949,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider asks the node, logs an error and counts the failure when the node gives no block header": {
+      "durationMs": 6503,
+      "avgCores": 2.034,
+      "peakRssGb": 0.947,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider is the plain provider unless the light client is switched on": {
+      "durationMs": 6380,
+      "avgCores": 2.15,
+      "peakRssGb": 0.928,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider keeps nothing a call wrote": {
+      "durationMs": 6811,
+      "avgCores": 1.959,
+      "peakRssGb": 0.925,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider keeps the answers of reads made at once apart": {
+      "durationMs": 10576,
+      "avgCores": 1.264,
+      "peakRssGb": 0.914,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider leaves to the node a call that reaches the chain's own precompile or reads an earlier block's hash": {
+      "durationMs": 7702,
+      "avgCores": 1.646,
+      "peakRssGb": 0.63,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider runs a call into one of Ethereum's precompiles without proving the precompile's account": {
+      "durationMs": 6215,
+      "avgCores": 2.026,
+      "peakRssGb": 0.625,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider sends the node a read at an earlier block, a pending nonce and a call with a gas limit": {
+      "durationMs": 9466,
+      "avgCores": 1.472,
+      "peakRssGb": 0.924,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientPushedBlocks.test.ts|Light client pushed blocks proves a live block without a log of the subscribed topic to hold no write and to follow the block before it": {
+      "durationMs": 7624,
+      "avgCores": 1.889,
+      "peakRssGb": 0.637,
       "measurementReason": null
     },
     "hardhat|test/lightClient/LightClientPushedBlocks.test.ts|Light client pushed blocks proves a slot a live node pushed as cleared": {
@@ -20227,6 +20371,54 @@
       "peakRssGb": 0.084,
       "measurementReason": null
     },
+    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader hashes a recorded header to the Ethereum block hash its node reports": {
+      "durationMs": 272,
+      "avgCores": 0.404,
+      "peakRssGb": 0.064,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader hashes to another value when a block value is changed": {
+      "durationMs": 289,
+      "avgCores": 0.415,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader reads the block values the node reports for the block": {
+      "durationMs": 312,
+      "avgCores": 1.186,
+      "peakRssGb": 0.092,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader reads the fields that follow a header's extra data": {
+      "durationMs": 288,
+      "avgCores": 0.382,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader reads the recorded block from its proof under the block's state root": {
+      "durationMs": 326,
+      "avgCores": 1.135,
+      "peakRssGb": 0.092,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader reads the timestamp in milliseconds, which the node reports in whole seconds": {
+      "durationMs": 306,
+      "avgCores": 1.242,
+      "peakRssGb": 0.062,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader throws when the block ends inside its header": {
+      "durationMs": 386,
+      "avgCores": 0.933,
+      "peakRssGb": 0.081,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader throws when the header is not of the named Ethereum block": {
+      "durationMs": 282,
+      "avgCores": 0.39,
+      "peakRssGb": 0.063,
+      "measurementReason": null
+    },
     "hardhat|test/unit/FrontierStorageProofVerifier.test.ts|FrontierStorageProofVerifier proves a slot cleared on a peer3 dev node as zero, and not with the proof of the block before": {
       "durationMs": 458,
       "avgCores": 0.764,
@@ -20285,6 +20477,24 @@
       "durationMs": 334,
       "avgCores": 1.138,
       "peakRssGb": 0.094,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/LightClientReproofBlocks.test.ts|Light client re-proof interval accepts an interval of one block and goes on to the endpoint": {
+      "durationMs": 333,
+      "avgCores": 1.051,
+      "peakRssGb": 0.142,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/LightClientReproofBlocks.test.ts|Light client re-proof interval rejects an interval of zero blocks before any endpoint is tried": {
+      "durationMs": 562,
+      "avgCores": 0.534,
+      "peakRssGb": 0.106,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/LightClientReproofBlocks.test.ts|Light client re-proof interval rejects an interval that is not a whole number of blocks": {
+      "durationMs": 398,
+      "avgCores": 0.779,
+      "peakRssGb": 0.127,
       "measurementReason": null
     },
     "hardhat|test/unit/LocalDiamondBinding.test.ts|localDiamond binding carries every fragment of both generated ABIs": {
@@ -22027,6 +22237,12 @@
       "peakRssGb": 0.079,
       "measurementReason": null
     },
+    "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader reads the hash of the block before it in lower case": {
+      "durationMs": 237,
+      "avgCores": 0.464,
+      "peakRssGb": 0.047,
+      "measurementReason": null
+    },
     "hardhat|test/unit/SubstrateHeader.test.ts|SubstrateHeader reads the number and the state root of the header": {
       "durationMs": 309,
       "avgCores": 1.197,
@@ -22757,6 +22973,12 @@
       "durationMs": 419,
       "avgCores": 0.835,
       "peakRssGb": 0.08,
+      "measurementReason": null
+    },
+    "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock accepts a block that carries neither a write nor a log": {
+      "durationMs": 350,
+      "avgCores": 0.886,
+      "peakRssGb": 0.084,
       "measurementReason": null
     },
     "hardhat|test/unit/proveFrontierStorageBlock.test.ts|proveFrontierStorageBlock proves a slot pushed as cleared to zero": {
@@ -25297,142 +25519,34 @@
       "peakRssGb": 0.182,
       "measurementReason": null
     },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers a call that reaches a second contract": {
-      "durationMs": 9240,
-      "avgCores": 1.41,
-      "peakRssGb": 0.877,
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates at the latest block when only the pending block reverts the call": {
+      "durationMs": 8954,
+      "avgCores": 2.867,
+      "peakRssGb": 0.577,
       "measurementReason": null
     },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers a contract call from proven state with the node's own answer": {
-      "durationMs": 8407,
-      "avgCores": 1.608,
-      "peakRssGb": 0.941,
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates at the latest block with the sender's managed nonce while its own transaction is unsealed": {
+      "durationMs": 10310,
+      "avgCores": 2.5,
+      "peakRssGb": 0.58,
       "measurementReason": null
     },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers a reverting call with the node's revert reason": {
-      "durationMs": 5365,
-      "avgCores": 2.507,
-      "peakRssGb": 0.937,
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates gas at the pending block, for a call valid only after the latest block's second": {
+      "durationMs": 9897,
+      "avgCores": 2.612,
+      "peakRssGb": 0.59,
       "measurementReason": null
     },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers from the block a mined transaction is in": {
-      "durationMs": 9772,
-      "avgCores": 1.369,
-      "peakRssGb": 0.886,
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects an estimate the latest block also reverts, with the pending block's revert": {
+      "durationMs": 9035,
+      "avgCores": 2.779,
+      "peakRssGb": 0.577,
       "measurementReason": null
     },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers storage, code, balance and nonce reads with the node's own answers": {
-      "durationMs": 7711,
-      "avgCores": 1.707,
-      "peakRssGb": 0.863,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider answers the block values a call reads as the node's block has them": {
-      "durationMs": 5165,
-      "avgCores": 2.414,
-      "peakRssGb": 0.658,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider asks the node for every read and logs one error when the node lists no light client endpoints": {
-      "durationMs": 7237,
-      "avgCores": 1.928,
-      "peakRssGb": 0.882,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider asks the node, logs an error and counts the failure when a proof is refused": {
-      "durationMs": 6681,
-      "avgCores": 2.009,
-      "peakRssGb": 0.949,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider asks the node, logs an error and counts the failure when the node gives no block header": {
-      "durationMs": 6503,
-      "avgCores": 2.034,
-      "peakRssGb": 0.947,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider is the plain provider unless the light client is switched on": {
-      "durationMs": 6380,
-      "avgCores": 2.15,
-      "peakRssGb": 0.928,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider keeps nothing a call wrote": {
-      "durationMs": 6811,
-      "avgCores": 1.959,
-      "peakRssGb": 0.925,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider keeps the answers of reads made at once apart": {
-      "durationMs": 10576,
-      "avgCores": 1.264,
-      "peakRssGb": 0.914,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider leaves to the node a call that reaches the chain's own precompile or reads an earlier block's hash": {
-      "durationMs": 7702,
-      "avgCores": 1.646,
-      "peakRssGb": 0.63,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider runs a call into one of Ethereum's precompiles without proving the precompile's account": {
-      "durationMs": 6215,
-      "avgCores": 2.026,
-      "peakRssGb": 0.625,
-      "measurementReason": null
-    },
-    "hardhat|test/lightClient/LightClientProvider.test.ts|Light client provider sends the node a read at an earlier block, a pending nonce and a call with a gas limit": {
-      "durationMs": 9466,
-      "avgCores": 1.472,
-      "peakRssGb": 0.924,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader hashes a recorded header to the Ethereum block hash its node reports": {
-      "durationMs": 272,
-      "avgCores": 0.404,
-      "peakRssGb": 0.064,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader hashes to another value when a block value is changed": {
-      "durationMs": 289,
-      "avgCores": 0.415,
-      "peakRssGb": 0.062,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader reads the block values the node reports for the block": {
-      "durationMs": 312,
-      "avgCores": 1.186,
-      "peakRssGb": 0.092,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader reads the fields that follow a header's extra data": {
-      "durationMs": 288,
-      "avgCores": 0.382,
-      "peakRssGb": 0.063,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader reads the recorded block from its proof under the block's state root": {
-      "durationMs": 326,
-      "avgCores": 1.135,
-      "peakRssGb": 0.092,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader reads the timestamp in milliseconds, which the node reports in whole seconds": {
-      "durationMs": 306,
-      "avgCores": 1.242,
-      "peakRssGb": 0.062,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader throws when the block ends inside its header": {
-      "durationMs": 386,
-      "avgCores": 0.933,
-      "peakRssGb": 0.081,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/FrontierEthereumHeader.test.ts|FrontierEthereumHeader throws when the header is not of the named Ethereum block": {
-      "durationMs": 282,
-      "avgCores": 0.39,
-      "peakRssGb": 0.063,
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects with the latest block's revert when the node cannot build its pending block for the estimate": {
+      "durationMs": 7605,
+      "avgCores": 3.395,
+      "peakRssGb": 0.582,
       "measurementReason": null
     }
   }

@@ -31,3 +31,4 @@ Proving accounts and contract code of a Frontier chain
 - [x] `UNIT-TEST-STPROOF-6-QX77PX.P16` — code asked with the proof of an address without an entry
 - [x] `UNIT-TEST-STPROOF-6-QX77PX.P17` — the proof node that carries the 48 bytes of code left out
 - [x] `UNIT-TEST-STPROOF-6-QX77PX.P18` — code announced as five and as two bytes with three present refused, the same trie announced as three accepted
+- [x] `UNIT-TEST-STPROOF-6-QX77PX.P19` — one byte in the middle of each node on the path of an account and of its code changed

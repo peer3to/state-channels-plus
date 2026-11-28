@@ -286,4 +286,44 @@ describe("FrontierAccountProofVerifier", function () {
             )
         ).to.equal("0x600060");
     });
+
+    it("throws when one byte of any node on the path of an account or its code was changed", function () {
+        const { address, proofNodes } = largeContract;
+        // the nodes with one byte in the middle of the node at `index` changed
+        const withOneByteChanged = (index: number) => {
+            const node = proofNodes[index];
+            const middle = 2 + 2 * Math.floor((node.length - 2) / 4);
+            const flipped =
+                node.slice(middle, middle + 2) === "00" ? "01" : "00";
+            return proofNodes.map((other, position) =>
+                position === index
+                    ? node.slice(0, middle) + flipped + node.slice(middle + 2)
+                    : other
+            );
+        };
+        const proofs = {
+            account: (nodes: string[]) =>
+                verifier.provenAccount(stateRoot, address, nodes),
+            code: (nodes: string[]) =>
+                verifier.provenCode(stateRoot, address, nodes)
+        };
+        for (const [name, prove] of Object.entries(proofs)) {
+            // a node is on the path when the proof fails without it
+            const pathIndexes = [...proofNodes.keys()].filter((index) => {
+                try {
+                    prove(proofNodes.filter((_, other) => other !== index));
+                    return false;
+                } catch (error) {
+                    expect(error).to.be.instanceOf(StorageProofError);
+                    return true;
+                }
+            });
+            expect(pathIndexes.length, `${name} path`).to.be.greaterThan(1);
+            for (const index of pathIndexes)
+                expect(
+                    () => prove(withOneByteChanged(index)),
+                    `${name}, node ${index}`
+                ).to.throw(StorageProofError, /holds no node with hash/);
+        }
+    });
 });

@@ -80,7 +80,6 @@ Create a `peer3.config.json` file in the root of your project (next to `package.
 {
   "PROVIDER_URL": "http://localhost:8545",
   "PROVIDER_URLS": [],
-  "LIGHT_CLIENT": false,
   "LOG_QUERY_MAX_BLOCKS": 1000,
   "DEBUG_STATE_MANAGER": false,
   "DEBUG_DISPUTE_HANDLER": false,
@@ -97,7 +96,9 @@ yarn && yarn build
 
 `PROVIDER_URLS` lists several RPC endpoints of the same chain in priority order, for example `["wss://primary.example", "wss://backup.example"]`. Requests go to the first connected endpoint and fail over to the next; events are observed on every endpoint. When the list is empty, `PROVIDER_URL` is the only endpoint. Every listed endpoint is trusted. `LOG_QUERY_MAX_BLOCKS` is the most blocks one `eth_getLogs` read may span; set it at or below the smallest range limit of your endpoints (default 1000).
 
-`LIGHT_CLIENT` set to `true` makes the SDK answer chain reads at the latest block (`eth_call`, storage, code, balance and transaction count) from state the RPC endpoint proves, instead of trusting the endpoint's answer. A contract call then runs in a local EVM over the proven state. It needs an endpoint that serves the light client endpoints, which today is a peer3 node. With another endpoint, or when a proof fails, the reads go to the endpoint as before and an error is logged; `lightClientCounters` on the provider counts how reads were answered.
+When the RPC endpoint serves the light client endpoints, which a peer3 node does with `--light-client`, the SDK answers chain reads at the latest block (`eth_call`, storage, code, balance and transaction count) from state the endpoint proves, instead of trusting the endpoint's answer. A contract call then runs in a local EVM over the proven state. The endpoint's block header is still taken on its word: the light client catches answers that do not match that header, not an endpoint that makes up a consistent header and the state under it. With an endpoint that does not serve the light client endpoints, the reads go to it as before. When a proof fails, the read goes to the endpoint and an error is logged.
+
+For the channel the runtime has selected, the endpoint pushes the channel's partition with its proof at every block: every state key the transactions that logged the channel's id touched, reads included. The SDK reads that state without a request and has the endpoint prove only what the partition does not hold. `LightClientRpcProvider` (exported from the package) counts how reads were answered in `lightClientCounters`, the pushed blocks it accepted and refused and the subscriptions it opened again in `pushedStateCounters`, and keeps the stages of the last pushed blocks in `pushedBlockTimings`; a runtime logs its counts once when it is disposed.
 
 ## Run Tests
 Install local dependencies
@@ -397,14 +398,12 @@ PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --no-forge -
 ```
 
 The node binary is the one `PEER3_NODE_BIN` names, else `zero-fee-node` on
-`PATH`, the same rule as `--parachain` (`zero-fee-node` of `peer3-parachain`).
-Each test starts a dev node of its own from it (`startPeer3Node` in
-`test/utils/nodeInfra.js`, which also starts the `--parachain` slot nodes), so
-the tests share no chain state. The node does not serve the light
-client endpoints itself yet: `test/fixtures/lightClient/LightClientSidecar.ts`
-stands in front of it and adds them. When no node binary can be found, or against a
-node that does not list the endpoints, a test fails at once with
-`RPC node doesn't support LC endpoints`.
+`PATH`, the same rule as `--parachain` (`zero-fee-node` of `peer3-parachain`,
+built with the light client endpoints). Each test starts a dev node of its own
+from it with `--light-client` (`startPeer3Node` in `test/utils/nodeInfra.js`,
+which also starts the `--parachain` slot nodes), so the tests share no chain
+state. When no node binary can be found, or against a node that does not list
+the endpoints, a test fails at once with `RPC node doesn't support LC endpoints`.
 
 The runner image carries `zero-fee-node` (pinned by digest in
 `scripts/e2e-parallel/distributed/runner-image.Dockerfile`), but no worker

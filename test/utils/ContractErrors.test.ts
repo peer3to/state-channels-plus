@@ -1,6 +1,7 @@
 import { SignedBlockEthersType } from "@/types/ethers";
 import {
     CustomEvmError,
+    replayMinedCall,
     tryDecodeCustomError,
     tryHandleEvmError
 } from "@/utils/evmErrorHandler";
@@ -338,5 +339,47 @@ describe("encodedCustomErrorRevert", () => {
         expect(() =>
             factory.encodedCustomErrorRevert("ErrorThatDoesNotExist")
         ).to.throw("Unknown contract error: ErrorThatDoesNotExist");
+    });
+});
+
+describe("replayMinedCall", () => {
+    /** `increment()` mined at a block, and the value set by a transaction mined after it. */
+    async function incrementThenSet() {
+        const factory = await hre.getContractFactory("SimpleNumberStorage");
+        const storage = await factory.deploy();
+        await storage.waitForDeployment();
+        const increment = await storage.increment();
+        const receipt = await increment.wait();
+        await (await storage.setValue(10)).wait();
+        return { increment, receipt: receipt! };
+    }
+
+    it("runs the call again at the block its failed receipt names", async () => {
+        const { increment, receipt } = await incrementThenSet();
+        const failure = ethers.makeError("mined and failed", "CALL_EXCEPTION", {
+            action: "sendTransaction",
+            data: null,
+            reason: null,
+            transaction: { to: increment.to, data: increment.data },
+            invocation: null,
+            revert: null,
+            receipt
+        });
+
+        const replayed = await replayMinedCall(increment, failure);
+
+        // the state after the receipt's block holds the first increment
+        expect(BigInt(replayed)).to.equal(2n);
+    });
+
+    it("runs the call again at the latest block when the error names no receipt", async () => {
+        const { increment } = await incrementThenSet();
+
+        const replayed = await replayMinedCall(
+            increment,
+            new Error("the socket closed")
+        );
+
+        expect(BigInt(replayed)).to.equal(11n);
     });
 });

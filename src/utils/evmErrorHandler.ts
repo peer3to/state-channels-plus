@@ -188,6 +188,31 @@ export function isProvenSubmissionFailure(
     );
 }
 
+/**
+ * Runs the call of `tx` again, at the block its failed receipt in `error`
+ * names: the state after that block, which holds whatever made it fail. With
+ * no such block, at the latest block. A light client may read the latest
+ * block before the receipt's. `gasLimit`, when given, caps the call as it
+ * capped the transaction.
+ */
+export async function replayMinedCall(
+    tx: TransactionResponse,
+    error: unknown,
+    gasLimit?: bigint
+): Promise<string> {
+    const blockTag = ethers.isError(error, "CALL_EXCEPTION")
+        ? (error.receipt?.blockNumber ?? undefined)
+        : undefined;
+    return tx.provider.call({
+        to: tx.to,
+        from: tx.from,
+        data: tx.data,
+        value: tx.value,
+        blockTag,
+        gasLimit
+    });
+}
+
 export function isCustomEvmError(error: any): error is CustomEvmError {
     return !!error && error.isCustomError === true;
 }
@@ -255,13 +280,7 @@ async function _tryHandleEvmError(
             logger?.info(
                 `tryHandleEvmError - preflight and retrying transaction for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
             );
-            await tx.provider.call({
-                to: tx.to!,
-                from: tx.from,
-                data: tx.data!,
-                value: tx.value,
-                gasLimit
-            });
+            await replayMinedCall(tx, error, gasLimit);
             logger?.info(
                 `tryHandleEvmError - call succeeded for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
             );

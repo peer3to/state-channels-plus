@@ -248,6 +248,27 @@ export class LoggerUtils {
         };
     }
 
+    /** A chain read sent as JSON-RPC: its method and, for a call, what it calls. */
+    static getChainReadMetadata(request: ethers.JsonRpcPayload) {
+        const [first] = Array.isArray(request.params) ? request.params : [];
+        const call =
+            request.method === "eth_call" &&
+            typeof first === "object" &&
+            first !== null
+                ? (first as { to?: unknown; data?: unknown; input?: unknown })
+                : undefined;
+        const data = call?.data ?? call?.input;
+        return {
+            method: request.method,
+            ...(call && ethers.isHexString(data)
+                ? this.getContractCallMetadata(
+                      data,
+                      typeof call.to === "string" ? call.to : undefined
+                  )
+                : {})
+        };
+    }
+
     /** Chain coordinates of one contract log. */
     static getContractLogMetadata(log: ethers.Log) {
         return {

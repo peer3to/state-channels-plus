@@ -4,6 +4,7 @@ import {
     paramsOf
 } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
+import type { ChannelId } from "@/types/types";
 import { sleep } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
@@ -191,11 +192,20 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     private allNodesDownWarned = false;
     /** Requests sent so far; a slow setup's step timings count them. */
     private sentRequestCount = 0;
-    /** The id of the next request this provider itself sends to the nodes. */
-    private nextNodeRequestId = 0;
 
     get requestCount(): number {
         return this.sentRequestCount;
+    }
+
+    /**
+     * Whether a request can no longer be answered: the provider is destroyed,
+     * or no node is connected and none reconnects.
+     */
+    protected get isClosed(): boolean {
+        return (
+            this.destroyed ||
+            (!this.reconnects && !this.nodes.some((node) => node.isConnected))
+        );
     }
 
     constructor(nodes: readonly RpcNodeProvider[], logger: Logger) {
@@ -227,6 +237,20 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         this.reconnects = false;
         for (const node of this.nodes) node.stopReconnecting();
         this.releaseConnectionWaiters();
+    }
+
+    /**
+     * Tells the provider that the runtime follows the channel `channelId` of
+     * the contract at `contract` from now on. Plain chain access has no use
+     * for it; a subclass may.
+     */
+    followChannel(_contract: string, _channelId: ChannelId): void {
+        // nothing to do
+    }
+
+    /** Tells the provider that the runtime no longer follows the channel. */
+    unfollowChannel(_contract: string, _channelId: ChannelId): void {
+        // nothing to do
     }
 
     // Implements JsonRpcApiProvider._send: each request goes to the first
@@ -297,27 +321,26 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     /** Answers one request by forwarding it to the nodes; a subclass may answer it itself. */
-    protected answer(
+    protected async answer(
         request: JsonRpcPayload
     ): Promise<JsonRpcResult | JsonRpcError> {
-        return this.forward(request);
+        return (await this.forward(request)).answer;
     }
 
     /** Sends one request to the nodes as {@link forward} does; a node's rejection is thrown. */
-    protected async requestNode(
-        method: string,
-        params: unknown[]
-    ): Promise<unknown> {
-        const { result } = await this.forward({
-            jsonrpc: "2.0",
-            id: this.nextNodeRequestId++,
-            method,
-            params
-        });
-        return result;
+    protected requestNode(method: string, params: unknown[]): Promise<unknown> {
+        return this.send(method, params);
     }
 
-    protected async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
+    /** The node a request goes to now: the first with an open socket. */
+    protected servingNode(): RpcNodeProvider | undefined {
+        return this.nodes.find((node) => node.isConnected);
+    }
+
+    /** The answer to `request` from the first node that gives one, and that node. */
+    protected async forward(
+        request: JsonRpcPayload
+    ): Promise<{ answer: JsonRpcResult; answeredBy: RpcNodeProvider }> {
         const params = paramsOf(request);
         let hasRetriedMissingBlock = false;
         for (;;) {
@@ -339,7 +362,10 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
                             sent.result
                         )
                     )
-                        return { id: request.id, result: sent.result };
+                        return {
+                            answer: { id: request.id, result: sent.result },
+                            answeredBy: node
+                        };
                     fault = missingBlock = makeError(
                         "RPC node answered the latest block read with no block",
                         "UNKNOWN_ERROR",

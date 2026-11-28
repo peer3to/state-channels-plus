@@ -10,7 +10,11 @@ import {
 import FrontierStorageProofVerifier from "./FrontierStorageProofVerifier";
 import SubstrateHeader from "./SubstrateHeader";
 import SubstrateTrieProof from "./SubstrateTrieProof";
-import type { SubstrateHeaderJson } from "../../lightClientWire";
+import type {
+    LightClientStages,
+    LightClientStorageBlock,
+    SubstrateHeaderJson
+} from "../../lightClientWire";
 import AProvenStateReader, {
     type AccountStateRead,
     type BlockEnvironment,
@@ -37,6 +41,40 @@ function isHeader(answer: unknown): answer is SubstrateHeaderJson {
         isBytes(header.extrinsicsRoot) &&
         Array.isArray(header.digest?.logs) &&
         header.digest.logs.every(isBytes)
+    );
+}
+
+function isStages(value: unknown): value is LightClientStages {
+    const stages = value as Partial<LightClientStages> | null;
+    return (
+        typeof stages === "object" &&
+        stages !== null &&
+        (stages.executedAt === null || typeof stages.executedAt === "number") &&
+        typeof stages.builtAt === "number" &&
+        typeof stages.sentAt === "number"
+    );
+}
+
+/** Whether `pushed` has the shape of a block a node pushes to a light client subscription. */
+export function isStorageBlock(
+    pushed: unknown
+): pushed is LightClientStorageBlock {
+    const block = pushed as Partial<LightClientStorageBlock> | null;
+    return (
+        typeof block === "object" &&
+        block !== null &&
+        isHeader(block.header) &&
+        isBytes(block.ethereumHeader) &&
+        typeof block.sync === "boolean" &&
+        Array.isArray(block.values) &&
+        block.values.every(
+            (entry) =>
+                isBytes(entry?.key) &&
+                (entry.value === null || isBytes(entry.value))
+        ) &&
+        Array.isArray(block.proofNodes) &&
+        block.proofNodes.every(isBytes) &&
+        isStages(block.stages)
     );
 }
 
@@ -88,16 +126,7 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
             );
         const header = new FrontierEthereumHeader(encodedBlock);
         header.assertHash(block.ethereumBlockHash);
-        return {
-            number: header.number,
-            // a contract reads the runtime's clock in whole seconds
-            timestamp: header.timestampMs / 1000n,
-            coinbase: header.beneficiary,
-            gasLimit: header.gasLimit,
-            difficulty: header.difficulty,
-            prevRandao: header.mixHash,
-            baseFeePerGas: this.constants.baseFeePerGas
-        };
+        return header.environment(this.constants.baseFeePerGas);
     }
 
     async read(

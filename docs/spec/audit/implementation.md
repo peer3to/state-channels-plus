@@ -26,17 +26,18 @@ lockfile already held. The proofs in the tests come from Moonbeam and from a pee
 `stateRoot` differs from the header's and refuses the proof, and that the header digest carries the
 Ethereum block hash.
 
-Added the same day for pushed blocks ([`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)):
+Added the same day for pushed blocks ([`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)):
 [lightClientWire.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire.ts.md) names the
 three `lightClient_*` methods and the pushed block;
 [SubstrateHeader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader.ts.md)
 hashes a header and reads the Ethereum block hash from its Frontier digest log;
-[proveFrontierStorageBlock.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/proveFrontierStorageBlock.ts.md)
+`proveFrontierStorageBlock.ts` (removed on 2026-11-20)
 checks a pushed block; [ScaleReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader.ts.md)
-holds the SCALE reading the trie proof and the header share. No node serves the `lightClient_*` methods
-yet. A test-owned sidecar (`test/fixtures/lightClient/LightClientSidecar.ts`) stands in: a WebSocket proxy
-in front of a peer3 node that builds the pushed blocks from the node's wildcard storage subscription,
-which the node allows only with unsafe RPC methods. Nothing in `src` calls the new code yet.
+holds the SCALE reading the trie proof and the header share. No node served the `lightClient_*` methods
+then. A test-owned sidecar (`test/fixtures/lightClient/LightClientSidecar.ts`) stood in: a WebSocket proxy
+in front of a peer3 node that built the pushed blocks from the node's wildcard storage subscription,
+which the node allows only with unsafe RPC methods. Nothing in `src` called the new code yet. The node
+endpoint of peer3-parachain PR #3 replaced the sidecar on 2026-11-20 (below).
 
 Added on 2026-11-19 for accounts and for the read from a node ([`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64), [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg)):
 [AAccountProofVerifier.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/AAccountProofVerifier.ts.md)
@@ -57,7 +58,7 @@ is 1,000,000,000 (`MILLI_UNIT`). The code key prefix was first recorded wrongly 
 `AccountCodesMetadata`, whose keys have the same shape; the tests against the node's own `eth_getCode`
 caught it. Nothing in `src` calls the reader yet.
 
-Added on 2026-11-19 for the light client itself ([`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) to [`REQ-LC-4-E29Y46` (The light client is off unless switched on and served)](../specification/runtime/light-client.md#req-lc-4-e29y46), [`REQ-STPROOF-6-CASBQP` (The block values a call reads are accepted only as the block commits to them)](../specification/runtime/storage-proofs.md#req-stproof-6-casbqp)):
+Added on 2026-11-19 for the light client itself ([`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) to [`REQ-LC-4-E29Y46` (The light client is on when the endpoint serves it)](../specification/runtime/light-client.md#req-lc-4-e29y46), [`REQ-STPROOF-6-CASBQP` (The block values a call reads are accepted only as the block commits to them)](../specification/runtime/storage-proofs.md#req-stproof-6-casbqp)):
 [LightClientRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md)
 answers the reads through the new `answer` hook of `MultiRpcProvider`, counts how each was answered and
 logs a failure as an error;
@@ -72,7 +73,8 @@ what is specific to peer3;
 [FrontierEthereumHeader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierEthereumHeader.ts.md)
 reads the block values. The state, the pass loop and the parser are taken from the closed mirror provider
 (`origin/b1384-mirror-provider`, PR #589) with everything of the storage diff service removed. The
-provider is created by `createRpcNodesProvider` when `LIGHT_CLIENT` is true. The provider loads the light
+provider was created by `createRpcNodesProvider` when `LIGHT_CLIENT` was true; since 2026-11-20 every
+runtime gets it, and it is on when the node lists the endpoints (below). The provider loads the light
 client, and with it the EVM's modules, at the first read it may answer: the host-root entry must load no
 EVM (`packageHostRootExport.test.ts`), and it imports the provider. The local EVM is the one
 `createEvm` builds, so its hardfork is the SDK's and not read from the chain. peer3's own precompile
@@ -80,6 +82,28 @@ address (`0x…0800`, `XCM_PRECOMPILE` in `runtime/src/free_lane_rules.rs`) and 
 into the source and must follow a runtime upgrade by hand. The header check against the Ethereum block
 hash guards the decoder against a changed block layout; no honest node makes it fail, so only the unit
 suite exercises it. The limit of 256 passes per read is not reached by any test.
+
+Reworked on 2026-11-20 to the partitions a peer3 node with `--light-client` pushes (peer3-parachain PR
+#3). [StateChannelEventListener.ts](../implementation/source/src/StateChannelEventListener.ts.md) still calls `followChannel` and `unfollowChannel` on the
+runtime's provider. [LightClientSubscriptions.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions.ts.md) keeps one subscription per followed contract on every
+node socket; it opens a subscription again when the node ends it or the light client refuses a push,
+tries a failed change again after a block time, keeps pushes that arrive before their subscription's id,
+and drops what a lost connection pushed. [RpcNodeProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md) hands a notification of a watched method
+to its listeners before ethers sees it, and parses only a frame that names one.
+[APushedPartition.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/APushedPartition.ts.md) and [FrontierPushedPartition.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition.ts.md) hold one subscription's keys, values and
+trie nodes, check each message under its header and the Ethereum header against the digest's hash,
+drop the nodes no held key uses, and decide reads from the held nodes.
+[LightClient.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClient.ts.md) reads at the newest accepted pushed block, takes from the partitions what they
+decide and has the node prove the rest at that block, holds its lock only while a pass runs, counts an
+answered read by whether it asked the node, and keeps each accepted block's stages
+([LightClientCounters.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientCounters.ts.md)). The local EVM runs on Prague, the newest hardfork its
+package knows, with only Ethereum's precompiles 1 to 9 and the code size limit; created code follows
+the EVM's checkpoints ([LightClientState.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientState.ts.md)); a call that carries value goes to the node.
+[LightClientRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md) is every runtime's chain access: the light client is on when the node lists
+the endpoints, the question is kept once answered or refused as not served (-32601, and Hardhat's
+-32004) and asked again after it went unanswered, a read cut by a closed provider fails uncounted, and the
+counts are logged once at destroy. The sidecar, `proveFrontierStorageBlock.ts`, the re-proof interval and
+the `LIGHT_CLIENT` and `LIGHT_CLIENT_REPROOF_BLOCKS` keys are removed.
 
 ## Discovery joins after the dispose cut — 2026-11-02
 

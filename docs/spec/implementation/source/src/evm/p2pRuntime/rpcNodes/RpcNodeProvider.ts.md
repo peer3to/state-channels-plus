@@ -7,6 +7,7 @@
 - [`REQ-CHAINOBS-2-2NCSQ3` (One endpoint per request, with failover)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-2-2ncsq3)
 - [`REQ-CHAINOBS-3-N137ZP` (Per-endpoint observation with reconnect and catch-up)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-3-n137zp)
 - [`REQ-CHAINOBS-4-JA3YF8` (Application chain access over the same endpoint set)](../../../../../../specification/runtime/chain-observation.md#req-chainobs-4-ja3yf8)
+- [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../../../../../../specification/runtime/light-client.md#req-lc-5-mm0bm9)
 
 ## UNIT-TEST-RPC-NODE-1-VTXH1M
 

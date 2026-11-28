@@ -4,7 +4,7 @@
 
 ## Requirements
 
-- [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../../../../../../../../../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)
+- [`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../../../../../../../../../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)
 
 ## UNIT-TEST-STPROOF-3-W0K47W
 

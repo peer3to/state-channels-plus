@@ -84,6 +84,12 @@ export type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
 export { createRpcNodesProvider } from "@/evm/p2pRuntime/RuntimeChainContext";
 export type { default as MultiRpcProvider } from "@/evm/p2pRuntime/rpcNodes/MultiRpcProvider";
 export {
+    default as LightClientRpcProvider,
+    type LightClientCounters,
+    type PushedBlockTiming,
+    type PushedStateCounters
+} from "@/evm/p2pRuntime/rpcNodes/LightClientRpcProvider";
+export {
     EventBus,
     attachContractEvents,
     type ApplicationEventMap,

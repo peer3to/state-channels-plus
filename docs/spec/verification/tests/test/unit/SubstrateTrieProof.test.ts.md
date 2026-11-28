@@ -19,6 +19,10 @@ fetch proofs and does not cover how the state root is obtained.
 
 - `reads a value the trie holds inside its leaf`: UNIT-TEST-STPROOF-1-K1CTJZ.P1
 - `reads a value the trie holds by hash`: REQ-STPROOF-2-ABCQR7.T1.P2, UNIT-TEST-STPROOF-1-K1CTJZ.P2
+- `reads a value of more than 32 bytes a state version 0 leaf holds inline, its length in two bytes`: REQ-STPROOF-2-ABCQR7.T1.P5, UNIT-TEST-STPROOF-1-K1CTJZ.P24
+- `reads values of 63 and 64 bytes, either side of the one-byte length form`: REQ-STPROOF-1-J20P5Y.T1.P4, UNIT-TEST-STPROOF-9-NS04PW.P1
+- `reads values of 16383 and 16384 bytes, either side of the two-byte length form`: REQ-STPROOF-1-J20P5Y.T1.P5, UNIT-TEST-STPROOF-9-NS04PW.P2
+- `reads a value whose length takes the four-byte length form`: REQ-STPROOF-1-J20P5Y.T1.P6, UNIT-TEST-STPROOF-9-NS04PW.P3
 - `reads null for a key the proof shows to hold nothing`: UNIT-TEST-STPROOF-1-K1CTJZ.P3
 - `reads null from the empty trie`: UNIT-TEST-STPROOF-1-K1CTJZ.P4
 - `reads the value a branch holds where the key ends`: UNIT-TEST-STPROOF-1-K1CTJZ.P5

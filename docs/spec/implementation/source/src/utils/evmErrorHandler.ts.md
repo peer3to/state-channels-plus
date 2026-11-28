@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../../../../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
@@ -58,6 +59,8 @@ Classification
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42` — a mined revert retried with the caller's `gasLimit` preflights at that limit; a preflight that reverts at that limit sends no second transaction and reports unhandled
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P43` — a mined revert retried with the caller's `gasLimit` whose preflight passes is resent at that `gasLimit`
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P44` — a mined revert retried without a caller `gasLimit` preflights without a limit and is resent at a fresh estimate
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P45` — `replayMinedCall` runs the call again at the block the failed receipt names
+- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P46` — `replayMinedCall` runs the call again at the latest block when the error names no receipt
 
 ## UNIT-TEST-EVM-ERROR-HANDLER-2-9FDW1W
 

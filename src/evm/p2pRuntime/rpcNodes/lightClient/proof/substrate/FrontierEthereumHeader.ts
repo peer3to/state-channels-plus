@@ -1,4 +1,5 @@
 import ScaleReader from "./ScaleReader";
+import type { BlockEnvironment } from "../AProvenStateReader";
 import StorageProofError from "../StorageProofError";
 import { encodeRlp, hexlify, keccak256, toBeArray } from "ethers";
 
@@ -66,6 +67,20 @@ export default class FrontierEthereumHeader {
                 nonce
             ])
         );
+    }
+
+    /** The block values a call reads; the base fee is the runtime's, which no header holds. */
+    environment(baseFeePerGas: bigint): BlockEnvironment {
+        return {
+            number: this.number,
+            // a contract reads the runtime's clock in whole seconds
+            timestamp: this.timestampMs / 1000n,
+            coinbase: this.beneficiary,
+            gasLimit: this.gasLimit,
+            difficulty: this.difficulty,
+            prevRandao: this.mixHash,
+            baseFeePerGas
+        };
     }
 
     /** Throws {@link StorageProofError} unless this is the header of the block `ethereumBlockHash` names. */

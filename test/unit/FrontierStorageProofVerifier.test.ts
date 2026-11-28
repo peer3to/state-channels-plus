@@ -70,6 +70,31 @@ describe("FrontierStorageProofVerifier", function () {
         ).to.throw(StorageProofError, /holds no node with hash/);
     });
 
+    it("throws when one byte of any node on the slot's path was changed", function () {
+        expect(firstSlotProofNodes.length).to.be.greaterThan(1);
+        for (const [changed, node] of firstSlotProofNodes.entries()) {
+            // one byte in the middle of the node: its hash is no longer the one asked for
+            const middle = 2 + 2 * Math.floor((node.length - 2) / 4);
+            const flipped =
+                node.slice(middle, middle + 2) === "00" ? "01" : "00";
+            const altered = firstSlotProofNodes.map((other, index) =>
+                index === changed
+                    ? node.slice(0, middle) + flipped + node.slice(middle + 2)
+                    : other
+            );
+            expect(
+                () =>
+                    verifier.provenStorage(
+                        stateRoot,
+                        address,
+                        [firstSlot.slot],
+                        altered
+                    ),
+                `node ${changed}`
+            ).to.throw(StorageProofError, /holds no node with hash/);
+        }
+    });
+
     it("throws when the proven value is not 32 bytes long", function () {
         const shortNode = singleLeafNode(
             firstSlot.trieKey,
