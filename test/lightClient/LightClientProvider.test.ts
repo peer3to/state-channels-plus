@@ -11,6 +11,10 @@ import {
     STATIC_FORWARDER_CONTRACT
 } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
+import {
+    numberStorageInterface,
+    outcomeOf
+} from "@test/fixtures/lightClient/LightClientProxyRecords";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import {
@@ -22,7 +26,6 @@ import {
     toBeHex,
     zeroPadValue
 } from "ethers";
-import { ethers } from "hardhat";
 
 /** No read was answered by the nodes. */
 const NO_NODE_ANSWER = { leftToNodes: 0, failed: 0, unsupported: 0 };
@@ -31,14 +34,6 @@ const FAILED_READ = "Light client failed a read; asking the nodes";
 /** Long enough for a request a read sends on to reach the endpoint's proxy. */
 const UNSENT_REQUEST_WAIT_MS = 200;
 
-/** How a call ended: what it returned, or the data it reverted with. */
-function outcomeOf(call: Promise<string>) {
-    return call.then(
-        (returned) => ({ returned }),
-        (error: { data?: string }) => ({ revertedWith: error.data })
-    );
-}
-
 describe("Light client provider", function () {
     let fixture: LightClientProviderFixture | undefined;
 
@@ -46,11 +41,6 @@ describe("Light client provider", function () {
         await fixture?.stop();
         fixture = undefined;
     });
-
-    async function numberStorageInterface() {
-        return (await ethers.getContractFactory("SimpleNumberStorage"))
-            .interface;
-    }
 
     it("answers a contract call from proven state with the node's own answer", async function () {
         fixture = await LightClientProviderFixture.start();

@@ -9,6 +9,10 @@ import { sleep } from "@/utils";
 import { tryHandleEvmError } from "@/utils/evmErrorHandler";
 import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
+import {
+    pushedCount,
+    withoutNewHeads
+} from "@test/fixtures/lightClient/LightClientProxyRecords";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { isError, solidityPackedKeccak256, toBeHex, toQuantity } from "ethers";
@@ -52,21 +56,6 @@ type PushedEthereumHeaderParams = {
     subscription: string;
     result: { ethereumHeader: string };
 };
-
-/** Drops the endpoint's new heads, so that only what the test names raises the block floor. */
-function withoutNewHeads(params: unknown): unknown {
-    const notified = params as { result?: { parentHash?: string } };
-    return notified.result?.parentHash === undefined ? params : undefined;
-}
-
-/** How many blocks `proxy` pushed to its subscriptions. */
-function pushedCount(proxy: {
-    sentNotifications: { method: string }[];
-}): number {
-    return proxy.sentNotifications.filter(
-        ({ method }) => method === PUSHED_BLOCK
-    ).length;
-}
 
 describe("Light client followed channel", function () {
     let fixture: LightClientProviderFixture | undefined;

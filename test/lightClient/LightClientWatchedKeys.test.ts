@@ -1,15 +1,23 @@
 // @distributed-requires: lightClient
-import { LIGHT_CLIENT_METHODS } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
-import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
-import SubstrateHeader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader";
-import type { ChecksumAddress } from "@/types/types";
+import {
+    LIGHT_CLIENT_METHODS,
+    MAX_WATCHED_KEYS_PER_CALL
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
 import { sleep } from "@/utils";
 import { PARTITION_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
-import type { RecordedMessage } from "@test/fixtures/node/RpcNodeProxy";
+import {
+    newestPushedHash,
+    proofKeyCounts,
+    readProofAt,
+    requestsOf,
+    slotKey,
+    watchedKeysOf
+} from "@test/fixtures/lightClient/LightClientProxyRecords";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
-import { getAddress, toBeHex, ZeroHash } from "ethers";
+import { Contract, toBeHex, ZeroHash } from "ethers";
+import { ethers } from "hardhat";
 
 /** Channel ids, which the partition contract logs as its second topic. */
 const CHANNEL_A = toBeHex(0xa1, 32);
@@ -21,58 +29,10 @@ const PROOF_REQUESTS = ["chain_getHeader", "state_getReadProof"];
 const FAILED_READ = "Light client failed a read; asking the nodes";
 /** Long enough for a request the provider sends on to reach the endpoint's proxy. */
 const UNSENT_REQUEST_WAIT_MS = 200;
-
-/** The trie key of `slot` of `contract`, lowercase. */
-function slotKey(contract: string, slot: number): string {
-    return contractStorageKey(
-        getAddress(contract) as ChecksumAddress,
-        toBeHex(slot, 32)
-    ).toLowerCase();
-}
-
-/** The params of every `method` request the proxy forwarded, in order, with their records. */
-function requestsOf(
-    records: readonly RecordedMessage[],
-    method: string
-): { params: unknown[]; sequence: number }[] {
-    return records
-        .filter((record) => record.method === method)
-        .map(({ params, sequence }) => ({
-            params: params as unknown[],
-            sequence
-        }));
-}
-
-/** The keys a watch request named, lowercase and sorted. */
-function watchedKeysOf(params: unknown[]): string[] {
-    return (params[1] as string[]).map((key) => key.toLowerCase()).sort();
-}
-
-/** The Substrate hash of the newest block pushed through the fixture's proxy. */
-function newestPushedHash(fixture: LightClientProviderFixture): string {
-    const pushed = fixture.proxy.sentNotifications
-        .filter(({ method }) => method === LIGHT_CLIENT_METHODS.notification)
-        .map(
-            ({ params }) =>
-                (params as { result?: { header: never } }).result?.header
-        )
-        .filter((header) => header !== undefined);
-    return new SubstrateHeader(pushed[pushed.length - 1]).hash;
-}
-
-/** The node's read proof of `slot` of `contract` at the newest block pushed through the fixture's proxy. */
-async function readProofAt(
-    fixture: LightClientProviderFixture,
-    contract: string,
-    slot: number
-): Promise<{ at: string; proof: string[] }> {
-    const at = newestPushedHash(fixture);
-    const { proof } = (await fixture.node.provider.send("state_getReadProof", [
-        [slotKey(contract, slot)],
-        at
-    ])) as { proof: string[] };
-    return { at, proof };
-}
+/** Enough for the light client probe's deployment. */
+const PROBE_DEPLOY_GAS = 9_000_000n;
+/** Slots one `sumOf` read of the probe's list takes, few enough for one watch. */
+const SLOTS_PER_WATCHED_READ = 1000;
 
 describe("Light client watched keys", function () {
     let fixture: LightClientProviderFixture | undefined;
@@ -426,6 +386,96 @@ describe("Light client watched keys", function () {
         expect(watchedKeysOf(again.params)).to.deep.equal(
             [slotKey(contract, 10), slotKey(contract, 11)].sort()
         );
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("proves a read of more keys than one watch takes with a read proof", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const factory = await ethers.getContractFactory("LightClientProbe");
+        const probe = await node.deploy(factory.bytecode, PROBE_DEPLOY_GAS);
+        await fixture.followContract(probe);
+        const slots = Array.from(
+            { length: MAX_WATCHED_KEYS_PER_CALL + 1 },
+            (_, slot) => BigInt(slot)
+        );
+        const sent = proxy.forwardedRequests.length;
+
+        expect(
+            await new Contract(probe, factory.interface, provider).sumOf(slots)
+        ).to.equal(
+            await new Contract(probe, factory.interface, node.provider).sumOf(
+                slots
+            )
+        );
+        const watches = requestsOf(proxy.forwardedRequests.slice(sent), WATCH);
+        expect(
+            watches.filter(
+                ({ params }) =>
+                    watchedKeysOf(params).length > MAX_WATCHED_KEYS_PER_CALL
+            )
+        ).to.deep.equal([]);
+        expect(Math.max(...proofKeyCounts(fixture, sent))).to.be.greaterThan(
+            MAX_WATCHED_KEYS_PER_CALL
+        );
+        expect(fixture.loggedErrors()).to.deep.equal([]);
+    });
+
+    it("watches more kept keys than one watch takes on a new subscription in several requests", async function () {
+        fixture = await LightClientProviderFixture.start();
+        const { node, provider, proxy } = fixture;
+        const factory = await ethers.getContractFactory("LightClientProbe");
+        const probe = await node.deploy(factory.bytecode, PROBE_DEPLOY_GAS);
+        await fixture.followContract(probe);
+        const reader = new Contract(probe, factory.interface, provider);
+        await reader.sumOf(
+            Array.from({ length: SLOTS_PER_WATCHED_READ }, (_, slot) =>
+                BigInt(slot)
+            )
+        );
+        await reader.sumOf(
+            Array.from({ length: SLOTS_PER_WATCHED_READ }, (_, slot) =>
+                BigInt(SLOTS_PER_WATCHED_READ + slot)
+            )
+        );
+        const kept = [
+            ...new Set(
+                requestsOf(proxy.forwardedRequests, WATCH).flatMap(
+                    ({ params }) => watchedKeysOf(params)
+                )
+            )
+        ].sort();
+        // premise: the reads were watched, and they keep more keys than one watch takes
+        expect(kept.length).to.be.greaterThan(MAX_WATCHED_KEYS_PER_CALL);
+        const from = proxy.forwardedRequests.length;
+        const watchedAgain = () =>
+            requestsOf(proxy.forwardedRequests.slice(from), WATCH);
+
+        await fixture.follow(probe, CHANNEL_B);
+        await waitFor(
+            () =>
+                new Set(
+                    watchedAgain().flatMap(({ params }) =>
+                        watchedKeysOf(params)
+                    )
+                ).size >= kept.length
+        );
+
+        expect(
+            watchedAgain().map(({ params }) => watchedKeysOf(params).length)
+        ).to.deep.equal([
+            MAX_WATCHED_KEYS_PER_CALL,
+            kept.length - MAX_WATCHED_KEYS_PER_CALL
+        ]);
+        expect(
+            [
+                ...new Set(
+                    watchedAgain().flatMap(({ params }) =>
+                        watchedKeysOf(params)
+                    )
+                )
+            ].sort()
+        ).to.deep.equal(kept);
         expect(fixture.loggedErrors()).to.deep.equal([]);
     });
 });

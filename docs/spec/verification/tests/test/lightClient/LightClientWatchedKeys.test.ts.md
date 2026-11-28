@@ -24,3 +24,5 @@ and their order, the counters and the log. It runs only with `--lc-tests`.
 - `keeps the followed contract's subscription without topics before a channel is followed and after the last one is unfollowed`: REQ-LC-5-MM0BM9.T1.P19, REQ-LC-12-VPAAP0.T1.P10
 - `answers watched reads as the endpoint does at their blocks, with the reads compared`: REQ-LC-12-VPAAP0.T1.P9
 - `watches the kept keys again on a new subscription however many blocks passed since their watch`: REQ-LC-12-VPAAP0.T1.P17
+- `proves a read of more keys than one watch takes with a read proof`: REQ-LC-12-VPAAP0.T1.P11
+- `watches more kept keys than one watch takes on a new subscription in several requests`: REQ-LC-12-VPAAP0.T1.P12

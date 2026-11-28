@@ -627,7 +627,7 @@ Specification cases tested: 2/2.
 Specification cases tested: 14/14.
 
 [`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../specification/runtime/light-client.md#req-lc-12-vpaap0)
-Specification cases tested: 11/13. Untested: T1.P11, T1.P12.
+Specification cases tested: 13/13.
 
 [`REQ-LIF-1-A5BN02` (The best-case complete lifecycle needs at least two base-layer transactions)](../specification/settlement/lifecycle.md#req-lif-1-a5bn02)
 Specification cases tested: 2/13. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13.
@@ -720,7 +720,7 @@ Specification cases tested: 1/10. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T
 Specification cases tested: 2/3. Untested: T1.P8.
 
 [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
-Specification cases tested: 42/45. Untested: T1.P2, T1.P3, T3.P11.
+Specification cases tested: 43/45. Untested: T1.P2, T1.P3.
 
 [`REQ-MSG-1-AY3A77` (Snapshots MUST commit both stream tips + totals)](../specification/settlement/cross-layer-messages.md#req-msg-1-ay3a77)
 Specification cases tested: 0/12.

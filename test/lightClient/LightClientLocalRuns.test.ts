@@ -1,6 +1,7 @@
 // @distributed-requires: lightClient
 import { TRANSIENT_STORAGE_CONTRACT } from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
+import { proofKeyCounts } from "@test/fixtures/lightClient/LightClientProxyRecords";
 import { expect } from "chai";
 import { Contract, toBeHex, Wallet, ZeroAddress } from "ethers";
 import { ethers } from "hardhat";
@@ -10,14 +11,6 @@ const LARGE_GAS = 9_000_000n;
 const FAILED_READ = "Light client failed a read; asking the nodes";
 /** Slots of the probe's list that `sumOf` reads, none depending on another. */
 const INDEPENDENT_SLOTS = [0n, 1n, 2n, 3n];
-
-/** How many keys each proof request the provider sent asked for, in order, from `from` on. */
-function proofKeyCounts(fixture: LightClientProviderFixture, from: number) {
-    return fixture.proxy.forwardedRequests
-        .slice(from)
-        .filter(({ method }) => method === "state_getReadProof")
-        .map(({ params }) => (params as [string[]])[0].length);
-}
 
 describe("Light client local runs", function () {
     let fixture: LightClientProviderFixture | undefined;
