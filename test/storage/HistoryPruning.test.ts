@@ -1,4 +1,4 @@
-import { block, transactionHeader } from "../factory";
+import { block, randomAddress, transactionHeader } from "../factory";
 import Storage from "@/storage";
 import {
     heldBlockHeights,
@@ -282,6 +282,35 @@ describe("History pruning stores", () => {
                 0, 1, 2
             ]);
             expect(heldStateHeights(storage, history)).to.deep.equal([0, 1, 2]);
+        });
+    });
+
+    describe("Storage.getPreviousRelevantTimestamp", () => {
+        it("the block below a final point pruned as skipped history → undefined", () => {
+            const storage = new Storage();
+            const history = storeForkHistory(storage, 4);
+            storage.pruneSkippedHistory(history.forkId, -1, 3);
+
+            const timestamp = storage.getPreviousRelevantTimestamp(
+                { forkId: history.forkId, height: 3 },
+                randomAddress()
+            );
+
+            expect(timestamp).to.equal(undefined);
+        });
+
+        it("the final-point block kept below the next height → that block's timestamp", () => {
+            const storage = new Storage();
+            const history = storeForkHistory(storage, 5);
+            storage.pruneSkippedHistory(history.forkId, -1, 3);
+            const finalPointBlock = storage.blocks.getBlock(history.forkId, 3)!;
+
+            const timestamp = storage.getPreviousRelevantTimestamp(
+                { forkId: history.forkId, height: 4 },
+                randomAddress()
+            );
+
+            expect(timestamp).to.equal(finalPointBlock.timestamp);
         });
     });
 

@@ -1,10 +1,12 @@
-// @spec-test-coverage-ignore: shared pruning staging; executable evidence belongs to the HistoryPruning, AgreementManagerPruning and E2E-HistoryPruning declarations
+// @spec-test-coverage-ignore: shared pruning staging; executable evidence belongs to the HistoryPruning, AgreementManagerPruning, CalldataPostingService and E2E-HistoryPruning declarations
 import { block, hexString, stateSnapshot, transactionHeader } from "../factory";
 import { StateSnapshot } from "@/models";
 import type Storage from "@/storage";
 import type { BlockHeight, Bytes, ForkId, Hash } from "@/types/types";
+import { stageMissingParticipantSignature } from "@test/fixtures/LateSignatureStaging";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
+import { commitBlockUnsignedByDisputer } from "@test/fixtures/ProofOwnerStaging";
 import type { HarnessOptions } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import { ethers } from "ethers";
@@ -314,6 +316,43 @@ export async function stagePrunedChannelPastAnchor(
     });
     await h.assert.sync.peersInSyncWait({ peerIndices });
     return { forkId, anchor };
+}
+
+/**
+ * Pruning on for every peer: the writer's block lacks the signature of the
+ * peer whose turn follows, and the third peer signs no block of that next
+ * writer (it blacklists it) while the next writer authors the block above.
+ * So the writer's block is its final point, one signature short there, and
+ * the block below it is pruned skipped history. The writer never posts its
+ * block's calldata on its own. Returns the writer and its final-point height.
+ */
+export async function stagePrunedFinalPointMissingSignature(
+    h: MathPeerTestHarness
+): Promise<{
+    forkId: ForkId;
+    writer: { index: number; address: string };
+    finalHeight: BlockHeight;
+}> {
+    const staged = await stageMissingParticipantSignature(h, {
+        configOverrides: PRUNING_ON,
+        silenceNextWriter: true,
+        suppressWriterCalldataPost: true
+    });
+    const third = h.peers.find(
+        (peer) =>
+            peer.index !== staged.writer.index &&
+            peer.index !== staged.silenced.index
+    )!;
+    await commitBlockUnsignedByDisputer(h, staged.silenced, third.index);
+    // the writer committed the block above its own too
+    await h.assert.sync.peersInSyncWait({
+        peerIndices: [staged.writer.index, staged.silenced.index]
+    });
+    return {
+        forkId: staged.forkId,
+        writer: { index: staged.writer.index, address: staged.writer.address },
+        finalHeight: staged.height
+    };
 }
 
 /** How many proof evidence records of `forkId` peer `peerIndex` holds. */

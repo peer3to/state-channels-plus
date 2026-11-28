@@ -13,11 +13,18 @@ import { expect } from "chai";
  * the block; the writer's block is read once the other non-writer's
  * signature merged, and the silenced peer's own signed copy is read before
  * its broadcast is restored. Returns the writer, the silenced peer, the block as the writer stored it, the
- * silenced peer's signatures on it and the ones the writer lacks.
+ * silenced peer's signatures on it and the ones the writer lacks. With
+ * `silenceNextWriter` the silenced peer is the one whose turn follows the
+ * writer's; with `suppressWriterCalldataPost` the writer never posts its
+ * block's calldata on its own.
  */
 export async function stageMissingParticipantSignature(
     h: MathPeerTestHarness,
-    options: { configOverrides?: HarnessOptions["configOverrides"] } = {}
+    options: {
+        configOverrides?: HarnessOptions["configOverrides"];
+        silenceNextWriter?: boolean;
+        suppressWriterCalldataPost?: boolean;
+    } = {}
 ) {
     await h.lifecycle.start(3, 1, {
         configOverrides: options.configOverrides
@@ -27,7 +34,9 @@ export async function stageMissingParticipantSignature(
         await h.rpcStub.suppressTimeoutCheck(peer.index);
 
     const writer = await h.query.getNextPeerToWrite();
-    const silenced = h.peers.find((peer) => peer.index !== writer.index)!;
+    const silenced = options.silenceNextWriter
+        ? await nextInTurnOrder(h, writer)
+        : h.peers.find((peer) => peer.index !== writer.index)!;
     const third = h.peers.find(
         (peer) => peer.index !== writer.index && peer.index !== silenced.index
     )!;
@@ -35,6 +44,11 @@ export async function stageMissingParticipantSignature(
         .control(writer)
         .query.getNextBlockHeight(forkId)
         .request();
+    if (options.suppressWriterCalldataPost)
+        await h
+            .control(writer)
+            .stub.stubSuppressMaybePostBlockOnChain()
+            .request();
     await h.byzantine.stubBroadcast(silenced.index);
     // add() resolves after the writer's own commit, so the block is stored
     await h.getPeer(writer.index).p2pInstance.p2pContractInstance.add(1);
@@ -93,4 +107,18 @@ export async function stageMissingParticipantSignature(
         lateSignatures: silencedBundle.confirmationSignatures.map(String),
         missingSignatures
     };
+}
+
+/** The peer whose turn follows `writer`'s in the state machine's turn order. */
+async function nextInTurnOrder(
+    h: MathPeerTestHarness,
+    writer: { index: number; address: string }
+) {
+    const turnOrder = await h
+        .control(h.getPeer(writer.index))
+        .query.getParticipants()
+        .request();
+    const nextAddress =
+        turnOrder[(turnOrder.indexOf(writer.address) + 1) % turnOrder.length];
+    return h.peers.find((peer) => peer.address === nextAddress)!;
 }

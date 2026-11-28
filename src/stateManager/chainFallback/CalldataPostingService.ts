@@ -38,24 +38,33 @@ export default class CalldataPostingService {
             block.stateSnapshotHash
         );
 
-        // TODO - this can be race conditioned and we could be granted extra time, but we don't care to check that on-chain and will assume we're not granted extra time for this
-        const previousRelevantTimestamp =
-            sm.storage.getPreviousRelevantTimestamp(
-                block.coordinates,
-                block.author
-            );
-
         if (!block.didEveryoneSign(participants)) {
+            const blockMetadata = LoggerUtils.getBlockMetadata(
+                block,
+                sm.storage
+            );
+            // TODO - this can be race conditioned and we could be granted extra time, but we don't care to check that on-chain and will assume we're not granted extra time for this
+            const previousRelevantTimestamp =
+                sm.storage.getPreviousRelevantTimestamp(
+                    block.coordinates,
+                    block.author
+                );
+            // The block below was pruned (a final-point or anchor block):
+            // there is no timestamp to bound the post by
+            if (previousRelevantTimestamp === undefined) {
+                this.logger.info(
+                    `Not posting block calldata #${blockMetadata.blockHeight}: the previous block is not held`,
+                    { block: blockMetadata }
+                );
+                return;
+            }
+
             sm.p2pEventHooks.onPostingCalldata?.();
 
             const maxTimestamp =
                 previousRelevantTimestamp +
                 timeoutWaitTime(sm.timeConfig, block.height);
 
-            const blockMetadata = LoggerUtils.getBlockMetadata(
-                block,
-                sm.storage
-            );
             const currentTime = Clock.getTimeInSeconds();
             this.logger.info(
                 `Posting block calldata on-chain #${blockMetadata.blockHeight}`,

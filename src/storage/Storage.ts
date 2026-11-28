@@ -329,10 +329,15 @@ export class Storage {
         return { stateSnapshot: genesisSnapshot };
     }
 
+    /**
+     * The timestamp `participantAddress`'s turn at `coordinates` counts from:
+     * that of the block below, else of the fork genesis at height 0.
+     * Undefined when the block below is not held (pruned).
+     */
     getPreviousRelevantTimestamp(
         coordinates: BlockCoordinates,
         participantAddress: Address
-    ): number {
+    ): number | undefined {
         const previousBlockOrSnapshot =
             this.getPreviousBlockOrSnapshot(coordinates);
 
@@ -342,7 +347,7 @@ export class Storage {
             );
         }
 
-        return previousBlockOrSnapshot.stateSnapshot!.timestamp;
+        return previousBlockOrSnapshot.stateSnapshot?.timestamp;
     }
 
     /**
