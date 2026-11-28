@@ -23,7 +23,7 @@ Options:
       --forge-threads <count>    Threads per forge task (default 1)
       --test-parallel-script    Include parallel-runner infrastructure tests
       --test-browser            Include browser gates and browser-required Mocha tests
-      --lc-tests                Include light client tests (need PEER3_NODE_BIN)
+      --lc-tests                Include light client tests (need a peer3 node: PEER3_NODE_BIN, else zero-fee-node on PATH)
       --browser-only             Discover only browser gates
       --no-browser               Skip browser gates
   -d, --log-dir, --logDir, --dir <path>

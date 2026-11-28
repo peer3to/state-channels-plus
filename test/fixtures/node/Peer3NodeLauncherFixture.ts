@@ -1,9 +1,12 @@
 // @spec-test-coverage-ignore: stand-in binaries for the peer3 node launcher's self-tests; executable evidence belongs to its calling test declarations
 import {
+    jsonRpc,
     PEER3_NODE_PID_FILE,
     PEER3_NODES_DIR,
+    startHardhatNode,
     startPeer3Node
 } from "@test/utils/nodeInfra";
+import { waitFor } from "@test/utils/waitFor";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
@@ -49,10 +52,29 @@ export function failingNodeBinary(stderrLine: string, code: number): string {
     return binary;
 }
 
+/**
+ * An executable shell script that stands in for the node binary and never gets
+ * ready: it writes its arguments one per line next to itself and sleeps.
+ */
+export function idleNodeBinary(): string {
+    const binary = path.join(testDir("bin-"), "zero-fee-node");
+    fs.writeFileSync(
+        binary,
+        `#!/bin/sh\nprintf '%s\\n' "$@" > "$0.args"\nexec sleep 60\n`,
+        { mode: 0o755 }
+    );
+    return binary;
+}
+
+/** The value the launcher gave the stand-in `binary` for `flag`. */
+export function argumentGivenTo(binary: string, flag: string): string {
+    const args = fs.readFileSync(`${binary}.args`, "utf8").split("\n");
+    return args[args.indexOf(flag) + 1];
+}
+
 /** The `--base-path` the launcher gave the stand-in `binary`. */
 export function basePathGivenTo(binary: string): string {
-    const args = fs.readFileSync(`${binary}.args`, "utf8").split("\n");
-    return args[args.indexOf("--base-path") + 1];
+    return argumentGivenTo(binary, "--base-path");
 }
 
 /**
@@ -107,4 +129,94 @@ export function nodeDirWithPid(
     if (pid !== undefined)
         fs.writeFileSync(path.join(dir, PEER3_NODE_PID_FILE), String(pid));
     return path.basename(dir);
+}
+
+/**
+ * Runs `use` with `PEER3_NODE_BIN` unset and `binary`'s directory first on
+ * PATH, so the launcher finds `zero-fee-node` there.
+ */
+export async function withNodeOnPath<T>(
+    binary: string,
+    use: () => Promise<T>
+): Promise<T> {
+    const path_ = process.env.PATH;
+    process.env.PATH = `${path.dirname(binary)}${path.delimiter}${path_ ?? ""}`;
+    try {
+        return await withPeer3NodeBin(undefined, use);
+    } finally {
+        process.env.PATH = path_;
+    }
+}
+
+/**
+ * Starts two peer3 nodes at once without a port and returns the URLs they
+ * answered on, each with its chain id; both are stopped.
+ */
+export async function twoNodesStartedAtOnce(
+    nodesDir: string
+): Promise<{ url: string; chainId: unknown }[]> {
+    const started = await Promise.allSettled([
+        startPeer3Node({ nodesDir }),
+        startPeer3Node({ nodesDir })
+    ]);
+    const nodes = started.flatMap((result) =>
+        result.status === "fulfilled" ? [result.value] : []
+    );
+    try {
+        const failed = started.find((result) => result.status === "rejected");
+        if (failed) throw (failed as PromiseRejectedResult).reason;
+        return await Promise.all(
+            nodes.map(async ({ url }) => ({
+                url,
+                chainId: await jsonRpc(url, "eth_chainId")
+            }))
+        );
+    } finally {
+        for (const node of nodes) {
+            node.stop();
+            await node.exited;
+        }
+    }
+}
+
+/**
+ * Starts a `--parachain` slot node from the stand-in `binary`, which never gets
+ * ready, and reports its database directory while it runs and after it is
+ * killed: whether the directory names the node's live process, and whether it
+ * is gone once the process died.
+ */
+export async function slotNodeDirectory(
+    binary: string
+): Promise<{ namesLiveProcess: boolean; removedAfterKill: boolean }> {
+    const parachain = process.env.PARACHAIN;
+    process.env.PARACHAIN = "1";
+    try {
+        return await withPeer3NodeBin(binary, async () => {
+            const starting = startHardhatNode().catch(() => undefined);
+            await waitFor(() => fs.existsSync(`${binary}.args`));
+            const basePath = basePathGivenTo(binary);
+            const pidFile = path.join(basePath, PEER3_NODE_PID_FILE);
+            await waitFor(() => fs.existsSync(pidFile));
+            const pid = Number(fs.readFileSync(pidFile, "utf8"));
+            const namesLiveProcess = isAlive(pid);
+            process.kill(pid, "SIGKILL");
+            await starting;
+            return {
+                namesLiveProcess,
+                removedAfterKill: !fs.existsSync(basePath)
+            };
+        });
+    } finally {
+        if (parachain === undefined) delete process.env.PARACHAIN;
+        else process.env.PARACHAIN = parachain;
+    }
+}
+
+function isAlive(pid: number): boolean {
+    try {
+        process.kill(pid, 0);
+        return true;
+    } catch {
+        return false;
+    }
 }

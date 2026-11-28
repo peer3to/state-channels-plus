@@ -68,7 +68,8 @@ uncertain, and leave final fingerprint approval to the engineer.
 tiers across the configured distributed workers: all Mocha tests, the forge
 tests and the browser gates (`test/browser/run-*.mjs`). Mocha files marked
 `@distributed-requires: lightClient` are not part of the gate or of CI: they
-run only on the local runner with `--lc-tests` and `PEER3_NODE_BIN`. Pass `--e2e-only` to
+run only on the local runner with `--lc-tests` and a peer3 node binary (`PEER3_NODE_BIN`, else
+`zero-fee-node` on `PATH`). Pass `--e2e-only` to
 limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
 
 During development, leave these optional groups disabled unless the changes
@@ -79,7 +80,8 @@ touch their relevant files or dependencies:
 - Use `--test-browser` when changing browser code, browser build/runtime
   dependencies, or browser tests, including shared code that affects those paths.
 - Use `--lc-tests` when changing light client code or its tests. It needs
-  `PEER3_NODE_BIN` and the local runner; see the README's
+  a peer3 node binary (`PEER3_NODE_BIN`, else `zero-fee-node` on `PATH`) and the
+  local runner; see the README's
   [Light client tests](README.md#light-client-tests) section.
 
 Run only the relevant optional group and focused tests for those changes. Do not

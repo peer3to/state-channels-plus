@@ -145,6 +145,9 @@ function infraNodeFlags() {
 // default `zero-fee-node` on PATH) on the funded test chain instead of hardhat.
 const isParachain = () => process.env.PARACHAIN === "1";
 
+/** The peer3 node binary: the one `PEER3_NODE_BIN` names, else `zero-fee-node` on PATH. */
+const peer3NodeBin = () => process.env.PEER3_NODE_BIN || "zero-fee-node";
+
 /**
  * The peer3 dev node's arguments: `seal` is "interval" or "manual", `chain`
  * is "test" or "test-other" (the same chain under a second EVM chain id).
@@ -153,8 +156,9 @@ const isParachain = () => process.env.PARACHAIN === "1";
  * default: the future queue holds a tenth of it (2 MB by default), and the
  * opening wave of concurrent tests sends contract deploys out of nonce order,
  * so a smaller queue silently evicts deploys their senders then wait on.
+ * `extraArgs` follow the common ones.
  */
-function peer3NodeArgs(nodePort, seal, chain, basePath) {
+function peer3NodeArgs(nodePort, seal, chain, basePath, extraArgs = []) {
     return [
         "--dev",
         "--base-path",
@@ -178,7 +182,8 @@ function peer3NodeArgs(nodePort, seal, chain, basePath) {
         "--no-mdns",
         "--no-prometheus",
         "--no-telemetry",
-        "--no-hardware-benchmarks"
+        "--no-hardware-benchmarks",
+        ...extraArgs
     ];
 }
 
@@ -195,94 +200,68 @@ async function startHardhatNode({
     seal = "interval",
     chain = "test"
 } = {}) {
-    // a parachain node without a given port binds port 0 and prints the one it
-    // got: a port reserved and released first can be taken before the node binds it
-    const readsBoundPort = isParachain() && port === undefined;
-    const nodePort = readsBoundPort ? 0 : (port ?? (await getFreePort()));
-    // the node's database grows past a container's small /tmp, so it lives in the project's temp dir
-    const nodesDir = PEER3_NODES_DIR;
-    if (isParachain()) fs.mkdirSync(nodesDir, { recursive: true });
-    const basePath = isParachain()
-        ? fs.mkdtempSync(path.join(nodesDir, "node-"))
-        : undefined;
-    const [command, args] = isParachain()
-        ? [
-              process.env.PEER3_NODE_BIN || "zero-fee-node",
-              peer3NodeArgs(nodePort, seal, chain, basePath)
-          ]
-        : [
-              process.execPath,
-              [
-                  ...infraNodeFlags(),
-                  HARDHAT_CLI,
-                  "node",
-                  "--hostname",
-                  "127.0.0.1",
-                  "--port",
-                  String(nodePort)
-              ]
-          ];
-    const proc = spawn(command, args, {
-        cwd: PROJECT_ROOT,
-        env: { ...process.env, ...env },
-        stdio: ["ignore", "pipe", "pipe"]
-    });
-    if (basePath)
-        proc.once("exit", () =>
-            fs.rmSync(basePath, { recursive: true, force: true })
-        );
-    return nodeHandleWhenReady(proc, nodePort, {
-        logPath,
-        label,
-        readsBoundPort
-    });
+    if (isParachain())
+        return startPeer3Node({ port, logPath, label, env, seal, chain });
+    const nodePort = port ?? (await getFreePort());
+    const proc = spawn(
+        process.execPath,
+        [
+            ...infraNodeFlags(),
+            HARDHAT_CLI,
+            "node",
+            "--hostname",
+            "127.0.0.1",
+            "--port",
+            String(nodePort)
+        ],
+        {
+            cwd: PROJECT_ROOT,
+            env: { ...process.env, ...env },
+            stdio: ["ignore", "pipe", "pipe"]
+        }
+    );
+    return nodeHandleWhenReady(proc, nodePort, { logPath, label });
 }
 
 /**
- * Spawn the peer3 dev node at `PEER3_NODE_BIN` (on `port` or a free one), wait
- * until its RPC is ready, and return `{ proc, url, stop }`. The node seals a
- * block every block time on the funded test chain and keeps its database in a
- * directory of its own. The directory is removed when the node exits, or by a
- * later start when the process that would have removed it was killed first.
+ * Spawn the peer3 dev node (`peer3NodeBin`) on `port`, or without one on the
+ * port it binds and reports, wait until its RPC is ready, and return
+ * `{ proc, url, stop }`. The node seals blocks as `seal` says on `chain`, with
+ * `extraArgs` after the common arguments, and keeps its database in a
+ * directory of its own in `nodesDir`. The directory is removed when the node
+ * exits, or by a later start when the process that would have removed it was
+ * killed first.
  */
 async function startPeer3Node({
     port,
     logPath,
     label = "peer3 node",
+    env = {},
+    seal = "interval",
+    chain = "test",
+    extraArgs = [],
     nodesDir = PEER3_NODES_DIR
 } = {}) {
-    const nodeBin = process.env.PEER3_NODE_BIN;
-    if (!nodeBin) throw new Error("PEER3_NODE_BIN names no peer3 node binary");
-    const nodePort = port ?? (await getFreePort());
-    // --dev alone keeps the database in the system temp dir and leaves it there
+    // a node without a given port binds port 0 and prints the one it got: a
+    // port reserved and released first can be taken before the node binds it
+    const readsBoundPort = port === undefined;
+    const nodePort = port ?? 0;
+    // the node's database grows past a container's small /tmp, so it lives in
+    // the project's temp dir; --dev alone keeps it in the system temp dir and
+    // leaves it there
     fs.mkdirSync(nodesDir, { recursive: true });
     removeDeadPeer3NodeDirs(nodesDir);
     const basePath = fs.mkdtempSync(path.join(nodesDir, "node-"));
     const proc = spawn(
-        nodeBin,
-        [
-            "--dev",
-            "--base-path",
-            basePath,
-            "--chain",
-            "test",
-            "--dev-seal",
-            "interval",
-            "--rpc-port",
-            String(nodePort),
-            // the wildcard storage subscription is an unsafe method
-            "--rpc-methods",
-            "unsafe",
-            "--port",
-            "0",
-            "--no-mdns",
-            "--no-prometheus",
-            "--no-telemetry",
-            "--no-hardware-benchmarks"
-        ],
+        peer3NodeBin(),
+        peer3NodeArgs(nodePort, seal, chain, basePath, extraArgs),
         // the node logs every block, and an unread pipe would fill and stall it:
         // nodeHandleWhenReady reads both to the end
-        { cwd: PROJECT_ROOT, stdio: ["ignore", "pipe", "pipe"] }
+        {
+            cwd: PROJECT_ROOT,
+            env: { ...process.env, ...env },
+            stdio: ["ignore", "pipe", "pipe"]
+        }
     );
     const removeBasePath = () =>
         fs.rmSync(basePath, { recursive: true, force: true });
@@ -295,7 +274,11 @@ async function startPeer3Node({
         fs.writeFileSync(`${pidFile}.tmp`, String(proc.pid));
         fs.renameSync(`${pidFile}.tmp`, pidFile);
     }
-    return nodeHandleWhenReady(proc, nodePort, { logPath, label });
+    return nodeHandleWhenReady(proc, nodePort, {
+        logPath,
+        label,
+        readsBoundPort
+    });
 }
 
 /**
@@ -725,6 +708,7 @@ module.exports = {
     waitForHardhatNode,
     startHardhatNode,
     startPeer3Node,
+    peer3NodeBin,
     PEER3_NODES_DIR,
     PEER3_NODE_PID_FILE,
     startDiscoveryRegistry,

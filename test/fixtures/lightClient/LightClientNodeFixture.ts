@@ -6,7 +6,11 @@ import {
     type LightClientStorageBlock,
     type LightClientSubscription
 } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
-import { type NodeHandle, startPeer3Node } from "@test/utils/nodeInfra";
+import {
+    type NodeHandle,
+    peer3NodeBin,
+    startPeer3Node
+} from "@test/utils/nodeInfra";
 import {
     concat,
     HDNodeWallet,
@@ -98,7 +102,8 @@ export class LightClientConnection {
 
 /**
  * A peer3 dev node of this test's own with light client endpoints in front of
- * it. The node is the binary `PEER3_NODE_BIN` names. Until the node serves the
+ * it. The node is the binary `PEER3_NODE_BIN` names, else `zero-fee-node` on
+ * PATH. Until the node serves the
  * endpoints itself, the test-owned sidecar adds them.
  */
 export class LightClientNodeFixture {
@@ -127,15 +132,21 @@ export class LightClientNodeFixture {
 
     /**
      * Starts the node and its light client endpoints. Throws
-     * {@link LIGHT_CLIENT_UNSUPPORTED} at once when no peer3 node binary is
-     * named, because the Hardhat test node has no such endpoints.
+     * {@link LIGHT_CLIENT_UNSUPPORTED} at once when the peer3 node binary
+     * (`PEER3_NODE_BIN`, else `zero-fee-node` on PATH) cannot be found,
+     * because the Hardhat test node has no such endpoints.
      */
     static async start(): Promise<LightClientNodeFixture> {
-        if (!process.env.PEER3_NODE_BIN)
-            throw new Error(
-                `${LIGHT_CLIENT_UNSUPPORTED}: PEER3_NODE_BIN names no peer3 node binary`
-            );
-        const node = await startPeer3Node();
+        const node = await startPeer3Node({
+            // the wildcard storage subscription is an unsafe method
+            extraArgs: ["--rpc-methods", "unsafe"]
+        }).catch((error: unknown) => {
+            if ((error as NodeJS.ErrnoException).code === "ENOENT")
+                throw new Error(
+                    `${LIGHT_CLIENT_UNSUPPORTED}: no peer3 node binary ${peer3NodeBin()} found`
+                );
+            throw error;
+        });
         try {
             const sidecar = await LightClientSidecar.start(node.url);
             return new LightClientNodeFixture(node, sidecar);

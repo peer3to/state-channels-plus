@@ -44,9 +44,9 @@ manager contract, so no existing fixture can drive either through a live partici
 
 ## OQ-47-8W9VT0 — Live light client evidence outside CI
 
-Every Mocha file under `test/lightClient/` starts a peer3 dev node from `PEER3_NODE_BIN` and runs
-only on the local runner with `--lc-tests`. Each carries `@distributed-requires: lightClient`, which no
-worker protocol provides, so the distributed gate in CI leaves all of them out. The requirements whose
+Every Mocha file under `test/lightClient/` starts a peer3 dev node (`PEER3_NODE_BIN`, else
+`zero-fee-node` on `PATH`) and runs only on the local runner with `--lc-tests`. Each carries
+`@distributed-requires: lightClient`, which no worker protocol advertises, so the distributed gate in CI leaves all of them out. The requirements whose
 evidence is one of these suites, among them the live push check
 [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2), count as
 tested on that local evidence alone. A break on the live path (the node's push and proof format, the
@@ -57,6 +57,12 @@ keeps checking the proof logic in CI on recorded blocks.
 Engineer decision of 2026-11-20: accepted for now. The question closes when CI runs these suites,
 either through a CI job that fetches a pinned `zero-fee-node` and runs them on the local runner, or
 through a runner image that carries the binary (the farm rollout of the Light Clients card).
+
+Since the merge of `dev`, the runner image carries `zero-fee-node` (pinned to peer3-parachain `e5f29f6`)
+on `PATH`, and the light client fixture finds the binary by the same rule as `--parachain` (engineer
+decision of 2026-11-28). The steps left: a worker protocol that advertises `lightClient` on an image
+whose node serves the light client endpoints, one run of the light client suites against that pinned
+node, and `--lc-tests` in the CI gate.
 
 Engineer decision of 2026-11-21: running these suites on the local runner is a named exception to
 the repository rule that keeps the local runner to about ten tests. The exception ends with the farm

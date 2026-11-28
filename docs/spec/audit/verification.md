@@ -50,8 +50,22 @@ failed a declaration: topic filter off, unsubscribe kept, endpoint check off, mi
 discovery filter off, flag ignored, socket rejection off, closed-socket check off, dead-node sweep off,
 output tail off, skip-notice wording, `rpc_methods` fallback off, an unreadable or invalid process id swept,
 and the nodes directory ignored; all passed with the code restored. Not covered: a distributed worker, because no
-worker protocol provides the node binary and the orchestrator skips these tasks with a warning; a node that
-leaves a write out of a pushed block; the node's own endpoint, which does not exist yet.
+worker protocol advertises the `lightClient` runner (the runner image has carried `zero-fee-node` since the
+merge of `dev`) and the orchestrator skips these tasks with a warning; a node that leaves a write out of a
+pushed block; the node's own endpoint, which does not exist yet.
+
+Changed on 2026-11-28, after the review of the `dev` merge: `startPeer3Node` is the one launcher of the
+peer3 dev node, and the `--parachain` slot nodes start through it. It binds port 0 and reads the port the
+node reports when no port is given, and writes the process id file for every node, slot nodes included.
+The binary is `PEER3_NODE_BIN`, else `zero-fee-node` on `PATH` (engineer decision of 2026-11-28), and the
+light client fixture turns a binary it cannot find into `RPC node doesn't support LC endpoints`, which
+replaces the missing-binary check above. `peer3NodeLauncher.test.ts` now has 7 declarations: the `PATH`
+fallback, port 0 asked for, two nodes started at once answering on two ports, and a slot node's directory
+that names its process and is removed when it dies are new. Four faults each failed one declaration: the
+`PATH` fallback off, a reserved free port instead of port 0, no process id file, and slot nodes not routed
+through the launcher; all 7 passed with the code restored. The fallback test of the endpoint check now
+fails `rpc_methods` through the proxy, so it holds under `--parachain`, whose node lists its methods; with
+the fallback's `catch` removed it failed on Hardhat and on `--parachain`.
 
 Added on 2026-11-19 after the first automated review: three declarations in SubstrateTrieProof.test.ts read
 a hand-encoded branch that holds its value by hash (state version 1), with and without the value's proof

@@ -31,9 +31,9 @@ export interface StartInfraOptions {
     logPath?: string;
     label?: string;
     env?: Record<string, string | undefined>;
-    /** The peer3 dev node's `--dev-seal` mode (--parachain only). */
+    /** The peer3 dev node's `--dev-seal` mode (--parachain, or startPeer3Node). */
     seal?: "interval" | "manual";
-    /** The peer3 dev node's `--chain` (--parachain only). */
+    /** The peer3 dev node's `--chain` (--parachain, or startPeer3Node). */
     chain?: "test" | "test-other";
 }
 
@@ -69,12 +69,15 @@ export function startDhtBootstrapper(
 ): Promise<DhtBootstrapper>;
 export function startHardhatNode(opts?: StartInfraOptions): Promise<NodeHandle>;
 /**
- * The peer3 dev node at `PEER3_NODE_BIN`; throws when the variable is unset.
- * Its database directory is made in `nodesDir`, `PEER3_NODES_DIR` by default.
+ * The peer3 dev node `peer3NodeBin` names, on `port` or on the port it binds.
+ * `extraArgs` follow the common arguments. Its database directory is made in
+ * `nodesDir`, `PEER3_NODES_DIR` by default.
  */
 export function startPeer3Node(
-    opts?: Omit<StartInfraOptions, "env"> & { nodesDir?: string }
+    opts?: StartInfraOptions & { nodesDir?: string; extraArgs?: string[] }
 ): Promise<NodeHandle>;
+/** The peer3 node binary: `PEER3_NODE_BIN`, else `zero-fee-node` on PATH. */
+export function peer3NodeBin(): string;
 /** Where each peer3 node keeps its database directory by default. */
 export const PEER3_NODES_DIR: string;
 /** The file in a peer3 node's database directory that names its process. */

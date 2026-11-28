@@ -393,16 +393,19 @@ discovered only with `--lc-tests`; the legacy `yarn test` leaves
 PEER3_NODE_BIN=/path/to/zero-fee-node yarn test:parallel --lc-tests --no-forge --mocha-test-pattern "lightClient/*.ts"
 ```
 
-`PEER3_NODE_BIN` names a peer3 node binary (`zero-fee-node` of
-`peer3-parachain`). Each test starts a dev node of its own from it
-(`startPeer3Node` in `test/utils/nodeInfra.js`), so the tests share no chain
-state. The node does not serve the light
+The node binary is the one `PEER3_NODE_BIN` names, else `zero-fee-node` on
+`PATH`, the same rule as `--parachain` (`zero-fee-node` of `peer3-parachain`).
+Each test starts a dev node of its own from it (`startPeer3Node` in
+`test/utils/nodeInfra.js`, which also starts the `--parachain` slot nodes), so
+the tests share no chain state. The node does not serve the light
 client endpoints itself yet: `test/fixtures/lightClient/LightClientSidecar.ts`
-stands in front of it and adds them. Without `PEER3_NODE_BIN`, or against a node
-that does not list the endpoints, a test fails at once with
+stands in front of it and adds them. When no node binary can be found, or against a
+node that does not list the endpoints, a test fails at once with
 `RPC node doesn't support LC endpoints`.
 
-No distributed worker provides the node binary yet, so a distributed run with
+The runner image carries `zero-fee-node` (pinned by digest in
+`scripts/e2e-parallel/distributed/runner-image.Dockerfile`), but no worker
+protocol advertises the `lightClient` runner yet, so a distributed run with
 `--lc-tests` skips these tests with a warning that lists them. Run them with
 the local runner.
 
