@@ -290,7 +290,8 @@ trust boundary is proof intake: a received proof is untrusted until it verifies.
   later final point can keep that older anchor.
 - **Pruned history.** With pruning on, the node gives up what the deleted history gave: double-sign
   detection and exact-height checks at pruned heights, an audit replay from a pruned final point (that
-  proof is not judged, [`REQ-SP-9-RNXP56`](../disputes/state-proofs.md#req-sp-9-rnxp56)), and the participant union of the anchor block
+  proof is not judged: only the not-latest-state and the state-free timeout checks still run,
+  [`REQ-SP-9-RNXP56`](../disputes/state-proofs.md#req-sp-9-rnxp56)), and the participant union of the anchor block
   and of the final-point block for a late signature, which reads the block below. Fraud proofs, proof
   evidence and the stored proof are kept apart and are never pruned. Residual: a fork the chain
   anchor leaves through a cross-fork adoption still carries its dispute in the mirror at that

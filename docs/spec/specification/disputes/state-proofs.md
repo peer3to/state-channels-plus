@@ -110,8 +110,12 @@ state, so a chain anchor can exclude a bad earlier transition. Absent local data
 evidence: when the dispute audit omits auditing data and this peer does not hold a milestone
 snapshot the chain-tier counter needs, or the chain tier's replay base state is neither held nor
 posted with its committed hash, the audit logs it and does not judge that proof. It stores no
-counter from it, still applies the state-free not-latest-state check, and otherwise treats the
-dispute as audited, so the peer's own dispute upload still runs. Internal errors, other
+counter from it and still applies the checks that need no state: the not-latest-state check, a
+timeout not linked to the proof's latest state, and a timeout at or below this peer's
+threshold-final state (the chain judges that counter before it is stored). The timeout checks
+that read a state, a block before the timeout height or the dispute window do not run. When no
+such check applies, the audit treats the dispute as audited, so the peer's own dispute upload
+still runs. Internal errors, other
 unavailable required state and RPC failures are logged and propagated as fatal errors. A thrown
 error is not a false proof result and must not trigger fallback. A malformed retained peer block is instead
 invalid evidence. An older dispute does not require a peer to recover obsolete state merely to
@@ -150,6 +154,10 @@ extra threshold evidence does not remove challenge eligibility above those bound
 The per-step invalidity counter avoids re-walking earlier milestones, but binding supplied data
 still costs more as the proof grows. Its total cost is not constant. The safety argument for
 unfinalized tails depends on round-robin leadership; other election policies need explicit rules.
+
+Residual: the chain does not check the posted full state of the proof's final point against that
+point's state hash. A disputer that posts other bytes leaves an auditor that does not hold that
+state, for example a pending joiner, unable to judge the tail; no counter exists for those bytes.
 
 ## Verification and test plan
 
@@ -1346,6 +1354,14 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 <a id="req-sp-9-rnxp56.t7.p13"></a>`REQ-SP-9-RNXP56.T7.P13` — A genesis-linked last milestone containing an invalid preanchor block is accepted by current and lagging auditors without counters; only the lagging auditor needs the canonical chain tier, and every supplied block is challenge-ineligible.
 
 <a id="req-sp-9-rnxp56.t7.p14"></a>`REQ-SP-9-RNXP56.T7.P14` — With the anchor inside a milestone containing both a preanchor invalid block and postanchor fault, both current and lagging auditors counter only the postanchor fault at its actual index; anchor and past-run indices are ineligible.
+
+<a id="req-sp-9-rnxp56.t7.p15"></a>`REQ-SP-9-RNXP56.T7.P15` — A proof the audit does not judge, whose latest block is below a block the auditor holds signed by the disputer, stores exactly DisputeNotLatestState carrying that block; the dispute is invalid.
+
+<a id="req-sp-9-rnxp56.t7.p16"></a>`REQ-SP-9-RNXP56.T7.P16` — A proof the audit does not judge, whose timeout height is not the one after the proof's latest block, stores exactly TimeoutNotLinkedToLatestState; the dispute is invalid.
+
+<a id="req-sp-9-rnxp56.t7.p17"></a>`REQ-SP-9-RNXP56.T7.P17` — A proof the audit does not judge, with a linked timeout above the auditor's final state whose dispute window has not reached the chain: no timeout check that needs a state or the window runs, no throw, no counter, the dispute is valid.
+
+<a id="req-sp-9-rnxp56.t7.p18"></a>`REQ-SP-9-RNXP56.T7.P18` — A departed disputer's proof the audit does not judge, with a linked timeout at a height the auditor's final state reaches, stores exactly TimeoutSupersededByFinalState, which the chain accepts; the dispute is invalid.
 
 #### <a id="req-sp-7-70emat.t5"></a>`REQ-SP-7-70EMAT.T5`
 

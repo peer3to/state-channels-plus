@@ -960,7 +960,7 @@ Specification cases tested: 34/48. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, 
 Specification cases tested: 32/32.
 
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
-Specification cases tested: 79/79.
+Specification cases tested: 83/83.
 
 [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
 Specification cases tested: 56/56.
