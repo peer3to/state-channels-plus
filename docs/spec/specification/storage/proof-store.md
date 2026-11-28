@@ -296,7 +296,9 @@ trust boundary is proof intake: a received proof is untrusted until it verifies.
   detection and exact-height checks at pruned heights, an audit replay from a pruned final point (that
   proof is not judged: only the not-latest-state and the state-free timeout checks still run,
   [`REQ-SP-9-RNXP56`](../disputes/state-proofs.md#req-sp-9-rnxp56)), and the participant union of the anchor block
-  and of the final-point block for a late signature, which reads the block below. Fraud proofs, proof
+  and of the final-point block for a late signature, which reads the block below. A dispute above the
+  upload cap is not cut to a height whose proof needs a pruned block: no dispute is built then
+  ([`REQ-DIS-2-PKVZ7E`](../disputes/disputes.md#req-dis-2-pkvz7e)). Fraud proofs, proof
   evidence and the stored proof are kept apart and are never pruned. Residual: a fork the chain
   anchor leaves through a cross-fork adoption still carries its dispute in the mirror at that
   moment, so its history is kept; it is deleted only at a later anchor event at which the mirror

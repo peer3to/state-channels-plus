@@ -33,6 +33,12 @@ the writer's block 2 is stored unsigned by it, then the disputer drops its block
 the stored proof's last hop at or above block 1 and no held block it signed, construction returns no
 dispute and does not throw.
 
+The upload-cap run-gap case also caps below any dispute. Block 2 reaches every peer while the two
+non-authors' broadcasts are muted; the disputer then blacklists the next writer, whose block 3 is
+stored unsigned by it, so its latest signed block is 2 and its stored hop ends above it.
+It drops block 1. With block 2 held and every stored hop ending above it, construction returns no
+dispute and does not throw.
+
 Extra signatures on the unchanged latest block are not a changed input. The signature case stages a
 writer whose stored latest block lacks one participant's signature (one non-writer's broadcast is
 suppressed while the block is authored; no peer runs the timeout check). It constructs once, merges
@@ -71,4 +77,5 @@ peer 1's `onDisputeReducedResultCommitted`, and asserts peer 1 keeps no built di
 - `a dispute naming a snapshot absent from storage → rejects naming that snapshot, no auditing data`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P9
 - `a dispute above the deployed upload cap at every height this peer may dispute → no dispute is built`: REQ-DIS-2-PKVZ7E.T1.P36, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P17
 - `a dispute above the upload cap whose cut search reaches a height this peer holds no block at → no dispute is built`: REQ-DIS-2-PKVZ7E.T1.P40, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P20
+- `a dispute above the upload cap whose cut height is held while its proof needs a lower block this peer does not hold → no dispute is built`: REQ-DIS-2-PKVZ7E.T1.P41, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P21
 - `the latest dispute above the upload cap while the height this peer last signed fits → the dispute is cut to that height and the chain walks its proof`: REQ-DIS-2-PKVZ7E.T1.P37, UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P18
