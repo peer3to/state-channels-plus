@@ -198,6 +198,10 @@ export type HandleEvmErrorOptions = {
     handlers?: EvmErrorHandlers;
     signer?: Signer;
     forkId?: ForkId;
+    // the capped limit a fraud-proof replay `tx` was sent with: the preflight
+    // and the resend keep it; without it the preflight is unlimited and the
+    // resend takes a fresh estimate
+    gasLimit?: bigint;
 };
 
 export async function tryHandleEvmError(
@@ -212,7 +216,7 @@ async function _tryHandleEvmError(
     options: HandleEvmErrorOptions,
     recursionDepth: number = 0
 ): Promise<boolean> {
-    const { tx, logger, handlers, signer, forkId } = options;
+    const { tx, logger, handlers, signer, forkId, gasLimit } = options;
     if (!error) return false;
     logger?.info(
         `tryHandleEvmError recursionDepth: ${recursionDepth} - fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`,
@@ -255,7 +259,8 @@ async function _tryHandleEvmError(
                 to: tx.to!,
                 from: tx.from,
                 data: tx.data!,
-                value: tx.value
+                value: tx.value,
+                gasLimit
             });
             logger?.info(
                 `tryHandleEvmError - call succeeded for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`
@@ -265,7 +270,8 @@ async function _tryHandleEvmError(
                 to: tx.to!,
                 from: tx.from,
                 data: tx.data!,
-                value: tx.value
+                value: tx.value,
+                gasLimit
             });
             logger?.info(
                 `tryHandleEvmError - sendTransaction succeeded for fork ${forkId ? LoggerUtils.formatHash(forkId) : "N/A"}`

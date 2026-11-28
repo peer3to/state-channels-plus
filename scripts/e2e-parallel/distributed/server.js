@@ -22,6 +22,7 @@ const {
 const { WorkerLeaseManager } = require("./workerLeaseManager");
 const { loadWorkerKeyPair } = require("./workerIdentity");
 const { EnvironmentCache, deriveEnvironmentKey } = require("./workspaceCache");
+const { buildRunnerImage } = require("./buildRunnerImage");
 const { IsolatedEnvironmentManager } = require("./isolatedEnvironment");
 const {
     profileSummary,
@@ -139,6 +140,7 @@ async function main(options = {}) {
     const environmentManager = await IsolatedEnvironmentManager.create({
         workRoot: config.workRoot,
         runnerImage: config.runnerImage,
+        buildRunnerImage,
         executionBackend: config.executionBackend,
         backend: config.environmentBackend,
         backendName: config.environmentBackendName,

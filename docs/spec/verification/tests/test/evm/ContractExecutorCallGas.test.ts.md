@@ -22,7 +22,8 @@ The second reads the requirement from a probe executor, builds a new executor wi
 
 Two tests start a real three-peer runtime whose manager is deployed with a transition budget
 above the default call gas (`startWithTransitionBudget`): one with the inline executor, one with
-the executor on its dedicated thread (`VM_DEDICATED_THREAD`). Each checks that the manager's
+the executor on its dedicated thread (`VM_DEDICATED_THREAD`), both with `MAX_TRANSACTION_GAS`
+raised to 34M so the 17M budget's replay requirement fits it. Each checks that the manager's
 `getStateTransitionReplayGas()` exceeds `DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT`, advances the channel
 by two transitions, and asserts that every peer's local `getSum` moved by two. The transitions run
 only if the host read the manager's inputs at startup and the raised limit reached the executor
@@ -37,6 +38,12 @@ setup rejects with a `CALL_EXCEPTION` naming the replay-gas selector, that no ex
 requested from the recording `createContractExecutor`, that at least one runtime root was started,
 and that every started root was closed.
 
+Two tests start a real runtime against the Math manager with `MAX_TRANSACTION_GAS` set from the
+manager's `getStateTransitionReplayGas` (`startWithTransactionCapFromReplayGas`): one gas below it,
+setup rejects with an error naming the requirement and the cap, and every runtime root it
+started is closed; equal to it, the runtime starts
+and is disposed.
+
 ## Tests
 
 - `defaults to the EVM's call gas`: UNIT-TEST-CONTRACT-EXECUTOR-2-XTM118.P1
@@ -48,3 +55,5 @@ and that every started root was closed.
 - `a dedicated executor thread runs a transition whose replay requirement exceeds the default call gas`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P2
 - `a rejected startup replay requirement read rejects readiness, ends the inline executor it started, and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P3
 - `a rejected startup replay requirement read rejects readiness, ends the dedicated executor thread it started, and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-33-W7YA4J.P4
+- `a replay requirement one gas above MAX_TRANSACTION_GAS rejects readiness naming both figures and closes the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P1, REQ-ENFSM-1-DKJCY2.T1.P23
+- `a replay requirement equal to MAX_TRANSACTION_GAS starts the runtime`: UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P2, REQ-ENFSM-1-DKJCY2.T1.P24

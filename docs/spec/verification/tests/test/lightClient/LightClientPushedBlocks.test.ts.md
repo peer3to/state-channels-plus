@@ -5,7 +5,7 @@ Exercises: [proveFrontierStorageBlock.ts](../../../../implementation/source/src/
 
 ## Overview
 
-Every declaration starts a peer3 dev node of its own from the binary `PEER3_NODE_BIN` names, with the
+Every declaration starts a peer3 dev node of its own (`PEER3_NODE_BIN`, else `zero-fee-node` on `PATH`), with the
 test-owned light client sidecar in front of it. The runner discovers the file only with `--lc-tests`.
 Each declaration deploys a contract that stores what it is called with, subscribes to one topic, sends
 transactions and checks the pushed block through `proveFrontierStorageBlock`. The oracles are what the

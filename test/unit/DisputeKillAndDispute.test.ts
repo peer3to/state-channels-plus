@@ -1,5 +1,6 @@
 import { DisputeFraudProofType } from "@/types/sol-enums";
 import { Codec, hash, Type } from "@/utils";
+import { withGasHeadroom } from "@/utils/gas";
 import {
     eventPipelineOutcome,
     expectSlowAuditorLostRaceNoOp,
@@ -11,7 +12,7 @@ import {
 } from "@test/fixtures/DisputeAuditStaging";
 import { stageSpamAfterOwnDispute } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import {
-    killAndDisputeSpamDispute,
+    killAndDisputeStoredDispute,
     killSpamDispute,
     waitForCommittedDisputeOf
 } from "@test/fixtures/EvidenceComparisonStaging";
@@ -260,7 +261,7 @@ describe("Unit: kill then dispute", function () {
         expect(await slowSubmissions.submissions()).to.have.length(1);
     });
 
-    it("a slow auditor's kill and dispute land after the evidence period closed, and a searching estimator gives the best-effort multicall only the least gas at which it succeeds → the upload still reaches its evidence check and names the lost evidence race: a no-op, the kill landed in the multicall, no kill is sent alone, and the event pipeline stays alive", async function () {
+    it("a slow auditor's kill and dispute land after the evidence period closed, and a searching estimator answers the least gas at which the best-effort multicall succeeds, sent with the signer's headroom → the upload still reaches its evidence check and names the lost evidence race: a no-op, the kill landed in the multicall, no kill is sent alone, and the event pipeline stays alive", async function () {
         const h = TestSession.getHarness();
         const staged = await stageSlowAuditorPastEvidencePeriod(h, {
             minimumEstimate: true
@@ -280,6 +281,10 @@ describe("Unit: kill then dispute", function () {
             },
             { method: "multicallBestEffortLast", refusal: null }
         ]);
+        // the kill replays nothing: the least gas plus the signer's headroom
+        expect(multicall.gasLimit).to.equal(
+            String(withGasHeadroom(BigInt(estimates[1].answer!)))
+        );
     });
 
     it("a slow auditor's kill and dispute land after the evidence period closed and the upload's refusal carries no revert data → the all-or-nothing estimate's refusal classifies it as the lost evidence race: a no-op, the kill landed in the multicall, no kill is sent alone, and the event pipeline stays alive", async function () {
@@ -310,7 +315,7 @@ describe("Unit: kill then dispute", function () {
         const { forkId, spammer, slow, submissions, applies } =
             await stageRefusedKillAndDispute(h, "unhandledCustomError");
 
-        const outcome = await killAndDisputeSpamDispute(
+        const outcome = await killAndDisputeStoredDispute(
             h,
             slow.index,
             spammer.address,
@@ -339,7 +344,7 @@ describe("Unit: kill then dispute", function () {
         const { forkId, spammer, slow, submissions, applies } =
             await stageRefusedKillAndDispute(h, "emptyRevert");
 
-        const outcome = await killAndDisputeSpamDispute(
+        const outcome = await killAndDisputeStoredDispute(
             h,
             slow.index,
             spammer.address,

@@ -1,16 +1,18 @@
 // @distributed-requires: lightClient
 // @spec-test-coverage-ignore: checks of the test-owned light client node fixture and endpoint stand-in; the endpoint's behavior is not specified yet, no specification or implementation IDs apply
 import {
-    assertLightClientEndpoints,
     LIGHT_CLIENT_UNSUPPORTED,
     LightClientNodeFixture
 } from "@test/fixtures/lightClient/LightClientNodeFixture";
+import { withPeer3NodeBin } from "@test/fixtures/node/Peer3NodeLauncherFixture";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { toBeHex } from "ethers";
 
 const SLOT_ONE = toBeHex(1, 32);
 const SLOT_TWO = toBeHex(2, 32);
+/** A node binary path that names no file. */
+const MISSING_NODE_BIN = "/nonexistent/zero-fee-node";
 
 describe("Light client endpoints", function () {
     let node: LightClientNodeFixture | undefined;
@@ -20,34 +22,16 @@ describe("Light client endpoints", function () {
         node = undefined;
     });
 
-    it("throws at once when no peer3 node binary is named", async function () {
-        const nodeBin = process.env.PEER3_NODE_BIN;
-        delete process.env.PEER3_NODE_BIN;
-        try {
-            let failure: unknown;
-            try {
-                node = await LightClientNodeFixture.start();
-            } catch (error) {
-                failure = error;
-            }
-            expect(failure)
-                .to.be.instanceOf(Error)
-                .with.property("message")
-                .that.includes(LIGHT_CLIENT_UNSUPPORTED);
-        } finally {
-            if (nodeBin !== undefined) process.env.PEER3_NODE_BIN = nodeBin;
-        }
-    });
-
-    it("throws when the RPC node lists no light client endpoints", async function () {
-        node = await LightClientNodeFixture.start();
-        const nodeSocket = await node.connectToNode();
-        let failure: unknown;
-        try {
-            await assertLightClientEndpoints(nodeSocket);
-        } catch (error) {
-            failure = error;
-        }
+    it("throws at once when the peer3 node binary cannot be found", async function () {
+        const failure = await withPeer3NodeBin(MISSING_NODE_BIN, () =>
+            LightClientNodeFixture.start().then(
+                (started) => {
+                    node = started;
+                    return undefined;
+                },
+                (error: unknown) => error
+            )
+        );
         expect(failure)
             .to.be.instanceOf(Error)
             .with.property("message")

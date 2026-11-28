@@ -54,8 +54,9 @@ Each participant tracks an **estimated chain time** and uses it as its local pro
   provider is replaced), `syncClock`:
     1. Reads the latest block and computes
        `difference = latestBlock.timestamp − (wallClock + adjustment)`.
-    2. Computes `averageBlockTime` over up to the last 10 blocks
-       (`(latest.timestamp − past.timestamp) / n`, `n = min(height, 10)`).
+    2. Computes `averageBlockTime` over up to the last 10 block intervals, never the genesis one
+       (`(latest.timestamp − past.timestamp) / n`, `n = min(height − 1, 10)`); a chain at height 1
+       or below measures 0.
     3. If `|difference| > averageBlockTime`, adds the full `difference` to the adjustment and
        re-syncs recursively until the estimate is within one average block time of the chain head
        timestamp (or, when `averageBlockTime` is 0 on a fresh chain, adopts the difference
