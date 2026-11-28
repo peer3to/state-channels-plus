@@ -44,6 +44,8 @@ export default class FrontierPushedPartition extends APushedPartition {
     private values = new Map<StorageKey, StorageValue>();
     /** The trie nodes on the paths to the held keys under the held block's state root. */
     private nodes = new Map<NodeHash, string>();
+    /** {@link nodes} as a proof, built once per accepted block for every read of it. */
+    private proof = new SubstrateTrieProof([]);
     private held?: HeldBlock;
 
     constructor(constants: FrontierChainConstants) {
@@ -69,6 +71,7 @@ export default class FrontierPushedPartition extends APushedPartition {
             // a refused message leaves nothing to build on until a sync
             this.values = new Map();
             this.nodes = new Map();
+            this.proof = new SubstrateTrieProof([]);
             this.held = undefined;
             throw error;
         }
@@ -81,7 +84,7 @@ export default class FrontierPushedPartition extends APushedPartition {
             return decision;
         }
         const { stateRoot } = this.held.block;
-        const proofNodes = [...this.nodes.values()];
+        const proofNodes = this.proof;
         for (const read of reads) {
             const { address } = read;
             const storage = this.decideSlots(stateRoot, read);
@@ -181,7 +184,7 @@ export default class FrontierPushedPartition extends APushedPartition {
         }
 
         // every held key, pushed now or earlier, must read as held under the new root
-        const proof = new SubstrateTrieProof([...nodes.values()]);
+        const proof = SubstrateTrieProof.ofHashedNodes(nodes);
         const used = new Set<NodeHash>();
         for (const [key, value] of values) {
             const proven = proof.read(block.stateRoot, key, used);
@@ -196,6 +199,7 @@ export default class FrontierPushedPartition extends APushedPartition {
 
         this.values = values;
         this.nodes = nodes;
+        this.proof = SubstrateTrieProof.ofHashedNodes(nodes);
         this.held = {
             block,
             environment: ethereumHeader.environment(
@@ -220,7 +224,7 @@ export default class FrontierPushedPartition extends APushedPartition {
         decided: { slot: StorageSlot; value: string }[];
         undecided: StorageSlot[];
     } {
-        const proofNodes = [...this.nodes.values()];
+        const proofNodes = this.proof;
         // most reads stay inside the partition: one proof for all of them
         const all = this.decided(() =>
             this.storageVerifier.provenStorage(

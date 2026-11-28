@@ -35,3 +35,6 @@ Reading one key from a Substrate read proof
 - [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P19` — a branch with an empty child bitmap
 - [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P20` — a value length in the big-integer compact form
 - [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P24` — a value of 100 bytes a state version 0 leaf holds inline, its length in the two-byte form
+- [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P25` — a proof of nodes the caller already keyed by their hash reads as the proof of the same nodes
+- [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P26` — a node keyed by its caller under another hash than its own is not found: nodes already keyed are not hashed again
+- [x] `UNIT-TEST-STPROOF-1-K1CTJZ.P27` — a proof given in place of nodes is used as it is

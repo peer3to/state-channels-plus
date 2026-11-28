@@ -147,6 +147,26 @@ export default class SubstrateTrieProof {
     }
 
     /**
+     * The proof of nodes the caller already keyed by their {@link trieNodeHash},
+     * without hashing them again.
+     */
+    static ofHashedNodes(
+        nodes: ReadonlyMap<NodeHash, Bytes>
+    ): SubstrateTrieProof {
+        const proof = new SubstrateTrieProof([]);
+        for (const [nodeHash, node] of nodes)
+            proof.nodesByHash.set(nodeHash, getBytes(node));
+        return proof;
+    }
+
+    /** `proof` itself, or the proof of the nodes `proof` lists. */
+    static of(proof: Bytes[] | SubstrateTrieProof): SubstrateTrieProof {
+        return proof instanceof SubstrateTrieProof
+            ? proof
+            : new SubstrateTrieProof(proof);
+    }
+
+    /**
      * The value at `key` in the trie with root `stateRoot`, or `null` when the
      * proof shows the key holds nothing. Throws {@link StorageProofError} when
      * the proof does not reach the key or a node on its path is malformed.

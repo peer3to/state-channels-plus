@@ -1,6 +1,8 @@
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import { encodeCompact } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader";
-import SubstrateTrieProof from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
+import SubstrateTrieProof, {
+    trieNodeHash
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
 import {
     ANY_TRIE_KEY,
     craftedTrieNodes,
@@ -13,7 +15,7 @@ import {
 } from "@test/fixtures/lightClient/craftedTrieNodes";
 import { moonbeamStorageProof } from "@test/fixtures/lightClient/moonbeamStorageProof";
 import { expect } from "chai";
-import { dataLength, hexlify } from "ethers";
+import { dataLength, getBytes, hexlify, ZeroHash } from "ethers";
 
 const { stateRoot, slots, sharedProofNodes, firstSlotProofNodes, account } =
     moonbeamStorageProof;
@@ -202,5 +204,51 @@ describe("SubstrateTrieProof", function () {
             StorageProofError,
             /length nothing can hold/
         );
+    });
+
+    it("reads from nodes already keyed by their hash what a proof of the same nodes reads", function () {
+        const nodes = new Map(
+            account.proofNodes.map((node) => [
+                trieNodeHash(getBytes(node)),
+                node
+            ])
+        );
+
+        const value = SubstrateTrieProof.ofHashedNodes(nodes).read(
+            stateRoot,
+            account.trieKey
+        );
+
+        expect(hexlify(value!)).to.equal(account.value);
+    });
+
+    it("finds a node only under the hash its caller keyed it by: it does not hash nodes already keyed", function () {
+        // every node of a one-key read proof is on the key's path
+        const [misKeyed, ...rest] = account.proofNodes;
+        const nodes = new Map([
+            [ZeroHash, misKeyed],
+            ...rest.map((node) => [trieNodeHash(getBytes(node)), node] as const)
+        ]);
+
+        expect(() =>
+            SubstrateTrieProof.ofHashedNodes(nodes).read(
+                stateRoot,
+                account.trieKey
+            )
+        ).to.throw(StorageProofError, /holds no node with hash/);
+    });
+
+    it("reuses a proof it is given and builds one from the nodes it is given", function () {
+        const proof = new SubstrateTrieProof(account.proofNodes);
+
+        expect(SubstrateTrieProof.of(proof)).to.equal(proof);
+        expect(
+            hexlify(
+                SubstrateTrieProof.of(account.proofNodes).read(
+                    stateRoot,
+                    account.trieKey
+                )!
+            )
+        ).to.equal(account.value);
     });
 });
