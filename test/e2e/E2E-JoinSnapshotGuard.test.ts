@@ -24,10 +24,10 @@ import {
     remoteThresholdPeerIndices,
     waitForHeldJoins
 } from "@test/fixtures/JoinSnapshotRetryStaging";
-import { rejectionOf } from "@test/fixtures/ProvenSubmissionFailureStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
+import { rejectionOf } from "@test/utils/rejectionOf";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 

@@ -1059,6 +1059,8 @@ export class RpcStubActions<
     ): Promise<{
         /** Wait until a dispute log's handling is held in flight. */
         waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+        /** The held handlings fail when they run, before storing their dispute. */
+        failHandling: () => Promise<void>;
         /** Run the held handlings now, if no log query released them yet. */
         release: () => Promise<void>;
     }> {
@@ -1076,6 +1078,9 @@ export class RpcStubActions<
                             .request()) > 0,
                     timeoutMs
                 ),
+            failHandling: async () => {
+                await ctl().failHeldDisputeCommittedHandling().request();
+            },
             release: async () => {
                 await ctl().releaseDisputeCommittedHandling().request();
             }

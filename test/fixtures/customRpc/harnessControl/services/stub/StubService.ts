@@ -913,6 +913,8 @@ export class StubService extends ANetworkRpcService<
     private failedDisputeCommittedCalls = 0;
     /** Dispute-log handlings held in flight until a dispute log query answered. */
     disputeCommittedHandlingGate?: StubGate;
+    // the held dispute handlings fail instead of running the real handler
+    private failHeldDisputeCommitted = false;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Every contract log held by `holdContractLogs`, first delivery each, in arrival order. */
@@ -5469,9 +5471,12 @@ export class StubService extends ANetworkRpcService<
             ).topicHash;
         const gate = this.createGate();
         this.disputeCommittedHandlingGate = gate;
+        this.failHeldDisputeCommitted = false;
         eventHandler.onDisputeCommitted = async (...args) => {
             gate.entered += 1;
             await gate.gate;
+            if (this.failHeldDisputeCommitted)
+                throw new Error("stubbed in-flight onDisputeCommitted failure");
             return handle(...args);
         };
         provider.getLogs = (async (filter) => {
@@ -5483,6 +5488,16 @@ export class StubService extends ANetworkRpcService<
             }
             return logs;
         }) as typeof provider.getLogs;
+    }
+
+    /**
+     * The handlings held by {@link holdDisputeCommittedHandlingUntilLogQuery}
+     * fail when they run, before the real handler stores the dispute. Only
+     * the handlings already in flight fail; a later dispatch runs the real
+     * handler.
+     */
+    failHeldDisputeCommittedHandling(): void {
+        this.failHeldDisputeCommitted = true;
     }
 
     /** Restore the handler and the log queries, and run the held handlings. */

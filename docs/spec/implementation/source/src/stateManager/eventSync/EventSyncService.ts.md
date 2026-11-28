@@ -76,12 +76,12 @@ Ordering and recovery
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20` — the reduce, audit and dispute inbound recovery rejects with the failure of a local handler applying a recovered log
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P21` — the dispute-window recovery awaits an in-flight dispute log that succeeds and resolves with the window, its dispute stored
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P22` — the dispute-window recovery joins an in-flight dispute log that stores its dispute and then fails, and resolves with the window
-- [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23` — the dispute-window recovery joins an in-flight dispute log that fails before storing its dispute and rejects with that failure; a second recovery rejects the same way and the dispute stays missing
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P24` — the dispute-window recovery rejects with the failure of a local handler applying a dispute log it dispatched itself
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P25` — the dispute-window recovery for a fork the node already left: the handler runs no audit and stores nothing, the recovery stores the chain's copy of each dispute and resolves with the window
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P26` — a handled InboundMessagesProcessed or StateSnapshotUpdated event records its block for the pending-set pin before its handler runs
 - [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P27` — slash recovery diffs the chain's slash set against the slashes this service handled: a recovered slash is dispatched once and a repeated recovery reports no change
-- [ ] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P28` — a replayed ChainSlashed or DisputeKilled log fills the handled slashes, and ChannelStorageCleared empties them
+- [x] `UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P28` — a replayed ChainSlashed or DisputeKilled log fills the handled slashes, and ChannelStorageCleared empties them
 
 ## UNIT-TEST-EVENT-CHAIN-HEAD-1-8TJAS6
 

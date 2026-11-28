@@ -3465,6 +3465,12 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    /** The held dispute handlings fail instead of running the real handler. */
+    public failHeldDisputeCommittedHandling(): boolean {
+        this.service.failHeldDisputeCommittedHandling();
+        return true;
+    }
+
     public releaseDisputeCommittedHandling(): boolean {
         return this.service.releaseDisputeCommittedHandling();
     }

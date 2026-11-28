@@ -5,6 +5,9 @@ import {
     type LightClientStorageBlock,
     type LightClientSubscription
 } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
+import type { ProvenBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/AProvenStateReader";
+import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
+import FrontierProvenStateReader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader";
 import { RpcNodeProxy } from "@test/fixtures/node/RpcNodeProxy";
 import { type NodeHandle, startPeer3Node } from "@test/utils/nodeInfra";
 import { waitFor } from "@test/utils/waitFor";
@@ -19,6 +22,14 @@ import {
     type TransactionReceipt,
     type TransactionResponse
 } from "ethers";
+
+/** A proven state reader over the node's light client `socket`. */
+export function readerOver(socket: JsonRpcSocket): FrontierProvenStateReader {
+    return new FrontierProvenStateReader(
+        (method, params) => socket.request(method, params),
+        PEER3_CHAIN_CONSTANTS
+    );
+}
 
 /** What a light client test fails with on a node without the endpoints. */
 export const LIGHT_CLIENT_UNSUPPORTED = "RPC node doesn't support LC endpoints";
@@ -308,6 +319,15 @@ export class LightClientNodeFixture {
      * Resolves once the node sealed its first block: the genesis header names
      * no Ethereum block, so no proven read can start from it.
      */
+    /** The reader's best block, once the node's Ethereum RPC serves that block too. */
+    async servedHead(reader: FrontierProvenStateReader): Promise<ProvenBlock> {
+        const head = await reader.head();
+        await waitFor(
+            async () => (await this.provider.getBlock(head.number)) !== null
+        );
+        return head;
+    }
+
     async firstBlockSealed(): Promise<void> {
         await waitFor(async () => (await this.provider.getBlockNumber()) > 0);
     }

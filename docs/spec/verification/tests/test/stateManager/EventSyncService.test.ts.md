@@ -21,12 +21,12 @@ release the other), then moves to the top-up's block. A third holds a channel th
 watermark yet at the current chain head, opens the channel, checks the watermark is still unset
 while held, and that the release publishes the opening block.
 
-Three dispute-window cases run the real synchronized window load on an observer. Two stage a
+Four dispute-window cases run the real synchronized window load on an observer. Three stage a
 final dispute whose streamed log reaches the observer while its handling is held until the
 recovery's log query has answered, so the recovery finds that handling in flight. When the held
 handling succeeds, the load resolves with the window and the dispute is stored. When the
 handling stores the dispute and then fails its final-dispute preparation, the load still resolves
-with the window. The third loses the observer's streamed dispute logs and makes its dispute handler throw, so the
+with the window. When the in-flight handling fails before it stores the dispute, the load rejects with that failure and a second load rejects the same way (a one-shot stub fails only the handlings held in flight). The fourth loses the observer's streamed dispute logs and makes its dispute handler throw, so the
 logs the recovery dispatches itself fail and the load rejects with that failure.
 
 One inbound-run case loses a top-up's live inbound log and makes the peer's inbound handler throw.
@@ -34,7 +34,7 @@ The recovery rejects with that failure after its first query.
 
 One slash recovery case loses a kill's slash logs on the target while another peer kills
 a spam dispute: the recovery dispatches the slash once (the node's handled slashes then hold it), the
-chain keeps the kill timestamp, and a repeated recovery finds the slash handled and reports no change.
+chain keeps the kill timestamp, and a repeated recovery finds the slash handled and reports no change. A second case recovers the slash the same way, then has an honest peer dispute the window so the fork is reduced and adopted, posts a same-fork snapshot on the undisputed successor, and requires the chain's `ChannelStorageCleared` log and the target's handled slashes emptied.
 
 Two inbound-run cases lose live inbound logs and run the real synchronized load. One loses a
 single top-up's log after the peer already holds the run below it; the load queries the chain and
@@ -88,3 +88,5 @@ listener is left behind.
 - `holds at the given start block before any block completed, and publishes the channel's first block on release`: UNIT-TEST-EVENT-CATCH-UP-1-JV263P.P9
 - `authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P36, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P7, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P42, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P27, REQ-DISPUTE-PIPE-9-TDWQPV.T1.P43
 - `handler failure applying a recovered log → recovery rejects with it`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P20, REQ-CHAINOBS-3-N137ZP.T1.P23
+- `a recovered slash counts as handled, and the chain clearing the channel's storage empties the handled slashes`: REQ-DISPUTE-PIPE-9-TDWQPV.T1.P43, UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P28
+- `in-flight dispute log fails before storing its dispute → recovery rejects with that failure, also on a second call`: UNIT-TEST-EVENT-SYNC-SERVICE-1-0FB8Y4.P23, REQ-CHAINOBS-3-N137ZP.T1.P23

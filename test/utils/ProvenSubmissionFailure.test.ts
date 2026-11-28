@@ -5,9 +5,9 @@ import {
 import * as factory from "@test/factory";
 import {
     founderSubmitter,
-    maxTimestamp,
-    rejectionOf
+    maxTimestamp
 } from "@test/fixtures/ProvenSubmissionFailureStaging";
+import { rejectionOf } from "@test/utils/rejectionOf";
 import { expect } from "chai";
 import { ethers } from "ethers";
 

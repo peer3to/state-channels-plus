@@ -312,7 +312,7 @@ async function killSpammerWhileTargetLosesSlashLogs(h: MathPeerTestHarness) {
             await h.control(peer).stub.restoreReductionTasks(true).request();
         throw error;
     }
-    return { spammer, target, dropped };
+    return { forkId, spammer, target, dropped };
 }
 
 export async function assertRecoveredSlashQueriesExhausted(
@@ -401,5 +401,60 @@ export async function assertRecoveredSlashTimestampAndDedup(
         await dropped.release();
         for (const peer of h.getActiveHonestPeers())
             await h.control(peer).stub.restoreReductionTasks(true).request();
+    }
+}
+
+/**
+ * The target recovers the lost slash, so its handled slashes hold it. The
+ * peers then reduce the spam fork away and post a same-fork snapshot on the
+ * undisputed successor: the chain clears the channel's storage
+ * (`ChannelStorageCleared`), and the target's handled slashes are emptied.
+ */
+export async function assertHandledSlashesClearedWithStorage(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { forkId, spammer, target, dropped } =
+        await killSpammerWhileTargetLosesSlashLogs(h);
+    try {
+        // private: the slashes this node's event pipeline handled
+        const handledSlashes = () =>
+            h.execOnHost(target, (sm) => [
+                ...sm.eventSyncService["getHandledSlashes"](sm.channelId)
+            ]);
+        expect(await handledSlashes()).to.not.include(spammer.address);
+        await h.execOnHost(target, (sm) =>
+            sm.eventSyncService.recoverOnChainSlashes(sm.channelId)
+        );
+        expect(await handledSlashes()).to.include(spammer.address);
+
+        // an honest peer adds its dispute to the window, so the fork is reduced
+        const honest = h.getActiveHonestPeers();
+        await h.dispute.restoreDisputeInitiation(
+            honest.map((peer) => peer.index)
+        );
+        await h.execOnHost(honest[honest.length - 1]!, (sm) =>
+            sm.disputeManager.dispute(sm.forkId)
+        );
+        for (const peer of honest)
+            await h.control(peer).stub.restoreReductionTasks(true).request();
+        await h.dispute.resolveDisputeWait({ forkId });
+        // the peers' adoption post moves the chain to the reduced fork
+        await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+        await h.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        const posted = await h.transition.postSnapshotWait();
+        expect(posted, "the same-fork snapshot post must land").to.not.equal(
+            undefined
+        );
+
+        const cleared = await h.channelManager.queryFilter(
+            h.channelManager.filters.ChannelStorageCleared(h.channelId)
+        );
+        expect(cleared.length).to.be.greaterThan(0);
+        await waitFor(async () => (await handledSlashes()).length === 0);
+    } finally {
+        await dropped.release();
     }
 }

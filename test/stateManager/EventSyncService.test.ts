@@ -1,6 +1,7 @@
 import { Hash } from "@/types/types";
 import {
     assertDirectSlashRecovery,
+    assertHandledSlashesClearedWithStorage,
     assertRecoveredSlashTimestampAndDedup,
     assertRecoveredSlashQueriesExhausted
 } from "@test/fixtures/DisputeSlashRecoveryStaging";
@@ -27,6 +28,10 @@ describe("EventSyncService", function () {
 
     it("authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query", async function () {
         await assertRecoveredSlashTimestampAndDedup(TestSession.getHarness());
+    });
+
+    it("a recovered slash counts as handled, and the chain clearing the channel's storage empties the handled slashes", async function () {
+        await assertHandledSlashesClearedWithStorage(TestSession.getHarness());
     });
 
     it("authoritative slash recovery rejects a missing chain head", async function () {
@@ -437,6 +442,55 @@ describe("EventSyncService", function () {
             await TestSession.settleDetached({
                 expectedErrorIncludes:
                     "Forced final-dispute output preparation failure"
+            });
+        });
+
+        it("in-flight dispute log fails before storing its dispute → recovery rejects with that failure, also on a second call", async function () {
+            const h = TestSession.getHarness();
+            const observerIndex = 0;
+            const { forkId, held } =
+                await h.scenario.finalDisputeWithInFlightCommit({
+                    observerIndex,
+                    maliciousPeerIndex: 1
+                });
+            const observer = h.control(h.getPeer(observerIndex));
+            const commitments = await h.channelManager.getWindowCommitments(
+                h.channelId,
+                forkId
+            );
+            expect(
+                await observer.query
+                    .hasDisputeConfirmation(commitments[0])
+                    .request(),
+                "the held log must not have stored its dispute yet"
+            ).to.equal(false);
+            // the in-flight handling fails before the dispute is stored
+            await held.failHandling();
+
+            try {
+                await expect(
+                    observer.dispute.recoverCommittedDisputes(forkId).request()
+                ).to.be.rejectedWith(
+                    /stubbed in-flight onDisputeCommitted failure/
+                );
+            } finally {
+                await held.release();
+            }
+            // the failed log is never dispatched again: the retry joins the
+            // same failure instead of reporting the window unreadable
+            await expect(
+                observer.dispute.recoverCommittedDisputes(forkId).request()
+            ).to.be.rejectedWith(
+                /stubbed in-flight onDisputeCommitted failure/
+            );
+            expect(
+                await observer.query
+                    .hasDisputeConfirmation(commitments[0])
+                    .request()
+            ).to.equal(false);
+            await TestSession.settleDetached({
+                expectedErrorIncludes:
+                    "stubbed in-flight onDisputeCommitted failure"
             });
         });
 

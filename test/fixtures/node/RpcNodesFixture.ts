@@ -18,6 +18,7 @@ import { createLogger } from "@/utils/logging";
 import type { LogEntry, Logger } from "@/utils/logging/Logger";
 import { LogStore } from "@/utils/logging/logStore";
 import { NodeLogger } from "@/utils/logging/node/NodeLogger";
+import { rejectionOf } from "@test/utils/rejectionOf";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import {
@@ -385,15 +386,6 @@ function estimateBlocks(proxy: RpcNodeProxy): unknown[] {
 /** The node's latest block number, read past ethers' request cache. */
 async function latestBlockNumber(node: JsonRpcProvider): Promise<number> {
     return Number(await node.send("eth_blockNumber", []));
-}
-
-async function rejectionOf(work: Promise<unknown>): Promise<unknown> {
-    try {
-        await work;
-    } catch (error) {
-        return error;
-    }
-    return undefined;
 }
 
 export async function assertGasEstimateSeesPendingBlock(): Promise<void> {
