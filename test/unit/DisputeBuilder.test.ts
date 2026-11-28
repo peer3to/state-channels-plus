@@ -1,8 +1,11 @@
 import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
+import { storedStateHashAt } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import { stageMissingParticipantSignature } from "@test/fixtures/LateSignatureStaging";
 import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
+import { stageFinalThenUnfinalizedTail } from "@test/fixtures/ProofOwnerStaging";
+import { storedProofView } from "@test/fixtures/StoredProofStaging";
 import {
     compareEvidence,
     stageStoredTimeoutClaim
@@ -611,6 +614,63 @@ describe("Unit: DisputeBuilder", function () {
             expect(
                 await compareEvidence(h, 1, forkId, theirs.dispute)
             ).to.equal(false);
+        });
+    });
+
+    describe("constructDispute → final-point state", function () {
+        it("the final point's state held only in the stored proof → the dispute is built and its auditing data carries that state", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, observerIndex } =
+                await stageFinalThenUnfinalizedTail(h, { postAnchor: false });
+            const observer = h.getPeer(observerIndex);
+            const finalized = (await storedProofView(h, observerIndex))!
+                .finalized;
+            const finalizedStateHash = await storedStateHashAt(
+                h,
+                observerIndex,
+                forkId,
+                finalized.height
+            );
+            // premise - the tail is above the final point, so the latest
+            // state is another one and stays held
+            expect(
+                await h
+                    .control(observer)
+                    .query.getNextBlockHeight(forkId)
+                    .request()
+            ).to.be.greaterThan(finalized.height + 1);
+            expect(
+                await h
+                    .control(observer)
+                    .stub.deleteStoredState(finalizedStateHash)
+                    .request(),
+                "the final point's state leaves state storage"
+            ).to.equal(true);
+
+            const r = await h.execOnHost(
+                observer,
+                async (sm, args, modules) => {
+                    const built = await sm.disputeManager.constructDispute(
+                        args.forkId
+                    );
+                    const state =
+                        built?.auditingData
+                            .latestFinalizedStateStateMachineState;
+                    return {
+                        stateHash: state ? modules.ethers.keccak256(state) : "",
+                        isStateStored:
+                            sm.storage.stateMachineStates.getStateMachineState(
+                                args.finalizedStateHash
+                            ) !== undefined
+                    };
+                },
+                { forkId, finalizedStateHash }
+            );
+
+            expect(r.isStateStored, "still not in state storage").to.equal(
+                false
+            );
+            expect(r.stateHash).to.equal(finalizedStateHash);
         });
     });
 

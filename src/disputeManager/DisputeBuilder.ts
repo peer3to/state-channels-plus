@@ -677,6 +677,7 @@ export default class DisputeBuilder {
         disputeLatestInboundMessageBlockHash: Hash
     ): Promise<DisputeAuditingDataStruct> {
         const latestFinalizedStateStateMachineState =
+            built.encodedFinalizedState ??
             this.storage.stateMachineStates.getStateMachineState(
                 built.finalizedSnapshot.stateMachineStateHash
             );
@@ -730,5 +731,4 @@ export default class DisputeBuilder {
         });
         return auditingData;
     }
-
 }
