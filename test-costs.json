@@ -6415,6 +6415,18 @@
       "peakRssGb": 0.351,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider answers a block read by an unmined number with no block without failing over": {
+      "durationMs": 8998,
+      "avgCores": 2.874,
+      "peakRssGb": 0.578,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider answers a latest block read on a second pass when every node first answers with no block": {
+      "durationMs": 8191,
+      "avgCores": 3.081,
+      "peakRssGb": 0.525,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider answers reads through the next node while the first is cut": {
       "durationMs": 8485,
       "avgCores": 0.896,
@@ -6427,10 +6439,34 @@
       "peakRssGb": 0.632,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates at the latest block when only the pending block reverts the call": {
+      "durationMs": 8954,
+      "avgCores": 2.867,
+      "peakRssGb": 0.577,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates at the latest block with the sender's managed nonce while its own transaction is unsealed": {
+      "durationMs": 10310,
+      "avgCores": 2.5,
+      "peakRssGb": 0.58,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider estimates gas at the pending block, for a call valid only after the latest block's second": {
+      "durationMs": 9897,
+      "avgCores": 2.612,
+      "peakRssGb": 0.59,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a call over to the next node when the first answers with its internal error": {
       "durationMs": 2077,
       "avgCores": 0.944,
       "peakRssGb": 0.422,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a latest block read over to the next node when the first answers with no block": {
+      "durationMs": 6688,
+      "avgCores": 3.864,
+      "peakRssGb": 0.563,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider fails a read over to the next node when the first drops mid-request": {
@@ -6523,6 +6559,18 @@
       "peakRssGb": 0.366,
       "measurementReason": null
     },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a latest block read when every node answers with no block twice": {
+      "durationMs": 9812,
+      "avgCores": 2.786,
+      "peakRssGb": 0.569,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a latest block read with the internal error, without a second pass, when the other node answers with no block": {
+      "durationMs": 7711,
+      "avgCores": 3.219,
+      "peakRssGb": 0.557,
+      "measurementReason": null
+    },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects a read in flight when destroyed": {
       "durationMs": 8953,
       "avgCores": 1.07,
@@ -6539,6 +6587,12 @@
       "durationMs": 7647,
       "avgCores": 1.08,
       "peakRssGb": 1.137,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects an estimate the latest block also reverts, with the pending block's revert": {
+      "durationMs": 9035,
+      "avgCores": 2.779,
+      "peakRssGb": 0.577,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects startup over a log window that is not a positive integer without opening a node": {
@@ -6563,6 +6617,12 @@
       "durationMs": 4317,
       "avgCores": 0.908,
       "peakRssGb": 0.637,
+      "measurementReason": null
+    },
+    "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider rejects with the latest block's revert when the node cannot build its pending block for the estimate": {
+      "durationMs": 7605,
+      "avgCores": 3.395,
+      "peakRssGb": 0.582,
       "measurementReason": null
     },
     "hardhat|test/evm/RpcNodes.test.ts|MultiRpcProvider relays each matching log once from the node sockets": {
@@ -18565,12 +18625,6 @@
       "peakRssGb": 1.013,
       "measurementReason": null
     },
-    "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute a slow auditor's kill and dispute land after the evidence period closed, and a searching estimator gives the best-effort multicall only the least gas at which it succeeds → the upload still reaches its evidence check and names the lost evidence race: a no-op, the kill landed in the multicall, no kill is sent alone, and the event pipeline stays alive": {
-      "durationMs": 25756,
-      "avgCores": 0.478,
-      "peakRssGb": 1.024,
-      "measurementReason": null
-    },
     "hardhat|test/unit/DisputeKillAndDispute.test.ts|Unit: kill then dispute an auditor audits an invalid dispute -> the state proof it built during the audit serves the kill and dispute: one build, and the multicall lands": {
       "durationMs": 13937,
       "avgCores": 1.22,
@@ -19007,18 +19061,6 @@
       "durationMs": 14178,
       "avgCores": 0.946,
       "peakRssGb": 0.784,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a kill whose latest-block read fails is sent uncapped at its estimate plus the replay requirement, lands, and slashes the disputer": {
-      "durationMs": 13837,
-      "avgCores": 1.106,
-      "peakRssGb": 0.79,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a kill with the real estimate lands at the estimate plus the replay requirement": {
-      "durationMs": 18880,
-      "avgCores": 1.07,
-      "peakRssGb": 0.807,
       "measurementReason": null
     },
     "hardhat|test/unit/DisputeManager.test.ts|Unit: DisputeManager fraud-proof replay gas limit a rejected replay requirement read rejects the dispute without sending it and the next dispute reads again": {

@@ -5,6 +5,11 @@ import {
     assertDestroyDuringPendingAttemptStaysQuiet,
     assertFailedLogPageAnsweredForRetry,
     assertFirstNodeErrorAnswerIsFinal,
+    assertGasEstimateSeesPendingBlock,
+    assertManagedNonceEstimateFallsBackToLatest,
+    assertPendingOnlyRevertFallsBackToLatest,
+    assertPendingNodeFaultReportsLatestRevert,
+    assertRevertAtBothBlocksRejects,
     assertHeartbeatErrorAnswerKeepsNode,
     assertInvalidLogWindowRejectsStartup,
     assertInvalidSecretOpensNoNode,
@@ -114,6 +119,26 @@ describe("MultiRpcProvider", () => {
 
     it("answers reads through the next node while the first is cut", async () => {
         await assertReadsFailOverToNextNode();
+    });
+
+    it("estimates gas at the pending block, for a call valid only after the latest block's second", async () => {
+        await assertGasEstimateSeesPendingBlock();
+    });
+
+    it("estimates at the latest block when only the pending block reverts the call", async () => {
+        await assertPendingOnlyRevertFallsBackToLatest();
+    });
+
+    it("estimates at the latest block with the sender's managed nonce while its own transaction is unsealed", async () => {
+        await assertManagedNonceEstimateFallsBackToLatest();
+    });
+
+    it("rejects an estimate the latest block also reverts, with the pending block's revert", async () => {
+        await assertRevertAtBothBlocksRejects();
+    });
+
+    it("rejects with the latest block's revert when the node cannot build its pending block for the estimate", async () => {
+        await assertPendingNodeFaultReportsLatestRevert();
     });
 
     it("fails a read over to the next node when the first drops mid-request", async () => {

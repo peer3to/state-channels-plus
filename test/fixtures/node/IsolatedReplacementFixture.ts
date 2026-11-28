@@ -1,5 +1,9 @@
 // @spec-test-coverage-ignore: an exclusively owned node for the replacement-detection test
-import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
+import {
+    mineBlocks,
+    testAccount,
+    withIsolatedHardhatNode
+} from "./IsolatedHardhatNode";
 import {
     serializeTransactionResponse,
     deserializeTransactionResponse
@@ -8,14 +12,13 @@ import { expect } from "chai";
 import { type TransactionResponse } from "ethers";
 
 export async function assertIsolatedReplacementDetection(): Promise<void> {
-    await withIsolatedHardhatNode(async (provider) => {
-        const sender = await provider.getSigner(0);
-        const recipient = await provider.getSigner(1);
-        const gasPrice = (await provider.getFeeData()).gasPrice!;
-        const startBlock = await provider.getBlockNumber();
+    await withIsolatedHardhatNode(
+        async (provider) => {
+            const sender = await testAccount(provider, 0);
+            const recipient = await testAccount(provider, 1);
+            const gasPrice = (await provider.getFeeData()).gasPrice!;
+            const startBlock = await provider.getBlockNumber();
 
-        await provider.send("evm_setAutomine", [false]);
-        try {
             const original = await sender.sendTransaction({
                 type: 0,
                 to: recipient.address,
@@ -24,7 +27,7 @@ export async function assertIsolatedReplacementDetection(): Promise<void> {
             });
             const restored = deserializeTransactionResponse(
                 serializeTransactionResponse(original),
-                sender.provider
+                provider
             ).replaceableTransaction(startBlock);
             const replacement = await sender.sendTransaction({
                 type: 0,
@@ -50,7 +53,7 @@ export async function assertIsolatedReplacementDetection(): Promise<void> {
                 await new Promise((resolve) => setTimeout(resolve, 10));
             }
             await provider.getBlockNumber();
-            await provider.send("hardhat_mine", ["0x1"]);
+            await mineBlocks(provider, 1);
             const replacementError = await waited;
             expect(replacementError).to.be.instanceOf(Error);
             expect(
@@ -63,8 +66,7 @@ export async function assertIsolatedReplacementDetection(): Promise<void> {
                     }
                 ).replacement?.hash
             ).to.equal(replacement.hash);
-        } finally {
-            await provider.send("evm_setAutomine", [true]);
-        }
-    });
+        },
+        { seal: "manual" }
+    );
 }

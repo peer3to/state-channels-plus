@@ -5,14 +5,23 @@ Exercises: [RpcNodeProvider.ts](../../../../implementation/source/src/evm/p2pRun
 
 ## Overview
 
-Every case except the pure backoff check runs a private Hardhat node per test with one or two
-WebSocket proxies in front of it ([fixture](../../../../../../test/fixtures/node/RpcNodesFixture.ts)).
+Every case except the pure backoff check runs a private node per test (Hardhat, or the parachain
+dev node under `--parachain`) with one or two WebSocket proxies in front of it ([fixture](../../../../../../test/fixtures/node/RpcNodesFixture.ts)).
 A proxy stands in for a separate endpoint of the same chain: a test cuts its sockets, refuses new
 ones, restores it, or holds one method's requests, and the proxy records which methods reached it.
 Oracles compare answers with the node's own HTTP answers and check which proxy saw
 `eth_getBalance`, `eth_sendRawTransaction` or `eth_subscribe`. Absence checks use a one-second
 window as the test input. Transaction receipts are read from the node directly; ethers' receipt
 wait is tested once, with two confirmations, after both sockets reconnected. Further cases blackhole a proxy (socket open, nothing forwarded) to prove the heartbeat ends a silent socket, swallow a forwarded transaction's reply before cutting the node, start a second private chain to prove a node on another chain is refused, and destroy or stop the provider with requests in flight or waiting.
+
+Three cases seal one contract that stores its creation timestamp on a manual-seal node and wait
+until the wall clock is past that second, so the pending block is later than the latest. A call
+that runs only after the creation second reverts at the latest block, and the provider's estimate
+succeeds through the forwarded `pending` block. A call that runs only within the creation second
+reverts at the pending block only, and the provider estimates it at the latest block (the proxy
+sees `pending`, then `latest`). A call that reverts at both blocks with different data rejects as
+`CALL_EXCEPTION` carrying the pending block's revert. The fallback case is repeated with the
+estimate carrying the sender's pending nonce while its own transfer is still unsealed.
 
 Later cases check that a node destroyed during a pending attempt logs nothing and raises no
 unhandled rejection (a logger whose entries the test reads), that a heartbeat answered with an
@@ -71,6 +80,11 @@ within the one-second window (every node was destroyed).
 - `fails a transaction over to the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P2, REQ-CHAINOBS-2-2NCSQ3.T1.P2
 - `holds a transaction while no node is connected and sends it once one reconnects`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P3, REQ-CHAINOBS-2-2NCSQ3.T1.P5
 - `answers reads through the next node while the first is cut`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P4, REQ-CHAINOBS-2-2NCSQ3.T1.P3
+- `estimates gas at the pending block, for a call valid only after the latest block's second`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P29
+- `estimates at the latest block when only the pending block reverts the call`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P30
+- `estimates at the latest block with the sender's managed nonce while its own transaction is unsealed`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P32
+- `rejects an estimate the latest block also reverts, with the pending block's revert`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P31
+- `rejects with the latest block's revert when the node cannot build its pending block for the estimate`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P33
 - `fails a read over to the next node when the first drops mid-request`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P5, REQ-CHAINOBS-2-2NCSQ3.T1.P4
 - `relays each new block once from the node sockets without polling`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P6
 - `relays each matching log once from the node sockets`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P15, REQ-CHAINOBS-4-JA3YF8.T1.P1
