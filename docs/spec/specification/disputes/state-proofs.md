@@ -106,9 +106,14 @@ final point of a proof that ends below it checked nothing, so synchronization th
 mirror and the chain for that proof. The dispute audit keeps its tiers.
 
 Replay follows the same tier order. Each attempt replays from that tier's verified start and
-state, so a chain anchor can exclude a bad earlier transition. Internal errors, unavailable
-required state and RPC failures are logged and propagated as fatal errors. A thrown error is not
-a false proof result and must not trigger fallback. A malformed retained peer block is instead
+state, so a chain anchor can exclude a bad earlier transition. Absent local data is never
+evidence: when the dispute audit omits auditing data and this peer does not hold a milestone
+snapshot the chain-tier counter needs, or the chain tier's replay base state is neither held nor
+posted with its committed hash, the audit logs it and does not judge that proof. It stores no
+counter from it, still applies the state-free not-latest-state check, and otherwise treats the
+dispute as audited, so the peer's own dispute upload still runs. Internal errors, other
+unavailable required state and RPC failures are logged and propagated as fatal errors. A thrown
+error is not a false proof result and must not trigger fallback. A malformed retained peer block is instead
 invalid evidence. An older dispute does not require a peer to recover obsolete state merely to
 replay backward from its newer final view; the peer can submit its own newer evidence.
 
@@ -1072,7 +1077,7 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t4.p4"></a>`REQ-SP-9-RNXP56.T4.P4` — A spectator rejects and blacklists an honest same-key restarted responder whose resynced but later isolated proof is older; the requester preserves its final block and application-state hash.
 
-<a id="req-sp-9-rnxp56.t4.p5"></a>`REQ-SP-9-RNXP56.T4.P5` — A pending auditor with no conflicting final block and no required anchor state throws on an otherwise real anchored history without storing any counter.
+<a id="req-sp-9-rnxp56.t4.p5"></a>`REQ-SP-9-RNXP56.T4.P5` — A pending auditor with no conflicting final block and no required anchor state does not judge the tail of an otherwise real anchored history: no throw, no counter, the dispute is valid.
 
 #### <a id="req-sp-10-jmvhtb.t5"></a>`REQ-SP-10-JMVHTB.T5`
 
@@ -1204,9 +1209,9 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t5.p7"></a>`REQ-SP-9-RNXP56.T5.P7` — A transport exception from the local verification read during a committed dispute audit propagates as a fatal error, performs no canonical verification read, stores no fraud proof, submits no kill or dispute, and leaves the original commitment present.
 
-<a id="req-sp-9-rnxp56.t5.p8"></a>`REQ-SP-9-RNXP56.T5.P8` — When an auditor lacks the full state at its finalized replay base and the higher dispute posts no auditing data, audit fails fatally without a fraud proof, kill or dispute upload and keeps its active next height.
+<a id="req-sp-9-rnxp56.t5.p8"></a>`REQ-SP-9-RNXP56.T5.P8` — When an auditor lacks the full state at its finalized replay base and the higher dispute posts no auditing data, the audit does not judge the tail: no fraud proof and no kill, the dispute is stored as audited, the auditor's own dispute build runs (and stops on the same missing state), and the auditor keeps its active next height.
 
-<a id="req-sp-9-rnxp56.t5.p9"></a>`REQ-SP-9-RNXP56.T5.P9` — When an auditor behind a newly finalized block lacks its required milestone snapshot and the dispute posts no auditing data, evidence construction fails fatally without an unsupported fraud proof, kill or dispute upload.
+<a id="req-sp-9-rnxp56.t5.p9"></a>`REQ-SP-9-RNXP56.T5.P9` — When an auditor behind a newly finalized block lacks its required milestone snapshot and the dispute posts no auditing data, the audit does not judge the proof: no unsupported fraud proof and no kill, the dispute is stored as audited, and the auditor's own dispute build runs (and stops on the same missing snapshot).
 
 #### <a id="req-sp-8-9zccej.t5"></a>`REQ-SP-8-9ZCCEJ.T5`
 
@@ -1326,11 +1331,11 @@ The explicit result in each permutation holds; rejected evidence has no unauthor
 
 <a id="req-sp-9-rnxp56.t7.p6"></a>`REQ-SP-9-RNXP56.T7.P6` — An unproven prefix above the genesis trusted start produces InvalidStateProof pointing inside that prefix without a block index; canonical step verification accepts it, and the auditor kills the dispute and slashes submitter.
 
-<a id="req-sp-9-rnxp56.t7.p7"></a>`REQ-SP-9-RNXP56.T7.P7` — When no tier can supply a forged hop snapshot, the auditor holds no block at that height and auditing data is omitted, audit throws for missing milestone snapshots without a counter.
+<a id="req-sp-9-rnxp56.t7.p7"></a>`REQ-SP-9-RNXP56.T7.P7` — When no tier can supply a forged hop snapshot, the auditor holds no block at that height and auditing data is omitted, the audit does not judge the proof: no throw, no counter, the dispute is valid.
 
 <a id="req-sp-9-rnxp56.t7.p8"></a>`REQ-SP-9-RNXP56.T7.P8` — A pending auditor lacking the proved final state accepts verified posted state bytes, produces no counter, and holds full state by the expected hashes at both replay base and hop after audit.
 
-<a id="req-sp-9-rnxp56.t7.p9"></a>`REQ-SP-9-RNXP56.T7.P9` — Posted finalized-state bytes with the wrong hash are not installed; when the required real replay state is absent, audit throws without a counter and the base state remains absent.
+<a id="req-sp-9-rnxp56.t7.p9"></a>`REQ-SP-9-RNXP56.T7.P9` — Posted finalized-state bytes with the wrong hash are not installed; when the required real replay state is absent, the audit does not judge the tail: no throw, no counter, no tail block replayed, the base state remains absent, the dispute is valid.
 
 <a id="req-sp-9-rnxp56.t7.p10"></a>`REQ-SP-9-RNXP56.T7.P10` — A missed tail with another participant’s real signature substituted for its author signature returns InvalidBlockStructure and stores none of the tail blocks.
 

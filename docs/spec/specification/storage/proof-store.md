@@ -139,7 +139,9 @@ below the new anchor are dropped. The remaining hops are kept when they verify f
 to the same final point. Otherwise the record restarts at the new anchor with the state there and
 then advances over block history
 ([`REQ-PROOFSTORE-2-DBN7SY`](proof-store.md#req-proofstore-2-dbn7sy)). When the node holds no state
-at the new anchor and no kept hop verifies, the record is kept unchanged. Only a chain anchor
+at the new anchor and no kept hop verifies, the record is kept unchanged. Re-rooting the kept hops
+needs neither block history nor the state at the new anchor, and no history is retained only for
+the restart. Only a chain anchor
 advance re-roots the record; a later own final point never does. Whether re-rooting waits for
 base-layer finality of the adoption is
 [`OQ-SPEC-PROOFSTORE-8-07YFKT` (Re-rooting and base-layer finality of the adoption)](../open-questions.md#oq-spec-proofstore-8-07yfkt).
@@ -209,9 +211,17 @@ coordinate without moving the head, and the first block stored at a coordinate i
   ([`OQ-SPEC-PROOFSTORE-10-66ZDB2` (Snapshot updates that bound the stored proof)](../open-questions.md#oq-spec-proofstore-10-66zdb2)).
 - Nothing is pruned by these modules. What may be pruned below the anchor and between hops is
   [`OQ-SPEC-PROOFSTORE-1-H52WPZ` (Retention rule for pruning below the on-chain snapshot)](../open-questions.md#oq-spec-proofstore-1-h52wpz) and
-  [`OQ-SPEC-PROOFSTORE-2-218XFC` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-218xfc); which absent
-  data makes a reader fail, skip or lower its result is
-  [`OQ-SPEC-PROOFSTORE-11-9X8JFG` (Missing-evidence policy with pruned storage)](../open-questions.md#oq-spec-proofstore-11-9x8jfg).
+  [`OQ-SPEC-PROOFSTORE-2-218XFC` (Pruning above the anchor and lost exact-height checks)](../open-questions.md#oq-spec-proofstore-2-218xfc).
+- Absent data is never evidence; each reader has its own rule
+  ([`OQ-SPEC-PROOFSTORE-11-9X8JFG` (Missing-evidence policy with pruned storage)](../open-questions.md#oq-spec-proofstore-11-9x8jfg), resolved). The conflict check counts only stored blocks on the
+  hash-linked run that ends at the executed head
+  ([`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../block-progression/block-processing.md#req-block-pipe-2-pcxnt6)). A dispute audit that lacks a
+  milestone snapshot or the replay base state does not judge that proof and stores no counter from
+  it; its state-free checks and the own dispute upload still run
+  ([`REQ-SP-9-RNXP56`](../disputes/state-proofs.md#req-sp-9-rnxp56)). Reduce data that is not held is no result and is asked again;
+  synchronization serving is unchanged. A re-root first re-roots the record's own hops; when that
+  fails and the state at the new anchor is not held, the record is kept unchanged, and no extra
+  history is retained for that fallback.
 - Finality evidence is distinct from application-state validity. The stored proof proves which
   points are final; it does not prove that every application transition was correct.
 - Behavior is the same on every supported host
@@ -248,6 +258,11 @@ trust boundary is proof intake: a received proof is untrusted until it verifies.
   hops are gone and the record starts at an anchor the chain no longer holds. Verification then
   falls back to the chain tier ([`REQ-SP-9-RNXP56`](../disputes/state-proofs.md#req-sp-9-rnxp56));
   the re-root trigger is [`OQ-SPEC-PROOFSTORE-8-07YFKT` (Re-rooting and base-layer finality of the adoption)](../open-questions.md#oq-spec-proofstore-8-07yfkt).
+- **Re-root without the restart state.** When no kept hop verifies from a new chain anchor and the
+  node holds no state there (for example after pruning), the record keeps its older anchor below the
+  chain's until a later re-root passes or a synchronization replaces the record. Residual: a
+  synchronization to a final point equal to the record's does not replace it, so a node with no
+  later final point can keep that older anchor.
 - **Growth.** Hops that change membership accumulate between anchor advances, and a participant
   that forces many membership changes grows every peer's stored proof and the disputes built from
   it. The bound is the snapshot update and the dispute size limits
@@ -398,6 +413,8 @@ every peer re-roots on the chain update.
 <a id="req-proofstore-4-xb8z9w.t1.p1"></a>`REQ-PROOFSTORE-4-XB8Z9W.T1.P1` — A re-root at the snapshot below the final point moves the anchor there and keeps the hop above it and the final point with its state.
 
 <a id="req-proofstore-4-xb8z9w.t1.p2"></a>`REQ-PROOFSTORE-4-XB8Z9W.T1.P2` — A snapshot update posted on chain re-roots every peer's stored proof at the posted snapshot, with the state there.
+
+<a id="req-proofstore-4-xb8z9w.t1.p3"></a>`REQ-PROOFSTORE-4-XB8Z9W.T1.P3` — With the state at the new anchor and the blocks below the final point absent, a re-root at the snapshot below the final point still passes from the record's own hop: the anchor moves there, the hop and the final point with its state are kept.
 
 #### <a id="req-proofstore-5-zh56d4.t1"></a>`REQ-PROOFSTORE-5-ZH56D4.T1`
 

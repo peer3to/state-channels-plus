@@ -228,7 +228,7 @@ Specification cases tested: 2/3. Untested: T1.P2.
 Specification cases tested: 9/12. Untested: T1.P1, T1.P3, T1.P4.
 
 [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
-Specification cases tested: 14/23. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
+Specification cases tested: 16/25. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P6, T1.P7, T1.P8, T1.P9.
 
 [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 Specification cases tested: 16/20. Untested: T1.P2, T1.P3, T1.P8, T1.P9.
@@ -765,7 +765,7 @@ Specification cases tested: 4/4.
 Specification cases tested: 3/3.
 
 [`REQ-PROOFSTORE-4-XB8Z9W` (Re-rooting on a chain anchor advance)](../specification/storage/proof-store.md#req-proofstore-4-xb8z9w)
-Specification cases tested: 2/2.
+Specification cases tested: 3/3.
 
 [`REQ-PROOFSTORE-5-ZH56D4` (Reset on a fork change)](../specification/storage/proof-store.md#req-proofstore-5-zh56d4)
 Specification cases tested: 2/2.

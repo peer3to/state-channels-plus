@@ -61,7 +61,7 @@ Existing `OQ-*` IDs are preserved; new questions use the layer-scoped namespace 
 | [`OQ-SPEC-PROOFSTORE-8-07YFKT`](open-questions.md#oq-spec-proofstore-8-07yfkt)             | Re-rooting and base-layer finality of the adoption                                                                                                          | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md)                                                                                                                                                                         | Open                              |
 | [`OQ-SPEC-PROOFSTORE-9-7CNC80`](open-questions.md#oq-spec-proofstore-9-7cnc80)             | Restart durability of the stored proof and proof evidence                                                                                                   | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [storage/durability.md](./storage/durability.md)                                                                                                                       | Open                              |
 | [`OQ-SPEC-PROOFSTORE-10-66ZDB2`](open-questions.md#oq-spec-proofstore-10-66zdb2)           | Snapshot updates that bound the stored proof                                                                                                                | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [disputes/fraud-proofs.md](./disputes/fraud-proofs.md)                                                                                                                 | Open                              |
-| [`OQ-SPEC-PROOFSTORE-11-9X8JFG`](open-questions.md#oq-spec-proofstore-11-9x8jfg)           | Missing-evidence policy with pruned storage                                                                                                                 | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [disputes/state-proofs.md](./disputes/state-proofs.md)                                                                                                                 | Open                              |
+| [`OQ-SPEC-PROOFSTORE-11-9X8JFG`](open-questions.md#oq-spec-proofstore-11-9x8jfg)           | Missing-evidence policy with pruned storage                                                                                                                 | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [disputes/state-proofs.md](./disputes/state-proofs.md)                                                                                                                 | Resolved                          |
 | [`OQ-SPEC-PROOFSTORE-12-HVMC6K`](open-questions.md#oq-spec-proofstore-12-hvmc6k)           | Ordering of stored-proof writers and readers                                                                                                                | Specification analysis                        | [storage/proof-store.md](./storage/proof-store.md), [peer-communication/synchronization.md](./peer-communication/synchronization.md)                                                                                       | Resolved                          |
 
 ## Register assumptions and constraints
@@ -991,12 +991,24 @@ snapshot adoption, fraud proofs.
 
 ## OQ-SPEC-PROOFSTORE-11-9X8JFG — Missing-evidence policy with pruned storage
 
-Open. The stored proof is never checked against block storage below its final point, and a missing
-tail block makes construction fail ([`REQ-PROOFSTORE-1-V5KEYP` (One stored proof, for the active fork)](storage/proof-store.md#req-proofstore-1-v5keyp), [`REQ-PROOFSTORE-6-X7FT2K` (Readers use the stored proof)](storage/proof-store.md#req-proofstore-6-x7ft2k)). With pruning, other readers meet absent data:
-a dispute block at a pruned height, a not-latest-state check, a predecessor below a gap. Absent data
-must never be read as evidence of fraud. Owner: [storage/proof-store.md](./storage/proof-store.md). Alternatives: (1) a reader fails on absent
-data; (2) it skips the check; (3) it lowers its result to what it can prove. Blocking effect: decided
-with pruning. Affected layers: state proofs, fraud proofs.
+**Resolved (Ljuba, 2026-11-28, recommendation accepted):** absent data is never evidence, and each
+reader has its own rule. The conflict check treats as agreed history only a stored block on the
+hash-linked run that ends at the executed head, found by walking down from the head on the conflict
+path only; a block off that run gets no linked-conflict verdict, and no stored block is no
+conflict. A dispute audit that cannot judge a proof because this peer lacks a milestone snapshot the
+omitted-data counter needs, or lacks the chain tier's replay base state, logs it and stores no
+counter from that proof; the state-free not-latest-state check and the peer's own dispute upload
+still run. Reduce data that is not held is no result and is asked again; synchronization serving is
+unchanged. A re-root of the stored proof first re-roots its own hops; when that fails and the state
+at the new anchor is not held, the record is kept unchanged, and no extra history is retained for
+it. Rejected: (1) a reader fails on absent data, which turned missing local data into a failed
+audit or a throw a pruned peer could not recover from; (2) skipping every check, which would also
+drop the state-free checks. Consequences: a conflict inside a real gap of block history is not
+detected; an auditor without the data defers to auditors that hold it. Recorded in
+[`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](block-progression/block-processing.md#req-block-pipe-2-pcxnt6), [`REQ-SP-9-RNXP56`](disputes/state-proofs.md#req-sp-9-rnxp56) and
+[storage/proof-store.md](./storage/proof-store.md); tests [`REQ-BLOCK-PIPE-2-PCXNT6.T2.P14`](block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t2.p14), [`REQ-BLOCK-PIPE-2-PCXNT6.T2.P15`](block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t2.p15),
+[`REQ-SP-9-RNXP56.T4.P5`](disputes/state-proofs.md#req-sp-9-rnxp56.t4.p5), [`REQ-SP-9-RNXP56.T5.P8`](disputes/state-proofs.md#req-sp-9-rnxp56.t5.p8), [`REQ-SP-9-RNXP56.T5.P9`](disputes/state-proofs.md#req-sp-9-rnxp56.t5.p9), [`REQ-SP-9-RNXP56.T7.P7`](disputes/state-proofs.md#req-sp-9-rnxp56.t7.p7) and
+[`REQ-SP-9-RNXP56.T7.P9`](disputes/state-proofs.md#req-sp-9-rnxp56.t7.p9).
 
 <a id="oq-spec-proofstore-12-hvmc6k"></a>
 

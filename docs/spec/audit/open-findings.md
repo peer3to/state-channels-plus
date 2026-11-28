@@ -503,7 +503,7 @@ tests [`REQ-BLOCK-PIPE-2-PCXNT6.T2.P4`](../specification/block-progression/block
 proof against the honest author (live: plus a dispute request; replay: a counter against the honest
 dispute), which the chain rejects as invalid and slashes the submitter. The live disputed-fork gate
 runs after the conflict check, so it never protected this case. The side block in a gap below the
-head stays open: [`FIND-BLOCK-PIPE-2-3PN059`](open-findings.md#find-block-pipe-2-3pn059). Evidence of a fork the chain anchor
+head is resolved too: [`FIND-BLOCK-PIPE-2-3PN059`](open-findings.md#find-block-pipe-2-3pn059). Evidence of a fork the chain anchor
 never reached is kept, and the anchor fork is tracked in memory only.
 
 **Open; high, with a potential honest-auditor slash. Engineer disposition (2026-10-06): defer the
@@ -601,6 +601,16 @@ updated specification and mappings.
 
 ### FIND-BLOCK-PIPE-2-3PN059 — A side block in a gap below the head is treated as agreed history
 
+**Current defect:** _Resolved (2026-11-28)._ The conflict check now treats as agreed history only a
+stored block on the hash-linked run that ends at the executed head, found by walking down from the
+head on the conflict path only (decided by Ljuba, 2026-11-28;
+[`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6), tests
+[`REQ-BLOCK-PIPE-2-PCXNT6.T2.P14`](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t2.p14) gap and
+[`REQ-BLOCK-PIPE-2-PCXNT6.T2.P15`](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6.t2.p15) control). A side block a replay stored in a
+gap below the head is off that run and gets no linked-conflict verdict. Residual, accepted: a
+conflict inside a real gap, where no block of the run is held, is not detected. The record below
+describes the defect as found.
+
 A dispute replay stores each block it executes by coordinate without moving the head (first write
 wins). The conflict check treats a stored block as agreed history when it is at or below the
 executed head ([`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)). A head does not prove that every height below it
@@ -618,8 +628,26 @@ mirrored, and the fork stays disputed until the dispute's resolution ends it. Th
 executed and the head does not move on that fork, by design. A dispute replay's refused store is
 harmless: replay chains by block object and snapshot hash, not by the stored coordinate.
 
-**Status:** Open (2026-11-27), only for the side block in a gap below the head. Recorded for the
-pruning part of card #397. No remedy is selected.
+**Status:** _Resolved (2026-11-28)._
+
+## Stored proof re-root without the restart state
+
+<a id="find-store-reroot-1-cr2qvd"></a>
+
+### FIND-STORE-REROOT-1-CR2QVD — A re-root that cannot restart keeps an anchor below the chain's
+
+`AgreementManager.tryReRootStoredProof` first re-roots the record's own hops above the new chain
+anchor; that path needs no block history and no state at the anchor, and it passes for own hops
+(test [`REQ-PROOFSTORE-4-XB8Z9W.T1.P3`](../specification/storage/proof-store.md#req-proofstore-4-xb8z9w.t1.p3)). When those hops do not verify from the new
+anchor, the fallback restarts the record at the anchor and needs the state there. When that state
+is not held (for example after pruning), the record is kept unchanged with its older anchor
+below the chain's ([`REQ-PROOFSTORE-4-XB8Z9W` (Re-rooting on a chain anchor advance)](../specification/storage/proof-store.md#req-proofstore-4-xb8z9w)). A synchronization to a final point
+equal to the record's does not replace it, so a node with no later final point can keep that
+older anchor. Code-traced, not executed.
+
+**Status:** Open (2026-11-28); low. Engineer decision (Ljuba, 2026-11-28): no extra retention for
+the fallback; keep the record. Later fix, not selected for scheduling: a synchronization installs
+an equal final point when the record's anchor is below the chain anchor.
 
 ## Atomic state updates across the VM and storage
 

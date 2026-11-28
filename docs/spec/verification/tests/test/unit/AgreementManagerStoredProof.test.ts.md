@@ -32,6 +32,7 @@ below, and the stored proof and proof evidence read back unchanged.
 - `an advance of the old fork's stored proof after a fork change → nothing is written, the new fork's stored proof stays`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P6, INV-PROOFSTORE-2-4K6815.T1.P1
 - `a stored block at the stored final point is dropped → the final point and the proof built over it are unchanged`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P7, REQ-PROOFSTORE-1-V5KEYP.T1.P3
 - `a re-root at the snapshot below the stored final point → the anchor moves there, the hop above it and the final point with its state are kept`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P8, REQ-PROOFSTORE-4-XB8Z9W.T1.P1
+- `a re-root at the snapshot below the stored final point while the anchor's state and the blocks below the final point are gone → the re-root from the stored own hop passes: the anchor moves there, the hop and the final point with its state are kept`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P14, REQ-PROOFSTORE-4-XB8Z9W.T1.P3
 - `a reset at the genesis of a reduced fork → its stored proof is that genesis alone with its state, and the old fork's is gone`: UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P9, REQ-PROOFSTORE-5-ZH56D4.T1.P1
 - `an evidence point is not used at a height where our stored proof has a point`: UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P1, REQ-FP-7-4DD0D7.T9.P24
 - `an evidence record that conflicts with one of our own points is skipped`: UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH.P2, REQ-FP-7-4DD0D7.T9.P25

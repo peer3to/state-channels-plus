@@ -146,6 +146,7 @@ The stored proof is written only by the own advance, the sync install, the re-ro
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P11` — own final points with no membership change keep one hop, at the latest final point
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P12` — a side chain kept out of a sync is kept as sync evidence under the chain's upload cap, with its start, conflicting hop and final point with its state
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P13` — a side chain whose hops exceed the upload cap is not kept as sync evidence
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-4-GFM6GB.P14` — a re-root while the state at the new anchor and the blocks below the final point are gone passes from the own hop: the anchor moves there, the hop and the final point with its state are kept
 
 ## UNIT-TEST-AGREEMENT-MANAGER-5-3PCACH
 

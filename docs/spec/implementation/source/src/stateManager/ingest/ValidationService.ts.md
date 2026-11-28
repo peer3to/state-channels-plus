@@ -5,7 +5,6 @@
 ## Requirements
 
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
-  Partial: `checkConflictingBlock` bounds the linked-conflict class by the executed head only, so another author's block a dispute replay stored in a gap below the head still yields invalid-transition evidence ([`FIND-BLOCK-PIPE-2-3PN059`](../../../../../audit/open-findings.md#find-block-pipe-2-3pn059)).
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 - [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
 - [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
