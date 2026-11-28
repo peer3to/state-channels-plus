@@ -1,11 +1,17 @@
 const { EventEmitter } = require("events");
-const { TASK_RUNNERS, runnersNeededByTask } = require("../shared/taskRunners");
+const {
+    TASK_REQUIREMENTS,
+    TASK_RUNNERS,
+    runnersNeededByTask
+} = require("../shared/taskRunners");
 const { closeStream } = require("./connectionLifecycle");
 
 const PROTOCOL_VERSION = 2;
-// The runner protocol this checkout speaks. 15 adds task resource measurements
-// and cost-aware admission; 14 added the browser tier. Older hosts remain leased.
-const DISTRIBUTED_PROTOCOL_VERSION = 15;
+// The runner protocol this checkout speaks. 16 adds the light client tests,
+// whose host runner image carries a peer3 node with `--light-client`; 15 added
+// task resource measurements and cost-aware admission; 14 added the browser
+// tier. Older hosts remain leased.
+const DISTRIBUTED_PROTOCOL_VERSION = 16;
 // The oldest worker host protocol the orchestrator still leases. A host
 // between it and the current version runs only the runners it knows, so a pool
 // can upgrade one host at a time.
@@ -16,7 +22,8 @@ const ALL_RUNNERS = new Set(Object.values(TASK_RUNNERS));
 const RUNNERS_BY_DISTRIBUTED_PROTOCOL = new Map([
     [13, new Set([TASK_RUNNERS.HARDHAT, TASK_RUNNERS.FORGE])],
     [14, ALL_RUNNERS],
-    [15, ALL_RUNNERS]
+    [15, ALL_RUNNERS],
+    [16, new Set([...ALL_RUNNERS, TASK_REQUIREMENTS.LIGHT_CLIENT])]
 ]);
 // A frame carries a whole source manifest; 2 MB fits about 10k files.
 const DEFAULT_MAX_FRAME = 2 * 1024 * 1024;

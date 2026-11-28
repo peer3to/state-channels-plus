@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: developer test-orchestration tooling; not protocol behavior, no specification or implementation IDs apply
 import {
     CHROMIUM_MOCHA_TASKS,
+    LIGHT_CLIENT_MOCHA_TASKS,
     MIXED_TIER_TASKS,
     runAgainstProtocolWorkers,
     sortedLabels,
@@ -286,15 +287,74 @@ describe("distributed mixed-protocol pool", function () {
         });
     });
 
-    it("lets no accepted worker protocol run a task that requires lightClient", function () {
+    it("lets only a protocol 16 worker run a task that requires lightClient", function () {
         const lightClient = { runner: "hardhat", requires: ["lightClient"] };
-        expect(
-            workerCanRunTask(
-                runnersForDistributedProtocol(DISTRIBUTED_PROTOCOL_VERSION),
+        expect({
+            on15: workerCanRunTask(
+                runnersForDistributedProtocol(15),
                 lightClient
+            ),
+            on16: workerCanRunTask(
+                runnersForDistributedProtocol(16),
+                lightClient
+            ),
+            minimum: minimumProtocolForTask(lightClient)
+        }).to.deep.equal({ on15: false, on16: true, minimum: 16 });
+    });
+
+    it("a pool of protocol 15 and 16 hosts hands Mocha tasks marked for lightClient only to the 16 host", async function () {
+        const run = await runAgainstProtocolWorkers(
+            [
+                { name: "host-15", distributedProtocol: 15 },
+                { name: "host-16", distributedProtocol: 16 }
+            ],
+            { tasks: [...MIXED_TIER_TASKS, ...LIGHT_CLIENT_MOCHA_TASKS] }
+        );
+        expect(run.failure).to.equal(null);
+        const marked = LIGHT_CLIENT_MOCHA_TASKS.map((task) => task.label);
+        expect(
+            workerNamed(run.workers, "host-15").labels.filter((label) =>
+                marked.includes(label)
             )
-        ).to.equal(false);
-        expect(minimumProtocolForTask(lightClient)).to.equal(null);
+        ).to.deep.equal([]);
+        expect(
+            sortedLabels(
+                workerNamed(run.workers, "host-16").labels.filter((label) =>
+                    marked.includes(label)
+                )
+            )
+        ).to.deep.equal(sortedLabels(marked));
+        expect({
+            completed: run.result.completed,
+            skipped: run.result.skipped.length,
+            failed: run.result.failed.length
+        }).to.deep.equal({ completed: 7, skipped: 0, failed: 0 });
+    });
+
+    it("a pool of only protocol 15 hosts skips Mocha tasks marked for lightClient with a notice, without failing", async function () {
+        const run = await runAgainstProtocolWorkers(
+            [{ name: "host-15", distributedProtocol: 15 }],
+            { tasks: [...MIXED_TIER_TASKS, ...LIGHT_CLIENT_MOCHA_TASKS] }
+        );
+        expect(run.failure).to.equal(null);
+        expect({
+            completed: run.result.completed,
+            skipped: sortedLabels(
+                run.result.skipped.map((task: { label: string }) => task.label)
+            ),
+            failed: run.result.failed.length
+        }).to.deep.equal({
+            completed: 5,
+            skipped: sortedLabels(
+                LIGHT_CLIENT_MOCHA_TASKS.map((task) => task.label)
+            ),
+            failed: 0
+        });
+        const notice = run.warnings.join("\n");
+        expect(notice).to.include(
+            "Skipping 2 hardhat task(s) that need lightClient: no connected worker supports the lightClient runner; a worker host on distributed protocol 16 or newer runs them."
+        );
+        expect(notice).to.include("light client mocha 1");
     });
 
     it("rejects a worker host older than the minimum or newer than the orchestrator", function () {

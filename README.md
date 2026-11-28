@@ -399,9 +399,18 @@ dev node of its own from it with `--light-client` (`startPeer3Node` in
 `PEER3_NODE_BIN`, or against a node that does not list the endpoints, a test
 fails at once with `RPC node doesn't support LC endpoints`.
 
-No distributed worker provides the node binary yet, so a distributed run with
-`--lc-tests` skips these tests with a warning that lists them. Run them with
-the local runner.
+A distributed run hands these tests only to worker hosts on distributed
+protocol 16 or newer, whose runner image carries a node with the light client
+endpoints, and skips them with a warning that lists them when no such host
+connects. The image puts the node on `PATH`, so forward its name:
+
+```shell
+PEER3_NODE_BIN=zero-fee-node yarn test:parallel:distributed --lc-tests --forward-env PEER3_NODE_BIN --mocha-test-pattern "lightClient/*.ts"
+```
+
+The runner image's pinned node (`PEER3_NODE_IMAGE` in
+`scripts/e2e-parallel/distributed/runner-image.Dockerfile`) must be a build
+with the light client before protocol 16 reaches the pool.
 
 ### Distributed parallel tests
 
