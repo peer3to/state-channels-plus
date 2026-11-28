@@ -201,6 +201,9 @@ export async function stageOutboundAroundAnchor(
         (await chainSnapshot(h)).hash,
         "the first exit snapshot stays the chain anchor"
     ).to.equal(anchor.hash);
+    // the held post is parked before it is handed out: a release before then
+    // restores the send and the post is mined without waiting for its block
+    await heldPost.waitUntilHeld();
     return {
         forkId: h.activeForkId!,
         anchor,

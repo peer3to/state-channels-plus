@@ -170,7 +170,7 @@ describe("E2E: ReductionManager", function () {
             await h
                 .control(h.getPeer(laggingIndex))
                 .dispute.awaitReduction(forkId)
-                .request(),
+                .request({ timeoutMs: h.event.hostExecTimeoutMs() }),
             "the recovered attempt must complete the reduction"
         ).to.not.equal(null);
 
