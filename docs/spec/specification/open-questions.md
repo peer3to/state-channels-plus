@@ -875,10 +875,12 @@ choices while building the card's design, and the engineer has not confirmed the
 7. The participant's counts reach the logs once, when its chain access is destroyed; there is no
    periodic report.
 8. The endpoint keeps the partitions in memory and learns them again after a restart.
-9. The endpoint reads one proof per block for every key of the subscribed partitions and cuts each
-   partition's nodes from it, so peers share the upper nodes. It keeps no branch from one block to the
-   next: an idle partition's keys are proven again at every block, and only the nodes a subscription
-   lacks are sent.
+9. Decided by the engineer on 2026-11-28 with peer3-parachain PR #8 (`bebaa76`): for each new best
+   block the endpoint takes the trie nodes the blocks since its last push wrote, found once for every
+   subscription, and gives each subscribed partition those on its keys' paths; a key a partition took
+   in gets its whole path. It proves every subscribed key again only when the writes do not give the
+   block's state root or the blocks since the last push are not known. Until then it read one proof
+   per block for every key of the subscribed partitions, idle partitions included.
 
 Owner: [`REQ-LC-9-KWXV43`](runtime/light-client.md#req-lc-9-kwxv43).
 
@@ -890,12 +892,11 @@ Open (2026-11-22). The Light Clients card (Trello 399) is the design the light c
 Where the build departs from it, the card's owner has not accepted the departure. Every item was
 decided by the engineer on the date given.
 
-1. **The event-built mirror stays.** The card says to replace the mirror and the duplicate remote
-   `eth_call` checks once verified. The mirror answers none of the reads of replicated channel state:
-   the chain answers them, proven while the light client serves ([`REQ-MIRROR-6-0WSB4V`](enforcement/local-mirror.md#req-mirror-6-0wsb4v), decided
-   2026-11-27), but the mirror keeps replicating, so that a participant whose endpoint does
-   not serve the light client works as before: the light client is optional (2026-11-20). Removing
-   the mirror is a later card, after the farm validation.
+1. **The event-built mirror is removed; no departure remains.** The card says to replace the mirror
+   and the duplicate remote `eth_call` checks once verified. The engineer decided on 2026-11-27 that
+   the reads of replicated channel state go to the chain whether or not the light client serves,
+   proven while it serves, and that the mirror is removed
+   ([`REQ-MIRROR-6-0WSB4V`](enforcement/local-mirror.md#req-mirror-6-0wsb4v)).
 2. **Gas stays on the endpoint.** A call with a gas limit or fee fields, and every gas estimate, goes
    to the endpoint, because the local EVM does not charge gas as the chain does
    ([`REQ-LC-2-PMY1VG`](runtime/light-client.md#req-lc-2-pmy1vg), 2026-11-20). Each transaction's

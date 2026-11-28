@@ -462,13 +462,14 @@ Where the time goes: the node's CPU stayed under 2 of 8 cores and its outbound t
 without either saturating. End-to-end time grows in proportion to the subscribers, in two places:
 
 - Building a push grows with the number of distinct partitions, about 0.057 ms each, because the node
-  proves every subscribed key at each block, idle partitions included (`OQ-SPEC-LC-1-VKHDPN` item 9).
+  measured here proved every subscribed key at each block, idle partitions included. PR #8's node
+  pushes each block's writes instead (`OQ-SPEC-LC-1-VKHDPN` item 9, and PR #8's node below).
   With 20 shared partitions it stays at 3 ms.
 - Dispatch and transit grow with the number of sockets: the node sends a block's pushes one
   subscriber after another, 0.024 to 0.031 ms each (median dispatch plus transit, divided by the
   subscribers).
 
-Estimated, not measured: building alone would take the whole 2 s block time at about 35,000 distinct
+Estimated, not measured: on that node, building alone would take the whole 2 s block time at about 35,000 distinct
 partitions, and from there the node falls behind whatever the subscribers. On shared partitions the
 p95 would pass the block time at about 43,000 subscribers. Both are linear extrapolations of the
 tables above; no step at those counts was run, because the peer hosts were the limit: 80% busy at
