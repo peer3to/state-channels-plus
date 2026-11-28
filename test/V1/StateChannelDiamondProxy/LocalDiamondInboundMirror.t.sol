@@ -14,6 +14,7 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
     bytes32 internal constant CHANNEL_ID = keccak256("local-diamond-inbound-mirror");
 
     bytes32 internal constant GENESIS_CHANNEL_ID = keccak256("local-diamond-genesis-inbound");
+    uint256 internal constant JOINER_PK = 0xCAFE;
 
     LocalDiamond internal localDiamond;
     StateChannelManagerInterface internal mirror;
@@ -100,6 +101,15 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         _assertHead(second, 250);
     }
 
+    function test_onChannelStorageCleared_clearsTheMirroredOnChainSlashes() public {
+        localDiamond.onOnChainSlashAdded(CHANNEL_ID, vm.addr(JOINER_PK), block.timestamp);
+        assertEq(mirror.getOnChainSlashedParticipants(CHANNEL_ID).length, 1, "slash not mirrored");
+
+        localDiamond.onChannelStorageCleared(CHANNEL_ID, bytes32(0), 1, 0);
+
+        assertEq(mirror.getOnChainSlashedParticipants(CHANNEL_ID).length, 0, "slash kept after clearing");
+    }
+
     function test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent() public {
         (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot, bytes memory genesisState) =
             _openAndRecordGenesis();
@@ -119,6 +129,42 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         // the inbound event after it stores the block and leaves the head at the snapshot's
         localDiamond.onInboundMessagesProcessed(GENESIS_CHANNEL_ID, genesisBlock);
         _assertGenesisMirrored(genesisBlock, genesisSnapshot);
+    }
+
+    function test_onInboundMessagesProcessed_joinAfterGenesis_mirrorPendingMatchesChain() public {
+        (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot, bytes memory genesisState) =
+            _openAndRecordGenesis();
+        localDiamond.onInboundMessagesProcessed(GENESIS_CHANNEL_ID, genesisBlock);
+        localDiamond.onChannelOpened(GENESIS_CHANNEL_ID, genesisSnapshot, genesisState, block.number, 1);
+
+        address joiner = vm.addr(JOINER_PK);
+        JoinChannel memory join = JoinChannel({
+            channelId: GENESIS_CHANNEL_ID,
+            participant: joiner,
+            deadlineTimestamp: block.timestamp + 120,
+            balance: Balance({amount: 100, data: ""})
+        });
+        vm.recordLogs();
+        vm.prank(joiner);
+        deployedDiamond.joinChannel(
+            _joinConfirmation(join, JOINER_PK, _twoPartyPrivateKeys()),
+            keccak256(abi.encode(genesisSnapshot)),
+            genesisSnapshot.forkId
+        );
+        MessageBlock memory joinBlock = abi.decode(
+            _logData(
+                vm.getRecordedLogs(), StateChannelManagerEvents.InboundMessagesProcessed.selector, GENESIS_CHANNEL_ID
+            ),
+            (MessageBlock)
+        );
+        localDiamond.onInboundMessagesProcessed(GENESIS_CHANNEL_ID, joinBlock);
+
+        address[] memory chainPending = deployedDiamond.getPendingParticipants(GENESIS_CHANNEL_ID);
+        address[] memory mirrorPending = mirror.getPendingParticipants(GENESIS_CHANNEL_ID);
+        assertEq(chainPending.length, 1, "chain pending count");
+        assertEq(chainPending[0], joiner, "chain pending joiner");
+        assertEq(mirrorPending.length, 1, "mirror pending count");
+        assertEq(mirrorPending[0], joiner, "mirror pending joiner");
     }
 
     function _assertHead(MessageBlock memory head, uint256 totalDeposits) internal view {
@@ -148,14 +194,11 @@ contract LocalDiamondInboundMirrorTest is DiamondHarness {
         internal
         returns (MessageBlock memory genesisBlock, StateSnapshot memory genesisSnapshot, bytes memory genesisState)
     {
-        uint256[] memory participantPrivateKeys = new uint256[](2);
-        participantPrivateKeys[0] = 0xA11CE;
-        participantPrivateKeys[1] = 0xB0B;
         uint256[] memory amounts = new uint256[](2);
         amounts[0] = 300;
         amounts[1] = 200;
         vm.recordLogs();
-        deployedDiamond.open(_openChannelConfirmation(GENESIS_CHANNEL_ID, participantPrivateKeys, amounts, true));
+        deployedDiamond.open(_openChannelConfirmation(GENESIS_CHANNEL_ID, _twoPartyPrivateKeys(), amounts, true));
         Vm.Log[] memory logs = vm.getRecordedLogs();
         genesisBlock = abi.decode(
             _logData(logs, StateChannelManagerEvents.InboundMessagesProcessed.selector, GENESIS_CHANNEL_ID),

@@ -1,4 +1,5 @@
 import Clock from "@/Clock";
+import { createZeroGenesisChain } from "@test/fixtures/node/ZeroGenesisChain";
 import { expect } from "chai";
 import { BrowserProvider } from "ethers";
 import { ethers, network } from "hardhat";
@@ -79,6 +80,54 @@ describe("Clock", () => {
         expect(Clock.ownsProvider(live)).to.equal(true);
         const time = await Clock.getBlockchainTime();
         expect(time.blockNumber).to.be.greaterThanOrEqual(0);
+    });
+
+    it("measures a young chain's block time without its zero-timestamp genesis", async () => {
+        const young = await createZeroGenesisChain([2, 2, 2]);
+
+        await Clock.init(young);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(2);
+        young.destroy();
+    });
+
+    it("measures no block time on a chain one block past genesis", async () => {
+        const fresh = await createZeroGenesisChain([]);
+
+        await Clock.init(fresh);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(0);
+        fresh.destroy();
+    });
+
+    it("measures an older chain's block time over its last ten blocks", async () => {
+        // blocks 1-5 are 10 s apart, blocks 5-15 2 s apart -> an uncapped window averages ~4.29
+        const older = await createZeroGenesisChain([
+            10, 10, 10, 10, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+        ]);
+
+        await Clock.init(older);
+
+        expect(Clock.getAverageOnChainBlockTime()).to.equal(2);
+        older.destroy();
+    });
+
+    it("spans blocks at the measured block time", async () => {
+        const young = await createZeroGenesisChain([2, 2, 2]);
+
+        await Clock.init(young);
+
+        expect(Clock.getBlockSpanMs(3)).to.equal(6_000);
+        young.destroy();
+    });
+
+    it("spans blocks at one second each before a block time is measured", async () => {
+        const fresh = await createZeroGenesisChain([]);
+
+        await Clock.init(fresh);
+
+        expect(Clock.getBlockSpanMs(3)).to.equal(3_000);
+        fresh.destroy();
     });
 
     it("settles overlapping different-provider initializations on one live owner", async () => {

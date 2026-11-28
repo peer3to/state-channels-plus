@@ -1,6 +1,10 @@
 ARG NODE_IMAGE=node@sha256:35531c52ce27b6575d69755c73e65d4468dba93a25644eed56dc12879cae9213
 ARG FOUNDRY_IMAGE=ghcr.io/foundry-rs/foundry@sha256:8347b728d5d393dac1c018691b36f506d23b9dcd78341d40ea0fcb11c3a19cdd
+# the parachain dev node for --parachain runs, published by peer3-parachain
+# (peer3-parachain e5f29f6), pulled from the private GHCR package
+ARG PEER3_NODE_IMAGE=ghcr.io/peer3to/zero-fee-node@sha256:9b35c7569b07ba5f5ff7d0bb17cfde1851c653527c3c65a7f4069d9119d4aec3
 FROM ${FOUNDRY_IMAGE} AS foundry
+FROM ${PEER3_NODE_IMAGE} AS peer3node
 
 FROM ${NODE_IMAGE}
 
@@ -35,6 +39,7 @@ COPY --from=foundry /usr/local/bin/forge /usr/local/bin/forge
 COPY --from=foundry /usr/local/bin/cast /usr/local/bin/cast
 COPY --from=foundry /usr/local/bin/anvil /usr/local/bin/anvil
 COPY --from=foundry /usr/local/bin/chisel /usr/local/bin/chisel
+COPY --from=peer3node /usr/local/bin/zero-fee-node /usr/local/bin/zero-fee-node
 
 USER runner
 WORKDIR /environment

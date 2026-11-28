@@ -14,7 +14,8 @@ import type {
 } from "@test/fixtures/customRpc/PingPongRpcManifest";
 import {
     slotAccountIndex,
-    slotDeployerIndex
+    slotDeployerIndex,
+    slotDeployerSigner
 } from "@test/harness/core/slotAccounts";
 import { protocolEventTimeoutMs } from "@test/harness/core/testTimeConfig";
 import {
@@ -31,13 +32,7 @@ import {
 import { waitFor } from "@test/utils/waitFor";
 import { MathStateMachine, MathStateMachine__factory } from "@typechain-types";
 import { expect } from "chai";
-import {
-    BytesLike,
-    ContractFactory,
-    NonceManager,
-    Signer,
-    ethers
-} from "ethers";
+import { BytesLike, ContractFactory, Signer, ethers } from "ethers";
 import path from "node:path";
 
 let hardhatNodeUrl = process.env.HARDHAT_NODE_URL;
@@ -117,7 +112,7 @@ export async function assertCustomRpcRuntimeFlow(
             throw new Error("Local discovery registry URL is not initialized");
         }
         provider = new ethers.JsonRpcProvider(hardhatNodeUrl);
-        const deployerSigner = new NonceManager(
+        const deployerSigner = slotDeployerSigner(
             walletAt(slotDeployerIndex(), provider)
         );
         const peer0Wallet = walletAt(slotAccountIndex(0), provider);

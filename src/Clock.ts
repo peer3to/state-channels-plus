@@ -81,6 +81,15 @@ class Clock {
         return averageBlockTime;
     }
 
+    /**
+     * Wall milliseconds `blocks` take at the measured block time. Before a
+     * block time is measured, a block counts as one second.
+     */
+    public static getBlockSpanMs(blocks: number): number {
+        const averageBlockTime = Clock.instance?.averageBlockTime;
+        return blocks * (averageBlockTime || 1) * 1000;
+    }
+
     public static async getBlockchainTime(): Promise<{
         timestamp: number;
         blockNumber: number;
@@ -114,8 +123,9 @@ class Clock {
 
         const difference = latestTimestamp - currentTime;
 
-        const blockCnt = Math.min(latestBlock.number, 10);
-        if (blockCnt === 0) {
+        // genesis has no block interval (timestamp 0 on the parachain) -> measure from block 1
+        const blockCnt = Math.min(latestBlock.number - 1, 10);
+        if (blockCnt <= 0) {
             this.averageBlockTime = 0;
             this.clockAdjustmentSeconds += difference;
             return;

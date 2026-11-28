@@ -172,7 +172,7 @@ jobs:
                   SCP_TEST_POOL_SECRET: ${{ secrets.SCP_TEST_POOL_SECRET }}
                   SCP_TEST_ORCHESTRATOR_SEED: ${{ secrets.SCP_TEST_ORCHESTRATOR_SEED }}
               # Schedules by the committed test-costs.json and never writes it.
-              run: yarn test:parallel:distributed --test-parallel-script --test-browser --discovery-timeout 300000 --schedule cost --cost-cache-read-only
+              run: yarn test:parallel:distributed --parachain --test-parallel-script --test-browser --discovery-timeout 300000 --schedule cost --cost-cache-read-only
 
             # Saved even when tests fail, so a flaky run still leaves its build.
             - name: Save the Foundry build
@@ -208,11 +208,32 @@ jobs:
     browser:
         runs-on: ubuntu-latest
         timeout-minutes: 30
+        permissions:
+            contents: read
+            # the runner image copies the parachain node from a private GHCR package
+            packages: read
         steps:
             - name: Checkout repository
               uses: actions/checkout@v4
               with:
                   submodules: recursive
+                  # the PR's base commit, to tell whether the PR moves the runner image
+                  fetch-depth: 2
+            - name: Log in to GHCR
+              run: echo "$GITHUB_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+              env:
+                  GITHUB_TOKEN: ${{ github.token }}
+            # A PR that moves runner-image.Dockerfile (a parachain node pin) also runs the chosen
+            # node-sensitive tests on the node this image carries: the workers still run their
+            # own images, so the distributed suite cannot test a new pin.
+            - name: Does this PR move the runner image?
+              id: pin
+              run: |
+                  dockerfile=$(node -p 'require("./scripts/e2e-parallel/distributed/runnerImage").RUNNER_IMAGE_DOCKERFILE')
+                  node_tests=0
+                  git diff --quiet HEAD^1 HEAD -- "$dockerfile" || node_tests=1
+                  echo "node_tests=$node_tests" >> "$GITHUB_OUTPUT"
+                  echo "runner-image.Dockerfile changed: $node_tests" | tee -a "$GITHUB_STEP_SUMMARY"
             - name: Build the distributed runner image
               run: node scripts/e2e-parallel/distributed/buildRunnerImage.js --tag scp-runner:ci
             # The gates run where the browser tier runs on a worker: inside the
@@ -248,6 +269,29 @@ jobs:
                   status=$(docker inspect --format '{{.State.ExitCode}}' scp-browser)
                   echo "Peak /tmp use in the runner container: $((peak / 1024)) MiB of 256 MiB" | tee -a "$GITHUB_STEP_SUMMARY"
                   exit "$status"
+            # The pending-block gas estimates in RpcNodes.test.ts and the block-authoring timeouts in
+            # E2E-Timeouts. The install is a no-op when the browser gates already ran it.
+            - name: Run a node pin's tests in the runner image
+              if: ${{ !cancelled() && steps.pin.outputs.node_tests == '1' }}
+              run: |
+                  # the test run's exit code, not tee's
+                  set -o pipefail
+                  docker run --rm --name scp-node-tests \
+                      --read-only --init --cap-drop=ALL \
+                      --security-opt=no-new-privileges:true \
+                      --tmpfs /tmp:rw,noexec,nosuid,nodev,size=256m \
+                      --env HOME=/environment/.home \
+                      --mount "type=bind,source=$GITHUB_WORKSPACE,target=/environment" \
+                      --workdir /environment \
+                      scp-runner:ci \
+                      bash -c 'set -euo pipefail
+                          yarn install --frozen-lockfile
+                          yarn test:parallel --parachain --no-forge \
+                              --mocha-test-pattern "**/{RpcNodes,E2E-Timeouts}.test.ts" \
+                              --grep "estimates gas at the pending block|estimates at the latest block|rejects an estimate the latest block also reverts|node cannot build its pending block|next peer to write does not author a block|demonstrate timeout creates disputes|timeout when non-author peer disconnects|timeout when author peer disconnects"' \
+                      | tee node-tests.log
+                  # a renamed case would drop out of the selection silently
+                  grep -q "Running 9 task(s)" node-tests.log || { echo "expected the 9 node-sensitive cases"; exit 1; }
             - name: Upload browser logs
               if: always()
               uses: actions/upload-artifact@v4
