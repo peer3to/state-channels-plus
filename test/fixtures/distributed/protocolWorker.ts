@@ -320,14 +320,6 @@ export const CHROMIUM_MOCHA_TASKS = [1, 2, 3].map((index) => ({
     requires: ["browser"]
 }));
 
-/** Mocha tasks that need a peer3 node binary, which no worker protocol provides. */
-export const LIGHT_CLIENT_MOCHA_TASKS = [1, 2].map((index) => ({
-    label: `light client mocha ${index}`,
-    logName: `light-client-mocha-${index}`,
-    args: [],
-    requires: ["lightClient"]
-}));
-
 /**
  * Hardhat tasks from a file marked `// @distributed-requires: lightClient`, as
  * `--lc-tests` discovers them.
