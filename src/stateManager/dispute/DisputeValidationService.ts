@@ -68,7 +68,9 @@ enum ReplayOutcome {
     Valid,
     Invalid,
     /** the chain protects the failing block now: walk again from the new anchor */
-    AnchorMoved
+    AnchorMoved,
+    /** the chain tier's replay base state is not held: the tail is not judged */
+    NotJudged
 }
 
 export default class DisputeValidationService {
@@ -99,9 +101,11 @@ export default class DisputeValidationService {
      * the latest locally finalized state, then the local diamond's anchor,
      * then the chain's anchor; only the chain tier establishes a fault. A
      * dispute that ends below the trusted final point is not replayed
-     * backward. Missing required local data and read errors throw, unless a
-     * final-history counter too large to send was found: that counter is then
-     * stored.
+     * backward. Absent local data is never evidence: a proof this peer
+     * cannot judge for a missing own snapshot or replay base state stores no
+     * counter (`concludeNotJudged`). Other missing required local data and
+     * read errors throw, unless a final-history counter too large to send
+     * was found: that counter is then stored.
      */
     public async validateDispute(
         dispute: DisputeStruct,
@@ -267,9 +271,7 @@ export default class DisputeValidationService {
         const counters = await this.findFinalHistoryCounters(
             dispute,
             evidence,
-            await this.agreementManager.getOwnFinalHistory(
-                dispute.input.forkId
-            )
+            await this.agreementManager.getOwnFinalHistory(dispute.input.forkId)
         );
         const { maxTransactionBytes } = this.stateManager.disputeManager;
         const chosen = chooseFinalHistoryCounter(counters, maxTransactionBytes);
@@ -372,7 +374,7 @@ export default class DisputeValidationService {
         data?: DisputeAuditingDataStruct
     ): Promise<boolean> {
         const walk = await this.verifyAndReplay(dispute, evidence, data);
-        if (!walk) return false;
+        if (typeof walk === "boolean") return walk;
         return await this.continueOtherChecks(dispute, walk, data);
     }
 
@@ -627,13 +629,14 @@ export default class DisputeValidationService {
      * the latest state is then proved, so its posted outbound run is judged
      * (`verifyOutboundRun`) and the verified material persisted. A failure at
      * a lower tier falls through; at the chain tier it stores the counter
-     * (false).
+     * (false). A proof the chain tier cannot judge for absent local data
+     * stores none (`concludeNotJudged`, true when no other counter applies).
      */
     private async verifyAndReplay(
         dispute: DisputeStruct,
         evidence: StateProofEvidence,
         data?: DisputeAuditingDataStruct
-    ): Promise<ProofTierWalk | false> {
+    ): Promise<ProofTierWalk | boolean> {
         const { forkId, stateProof } = dispute.input;
         for await (const walk of this.agreementManager.walkStateProofTiers(
             forkId,
@@ -687,6 +690,8 @@ export default class DisputeValidationService {
                 return (await this.tryCreateBelowOnChainAnchorProof(dispute))
                     ? false
                     : this.verifyAndReplay(dispute, evidence, data);
+            if (outcome === ReplayOutcome.NotJudged)
+                return this.concludeNotJudged(dispute);
             if (isChain) return false;
         }
         throw new Error("Dispute audit: the chain tier did not answer");
@@ -774,7 +779,8 @@ export default class DisputeValidationService {
      * dispute's own chain, each block judged from the block before it.
      * Every replayed block, snapshot and state is persisted without moving
      * this peer's view. False when a block fails; only `establishesFault`
-     * stores its counter.
+     * stores its counter. A base state this peer does not hold is no
+     * evidence: the tail is then not judged.
      */
     private async replayLastMilestoneTail(
         dispute: DisputeStruct,
@@ -788,12 +794,20 @@ export default class DisputeValidationService {
             [];
         if (walk.replayBlockIndex >= tail.length) return ReplayOutcome.Valid;
         const base = this.getReplayBase(dispute, walk, data);
-        // a lower tier without the state falls through; the chain tier must have it
+        // a lower tier without the state falls through; at the chain tier
+        // the tail is not judged
         if (!base) {
             if (!establishesFault) return ReplayOutcome.Invalid;
-            throw new Error(
-                `Dispute replay: the full state of the finalized snapshot ${walk.finalizedSnapshot.hash} is not held`
+            this.logger.warn(
+                "Dispute replay: the full state of the finalized snapshot is not held, the tail is not judged",
+                {
+                    dispute: LoggerUtils.getDisputeMetadata(dispute),
+                    finalized: LoggerUtils.getSnapshotMetadata(
+                        walk.finalizedSnapshot
+                    )
+                }
             );
+            return ReplayOutcome.NotJudged;
         }
         let predecessor = base;
         for (
@@ -893,16 +907,17 @@ export default class DisputeValidationService {
      * proof's. The counter points at the walk step that fails (any step when
      * only the latest state is wrong), at its block for a per-block fault.
      * With posted data the committed data is the evidence. With omitted data
-     * the evidence is this peer's own snapshots; evidence it cannot produce
-     * is fatal. The chain judges the counter before it is stored: a counter
-     * it rejects is fatal.
+     * the evidence is this peer's own snapshots; a snapshot it does not hold
+     * is no evidence, so the proof is not judged (`concludeNotJudged`). The
+     * chain judges the counter before it is stored: a counter it rejects is
+     * fatal.
      */
     private async rejectStateProof(
         dispute: DisputeStruct,
         evidence: StateProofEvidence,
         data?: DisputeAuditingDataStruct,
         chainWalk?: ProofTierWalk
-    ): Promise<false> {
+    ): Promise<boolean> {
         this.logger.warn("Auditing: Invalid state proof", {
             dispute: LoggerUtils.getDisputeMetadata(dispute)
         });
@@ -913,10 +928,13 @@ export default class DisputeValidationService {
                 dispute.input.stateProof,
                 evidence
             ));
-        if (!data && walk.snapshotMismatch)
-            throw new Error(
-                "Dispute audit: the proof is invalid, but this peer lacks the milestone snapshots to prove it on chain"
+        if (!data && walk.snapshotMismatch) {
+            this.logger.warn(
+                "Dispute audit: this peer lacks the milestone snapshots to prove the proof invalid on chain, the proof is not judged",
+                { dispute: LoggerUtils.getDisputeMetadata(dispute) }
             );
+            return this.concludeNotJudged(dispute);
+        }
         const genesis = this.storage.stateSnapshots
             .getGenesisSnapshotByForkId(dispute.input.forkId)!
             .toStruct();
@@ -1114,6 +1132,22 @@ export default class DisputeValidationService {
             return true;
         }
         return false;
+    }
+
+    /**
+     * The end of an audit that cannot judge the proof for absent local data:
+     * no counter from the proof, only the state-free `DisputeNotLatestState`
+     * check. True when it applies no counter: the caller then treats the
+     * dispute as audited and may add its own evidence.
+     */
+    private concludeNotJudged(dispute: DisputeStruct): boolean {
+        const latestBlock = this.agreementManager.getLatestBlockFromStateProof(
+            dispute.input.stateProof
+        );
+        return !this.tryCreateDisputeNotLatestStateProof(
+            dispute,
+            latestBlock ? latestBlock.height : -1
+        );
     }
 
     /** Stores `DisputeNotLatestState` when the disputer signed a block above `latestHeight`. */

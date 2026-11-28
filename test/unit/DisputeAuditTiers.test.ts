@@ -578,7 +578,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             await h.assert.dispute.slashedOnChain(disputer.address);
         });
 
-        it("U42: a hop whose committed snapshot no tier can supply, at a height the auditor holds no block for, with omitted data -> the audit throws, no unsupported counter", async function () {
+        it("U42: a hop whose committed snapshot no tier can supply, at a height the auditor holds no block for, with omitted data -> the proof is not judged: no throw, no unsupported counter, true", async function () {
             const h = TestSession.getHarness();
             await stageMirrorMissingConsumedTopUp(h, 1, {
                 suppressWriterTimeouts: true
@@ -636,10 +636,8 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
 
             const lagging = await h.dispute.auditDispute(1, dispute);
 
-            expect(lagging.outcome).to.equal("threw");
-            expect(
-                lagging.outcome === "threw" ? lagging.threwMessage : ""
-            ).to.contain("lacks the milestone snapshots");
+            expect(lagging).to.include({ outcome: "returned", isValid: true });
+            expect(lagging.storedProof).to.equal(undefined);
             expect(lagging.disputeFraudProofCount).to.equal(0);
         });
 
@@ -928,7 +926,7 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
             ).to.equal(true);
         });
 
-        it("U124: posted finalized-state bytes of another state at that height, which the auditor never held -> the bytes are not used, the missing replay state is fatal, no accusation", async function () {
+        it("U124: posted finalized-state bytes of another state at that height, which the auditor never held -> the bytes are not used, the tail is not judged: no throw, no accusation, true", async function () {
             const h = TestSession.getHarness();
             const staged = await stagePendingJoinerMissingHopBase(h);
             const { dispute, auditingData } = staged;
@@ -951,14 +949,19 @@ describe("Unit: DisputeValidationService trusted-start tiers", function () {
                 auditingData
             );
 
-            expect(run.outcome).to.equal("threw");
-            expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
-                "is not held"
-            );
+            expect(run).to.include({ outcome: "returned", isValid: true });
             expect(run.storedProof).to.equal(undefined);
             expect(run.disputeFraudProofCount).to.equal(0);
             expect(
                 await holdsState(h, staged.charlieIndex, staged.baseSnapshot)
+            ).to.equal(false);
+            // no tail block was replayed from another base
+            expect(
+                await holdsState(
+                    h,
+                    staged.charlieIndex,
+                    await snapshotAt(h, 0, staged.hopHeight)
+                )
             ).to.equal(false);
         });
     });

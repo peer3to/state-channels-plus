@@ -170,7 +170,7 @@ describe("E2E: dispute validation / dispute that conflicts with a final state", 
         ]);
     });
 
-    it("control: the participants' real history from the chain anchor, audited by a pending auditor that holds no conflicting final block and lacks the anchor state → no conflict counter, the missing replay state stays fatal", async function () {
+    it("control: the participants' real history from the chain anchor, audited by a pending auditor that holds no conflicting final block and lacks the anchor state → no conflict counter, the tail is not judged: no throw, no counter, true", async function () {
         const h = TestSession.getHarness();
         const staged = await stageBlindPendingBelowRealAnchor(h);
         expect(staged.dispute.postedAuditingData).to.equal(false);
@@ -186,10 +186,7 @@ describe("E2E: dispute validation / dispute that conflicts with a final state", 
             staged.dispute
         );
 
-        expect(run.outcome).to.equal("threw");
-        expect(run.outcome === "threw" ? run.threwMessage : "").to.contain(
-            "is not held"
-        );
+        expect(run).to.include({ outcome: "returned", isValid: true });
         expect(run.storedProof).to.equal(undefined);
         expect(run.disputeFraudProofCount).to.equal(0);
     });

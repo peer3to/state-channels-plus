@@ -15,9 +15,11 @@ import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
 /**
- * Plan 35 (milestone-only state proof), E21: each fatal audit workflow on a
- * live, committed dispute. The auditor's event pipeline fails with the
- * error; it stores no counter and sends no kill and no dispute.
+ * E21: audit workflows on a live, committed dispute that fail or cannot
+ * judge the proof. A failing read is fatal: the auditor's event pipeline
+ * fails with the error. Absent local data is no evidence: the proof is not
+ * judged, the dispute is stored as audited and the auditor's own dispute
+ * build runs. Neither stores a counter or sends a kill.
  */
 describe("E2E: fatal dispute audits", function () {
     it("E21: a verification read that throws during a live audit is fatal: no fraud proof, no kill, no dispute, and no fallback to the chain read", async function () {
@@ -69,7 +71,7 @@ describe("E2E: fatal dispute audits", function () {
         ).to.include(commitmentOf(spam));
     });
 
-    it("E21: an auditor missing the full finalized state its replay starts from is fatal: no fallback to a weaker check, no fraud proof, no kill, no dispute", async function () {
+    it("E21: an auditor missing the full finalized state its replay starts from does not judge the tail: no fraud proof, no kill; the dispute is stored as audited and its own dispute build runs, which stops on the same missing state", async function () {
         const h = TestSession.getHarness();
         const { forkId, leader, others, authored, height } =
             await stageOffWireBlock(h);
@@ -116,10 +118,19 @@ describe("E2E: fatal dispute audits", function () {
             async () => (await reads.observation()).local.reads > 0,
             h.event.protocolEventTimeoutMs()
         );
+        // the audit passes the dispute on; the own dispute build that
+        // follows needs this peer's latest state, which is the missing base
         await TestSession.settleDetached({
-            expectedErrorIncludes: "Dispute replay: the full state of the"
+            expectedErrorIncludes: "createDispute - missing state machine state"
         });
 
+        expect(
+            await h
+                .control(auditor)
+                .query.hasDisputeConfirmation(commitmentOf(opening))
+                .request(),
+            "the dispute is stored as audited"
+        ).to.equal(true);
         expect(
             await h.control(auditor).query.getDisputeFraudProofTypes().request()
         ).to.deep.equal([]);
@@ -130,7 +141,7 @@ describe("E2E: fatal dispute audits", function () {
         ).to.equal(height);
     });
 
-    it("E21: an auditor that cannot build the on-chain evidence for a proof it cannot verify (a milestone snapshot it must hold is missing) is fatal: no unsupported counter, no kill, no dispute", async function () {
+    it("E21: an auditor that cannot build the on-chain evidence for a proof it cannot verify (a milestone snapshot it must hold is missing) does not judge the proof: no unsupported counter, no kill; the dispute is stored as audited and its own dispute build runs, which stops on the same missing snapshot", async function () {
         const h = TestSession.getHarness();
         const { forkId, writer, auditor, authored, height } =
             await stageAuditorBehindLastFinalBlock(h);
@@ -178,11 +189,19 @@ describe("E2E: fatal dispute audits", function () {
             async () => (await reads.observation()).local.reads > 0,
             h.event.protocolEventTimeoutMs()
         );
+        // the audit passes the dispute on; the own dispute build that
+        // follows needs this peer's latest snapshot, which is the missing one
         await TestSession.settleDetached({
-            expectedErrorIncludes:
-                "lacks the milestone snapshots to prove it on chain"
+            expectedErrorIncludes: "createDispute - missing state snapshot"
         });
 
+        expect(
+            await h
+                .control(auditor)
+                .query.hasDisputeConfirmation(commitmentOf(opening))
+                .request(),
+            "the dispute is stored as audited"
+        ).to.equal(true);
         expect(
             await h.control(auditor).query.getDisputeFraudProofTypes().request()
         ).to.deep.equal([]);
