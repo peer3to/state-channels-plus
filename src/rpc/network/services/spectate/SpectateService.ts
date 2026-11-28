@@ -11,8 +11,10 @@ import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import { HandshakeCompletedGuard } from "@/rpc/network/guards";
 import type { ReductionComputation } from "@/stateManager/reduction/ReductionComputationService";
+import { findDoubleSigners } from "@/stateManager/utils/findDoubleSigners";
 import NetworkTransport from "@/transport/NetworkTransport";
 import { DisputeWindowVerification, SyncPayload } from "@/types";
+import { isCommittedParticipantStatus } from "@/types/flags";
 import type { ChecksumAddress } from "@/types/types";
 import { Address, Bytes, ChannelId, Hash, ForkId } from "@/types/types";
 import { Codec, getChecksumAddress, hash, Type } from "@/utils";
@@ -1588,6 +1590,11 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
      * final point: no verdict and no close, and the next sync request asks
      * again. A proof ending below the final point (`isTooOld`) stays a
      * too-old proof.
+     * Before any record is written, every signer of both a checked block
+     * of the proof and this peer's stored block at that coordinate gets a
+     * double-sign proof (`storeDoubleSignProofs`). A participant then
+     * disputes the fork at once, except when only the reverse direction
+     * holds: there the proofs are only stored.
      */
     private async declineUncheckedProof(
         peerAddress: string,
@@ -1597,6 +1604,18 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
         isTooOld: boolean
     ): Promise<SyncOutcome> {
         const stateManager = this.p2pManager.stateManager;
+        const doubleSigners = this.storeDoubleSignProofs(
+            forkId,
+            syncPayload.stateProof,
+            walk
+        );
+        const disputeOnDoubleSign = () => {
+            if (
+                doubleSigners.length > 0 &&
+                isCommittedParticipantStatus(stateManager.status)
+            )
+                stateManager.disputeManager.requestDispute(forkId);
+        };
         const disputeValidation = stateManager.disputeValidationService;
         const kills = await disputeValidation.findFinalHistoryKills(
             forkId,
@@ -1619,6 +1638,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             )
         };
         if (kills.length === 0 && reverseKills.length === 0) {
+            disputeOnDoubleSign();
             if (isTooOld)
                 return this.rejectSync(
                     peerAddress,
@@ -1654,6 +1674,7 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
             );
             return { synced: false };
         }
+        disputeOnDoubleSign();
         const signers = [...new Set(kills.flat())];
         this.logger.warn(
             "applySyncResponse - side chain served: not installed, kept as sync evidence",
@@ -1669,6 +1690,57 @@ class SpectateService extends ANetworkRpcService<SpectateServiceRpcMethods> {
                 "side chain signed by the responder"
             );
         return { synced: false };
+    }
+
+    /**
+     * A double-sign proof against every signer, other than this peer, of
+     * both a block `walk` checked in `stateProof` (above its start) and this
+     * peer's stored block at that coordinate (`findDoubleSigners`), stored
+     * in the fraud proofs. Returns those signers.
+     */
+    private storeDoubleSignProofs(
+        forkId: ForkId,
+        stateProof: StateProofStruct,
+        walk: ProofTierWalk
+    ): Address[] {
+        const stateManager = this.p2pManager.stateManager;
+        const fraudProofService =
+            stateManager.blockValidationStrategy.fraudProofService;
+        const startHeight = walk.start?.blockHeight ?? -1;
+        const doubleSigners = new Set<Address>();
+        for (const { blockConfirmations } of stateProof.milestones)
+            for (const confirmation of blockConfirmations) {
+                const block = Block.tryFromBlockConfirmation(confirmation);
+                if (
+                    !block ||
+                    block.forkId !== forkId ||
+                    block.height <= startHeight
+                )
+                    continue;
+                const stored = stateManager.storage.blocks.getBlock(
+                    forkId,
+                    block.height
+                );
+                if (!stored) continue;
+                for (const signer of findDoubleSigners(
+                    stored,
+                    block,
+                    stateManager.checksumSignerAddress as Address
+                )) {
+                    fraudProofService.createDoubleSignProof(
+                        stored,
+                        block,
+                        signer
+                    );
+                    doubleSigners.add(signer);
+                }
+            }
+        if (doubleSigners.size > 0)
+            this.logger.warn(
+                "applySyncResponse - the served proof and this peer's blocks are double signed: proofs stored",
+                LoggerUtils.getSlashSetMetadata([...doubleSigners])
+            );
+        return [...doubleSigners];
     }
 
     private rejectSync(peerAddress: string, reason: string): SyncOutcome {

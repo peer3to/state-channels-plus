@@ -5,6 +5,7 @@ import type { Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { buildAndEncodeBlock, hash as randomHash } from "@test/factory";
 import { LOCAL_WALK } from "@test/fixtures/customRpc/harnessControl/services/mirror/MirrorService";
+import { resignedCopy } from "@test/fixtures/DoubleSignStaging";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     chainSnapshot,
@@ -569,12 +570,21 @@ export async function syncSpectatorFromAllRunningPeers(
  */
 export async function stageAnchoredHistory(
     h: MathPeerTestHarness,
-    options: { blocksAfter: number; cutPeer?: boolean; p2pTime?: number }
+    options: {
+        blocksAfter: number;
+        cutPeer?: boolean;
+        p2pTime?: number;
+        /** the deployed dispute upload cap in bytes */
+        maxDisputeUploadBytes?: number;
+    }
 ) {
     await h.lifecycle.start(3, 3, {
         ...(options.p2pTime === undefined
             ? {}
-            : { timeConfig: { p2pTime: options.p2pTime } })
+            : { timeConfig: { p2pTime: options.p2pTime } }),
+        ...(options.maxDisputeUploadBytes === undefined
+            ? {}
+            : { maxDisputeUploadBytes: options.maxDisputeUploadBytes })
     });
     if (options.cutPeer) {
         for (const index of [0, 1, 2])
@@ -699,13 +709,15 @@ export function servingProof(
  * A copy of `payload` serving one milestone: peer 0's stored blocks from the
  * anchor block through `height` - 1, then an authentic block at `height` by
  * that height's author, linked to the stored block before it but committing
- * another snapshot. It conflicts with the stored block at `height`.
+ * another snapshot. It conflicts with the stored block at `height`. With
+ * `coSignerIndices` those peers confirm it too.
  */
 export async function servingConflictAt(
     h: MathPeerTestHarness,
     payload: SyncPayload,
     anchor: StateSnapshot,
-    height: number
+    height: number,
+    coSignerIndices: number[] = []
 ): Promise<SyncPayload> {
     const forkId = String(anchor.forkID);
     const run: ServedBlock[] = [];
@@ -721,9 +733,21 @@ export async function servingConflictAt(
         previousBlockHash: run.at(-1)!.hash
     });
     expect(conflicting.block.hash).to.not.equal(stored.hash);
+    const block = conflicting.block.expandSignatures(
+        await Promise.all(
+            coSignerIndices.map((index) =>
+                conflicting.block.sign(h.getPeer(index).signer)
+            )
+        )
+    );
     return servingProof(
         payload,
-        [[...run.map((block) => block.confirmation), conflicting.confirmation]],
+        [
+            [
+                ...run.map((served) => served.confirmation),
+                block.blockConfirmationStruct
+            ]
+        ],
         [anchor.toStruct()],
         payload.latestFinalizedEncodedState
     );
@@ -1136,7 +1160,11 @@ export async function servingSignedConflictAheadInboundAt(
     payload: SyncPayload,
     anchor: StateSnapshot,
     height: number
-): Promise<{ payload: SyncPayload; finalSnapshot: StateSnapshot }> {
+): Promise<{
+    payload: SyncPayload;
+    finalSnapshot: StateSnapshot;
+    joiner: Peer;
+}> {
     const query = h.control(h.getPeer(0)).query;
     const before = await query.getLatestInboundMessageHash().request();
     const joiner = h.getPeer((await h.join.addSpectatorWait()).index);
@@ -1151,11 +1179,14 @@ export async function servingSignedConflictAheadInboundAt(
             .encodedMessageBlock,
         Type.MessageBlock
     );
-    return await servingSignedConflictAt(h, payload, anchor, height, {
-        hash: joinHash,
-        height: BigInt(join.blockHeight),
+    return {
+        ...(await servingSignedConflictAt(h, payload, anchor, height, {
+            hash: joinHash,
+            height: BigInt(join.blockHeight),
+            joiner
+        })),
         joiner
-    });
+    };
 }
 
 /**
@@ -1629,5 +1660,106 @@ export async function readReceivedFinalHistory(
             otherHeight,
             encodedPayload: Codec.encode(payload, Type.SyncPayload) as string
         }
+    );
+}
+
+/**
+ * {@link stageOwnFinalPointBehindMissedTopUp}, then peer 0's served payload
+ * with a first milestone from block 0 through the observer's head and its
+ * own milestones above that, every block from height 1 on replaced by a
+ * copy: block 1 re-signed
+ * one second later and every later block relinked onto the copy before it,
+ * each re-signed by its own signers and committing the same snapshot and
+ * inbound head. The observer's walk from its final point passes the blocks
+ * up to it (same snapshots) and then fails on the missed top-up, as does
+ * its local diamond; the chain's walk passes. No final point conflicts in
+ * either direction. Each served block at a height the observer holds is a
+ * second block there. Returns, per such height, the observer's stored block
+ * (hash and signers) and the served copy's hash.
+ */
+export async function stageRelinkedHistoryOverMissedTopUp(
+    h: MathPeerTestHarness
+) {
+    const staged = await stageOwnFinalPointBehindMissedTopUp(h);
+    const { forkId, requester } = staged;
+    const responder = h.getPeer(0);
+    const head = (await h
+        .control(responder)
+        .query.getLatestBlockHeight(forkId)
+        .request())!;
+    const copies = new Map<number, Block>();
+    let previousHash = (await servedBlock(h, forkId, 0)).hash;
+    for (let height = 1; height <= head; height++) {
+        const copy = await resignedCopy(
+            h,
+            Block.fromBlockConfirmation(
+                (await servedBlock(h, forkId, height)).confirmation
+            ),
+            {
+                previousBlockHash: previousHash as Hash,
+                timestampOffset: height === 1 ? 1n : 0n
+            }
+        );
+        copies.set(height, copy);
+        previousHash = String(copy.hash);
+    }
+    const observerHead = (await h
+        .control(requester)
+        .query.getLatestBlockHeight(forkId)
+        .request())!;
+    const served = await servedPayload(h, responder, forkId);
+    // a first milestone from block 0 (the hop from the fork genesis) through
+    // the observer's head, then the served milestones above it: their hop
+    // over the top-up is what the observer's walks cannot check
+    const runs: Block[][] = [
+        [
+            Block.fromBlockConfirmation(
+                (await servedBlock(h, forkId, 0)).confirmation
+            ),
+            ...[...copies.entries()]
+                .filter(([height]) => height <= observerHead)
+                .map(([, copy]) => copy)
+        ],
+        ...served.stateProof.milestones
+            .map(({ blockConfirmations }) =>
+                blockConfirmations
+                    .map((confirmation) =>
+                        Block.fromBlockConfirmation(confirmation)
+                    )
+                    .filter((block) => block.height > observerHead)
+                    .map((block) => copies.get(block.height)!)
+            )
+            .filter((run) => run.length > 0)
+    ];
+    const milestoneSnapshots: SnapshotStruct[] = [];
+    for (const run of runs)
+        milestoneSnapshots.push(
+            (await servedBlock(h, forkId, run[0]!.height)).snapshot
+        );
+    const payload = servingProof(
+        served,
+        runs.map((run) => run.map((block) => block.blockConfirmationStruct)),
+        milestoneSnapshots,
+        served.latestFinalizedEncodedState
+    );
+    const heights = [...copies.keys()].filter(
+        (height) => height <= observerHead
+    );
+    const held = await storedBlocks(h, requester, forkId, heights);
+    return {
+        ...staged,
+        payload,
+        conflicts: heights.map((height, i) => ({
+            height,
+            stored: held[i]!,
+            servedHash: String(copies.get(height)!.hash)
+        }))
+    };
+}
+
+/** The last block `payload` serves: the end of its last milestone. */
+export function lastServedBlock(payload: SyncPayload): Block {
+    return Block.fromBlockConfirmation(
+        payload.stateProof.milestones.at(-1)!.blockConfirmations.at(-1)!
     );
 }

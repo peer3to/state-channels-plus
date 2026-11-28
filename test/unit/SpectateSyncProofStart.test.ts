@@ -1,6 +1,7 @@
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
+import { doubleSignProofHashes } from "@test/fixtures/DoubleSignStaging";
 import {
     forgedOutboundBlock,
     localDiamondOutboundHeight,
@@ -22,6 +23,7 @@ import {
     applyAfterMissedTopUp,
     withHeldFreshRequester,
     holdCanonicalProofWalk,
+    lastServedBlock,
     applyOnFreshRequester,
     applyPayloads,
     craftProofBlock,
@@ -35,6 +37,7 @@ import {
     stageLowerHopConflictServedByRelay,
     stageOwnFinalPointBehindMissedTopUp,
     stageOwnHistoryBehindServedInbound,
+    stageRelinkedHistoryOverMissedTopUp,
     stageSigningStoppedBySync,
     syncAboveHeldQueuedBlock,
     syncEvidenceView
@@ -427,7 +430,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
             ).to.equal(String(finalSnapshot.hash));
         });
 
-        it("a participant served a threshold-final block that conflicts with its own final point, signed by the responder → the conflict kill holds in both directions (equal inbound): not installed, kept as sync evidence, the responder is rejected and blacklisted, and the participant keeps signing on the fork", async function () {
+        it("a participant served a threshold-final block that conflicts with its own final point, signed by the responder → the conflict kill holds in both directions (equal inbound): not installed, kept as sync evidence, the responder is rejected and blacklisted; each other signer of both final blocks gets a double-sign proof and the participant disputes the fork at once, so the chain slashes them and not it", async function () {
             const h = TestSession.getHarness();
             const { forkId, anchor, payload, latestHeight } =
                 await stageAnchoredHistory(h, { blocksAfter: 2 });
@@ -467,11 +470,41 @@ describe("Unit: SpectateService sync proof verification order", function () {
                 finalizedHash: String(conflicting.finalSnapshot.hash),
                 isStateHeld: true
             });
+            const [peer0, peer1] = [h.getPeer(0), h.getPeer(1)];
+            const pair = [
+                (await h
+                    .control(requester)
+                    .query.getBlockByHeight(forkId, localFinalized!.height)
+                    .request())!.hash,
+                String(lastServedBlock(conflicting.payload).hash)
+            ];
+            expect(
+                await doubleSignProofHashes(h, requester, [
+                    peer0.address,
+                    peer1.address,
+                    requester.address
+                ])
+            ).to.deep.equal({
+                [peer0.address]: [pair],
+                [peer1.address]: [pair],
+                [requester.address]: []
+            });
+            await h.assert.dispute.committedWait({
+                peersIndices: [requester.index],
+                expectedCount: 1
+            });
+            const slashed = (
+                await h.channelManager.getOnChainSlashedParticipants(
+                    h.channelId
+                )
+            ).map(String);
+            expect(slashed).to.include.members([peer0.address, peer1.address]);
+            expect(slashed).to.not.include(requester.address);
             expect(await readSigningOn(h, requester, forkId)).to.deep.equal({
-                stopped: false,
+                stopped: true,
                 stoppedBySync: false,
-                signsLatestBlock: true,
-                disputing: false
+                signsLatestBlock: false,
+                disputing: true
             });
         });
 
@@ -512,6 +545,241 @@ describe("Unit: SpectateService sync proof verification order", function () {
                 (await readSigningOn(h, staged.responder, forkId))
                     .signsLatestBlock
             ).to.equal(true);
+        });
+
+        it("a participant whose own history only the served final history kills → the other signers of both its final block and the served one get double-sign proofs, they are only stored: no dispute, and it stops signing on the fork", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageSigningStoppedBySync(h);
+            const { requester, forkId, localFinalized } = staged;
+            const pair = [
+                (await h
+                    .control(requester)
+                    .query.getBlockByHeight(forkId, localFinalized.height)
+                    .request())!.hash,
+                String(lastServedBlock(staged.served.payload).hash)
+            ];
+
+            expect(
+                await doubleSignProofHashes(h, requester, [
+                    h.getPeer(0).address,
+                    h.getPeer(1).address
+                ])
+            ).to.deep.equal({
+                [h.getPeer(0).address]: [pair],
+                [h.getPeer(1).address]: [pair]
+            });
+            expect(await readSigningOn(h, requester, forkId)).to.deep.include({
+                stoppedBySync: true,
+                disputing: false
+            });
+        });
+
+        it("a participant whose own history only the served final history kills → the joiner that signed only the served block and the participant itself get no double-sign proof", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageSigningStoppedBySync(h);
+            const { requester } = staged;
+            const joiner = staged.served.joiner;
+
+            expect(
+                await doubleSignProofHashes(h, requester, [
+                    joiner.address,
+                    requester.address
+                ])
+            ).to.deep.equal({
+                [joiner.address]: [],
+                [requester.address]: []
+            });
+        });
+
+        it("the double-sign proofs a synced side chain gave a participant outlive the fork's proof evidence: dropping the fork's records keeps them", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageSigningStoppedBySync(h);
+            const { requester, forkId } = staged;
+            const before = await doubleSignProofHashes(h, requester, [
+                h.getPeer(0).address
+            ]);
+            expect(before[h.getPeer(0).address]).to.have.length(1);
+
+            await h.execOnHost(
+                requester,
+                (sm, args) => sm.storage.proofEvidence.dropFork(args.forkId),
+                { forkId }
+            );
+
+            expect(
+                await syncEvidenceView(
+                    h,
+                    requester,
+                    staged.served.finalSnapshot
+                )
+            ).to.equal(null);
+            expect(
+                await doubleSignProofHashes(h, requester, [
+                    h.getPeer(0).address
+                ])
+            ).to.deep.equal(before);
+        });
+
+        it("a participant served a side chain whose sync evidence record does not fit a dispute upload → the record is refused, and the other signers of both conflicting final blocks still get double-sign proofs", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, anchor, payload } = await stageAnchoredHistory(h, {
+                blocksAfter: 2,
+                maxDisputeUploadBytes: 256
+            });
+            const requester = h.getPeer(2);
+            const localFinalized = await localFinalizedView(h, requester.index);
+            const conflicting = await servingSignedConflictAt(
+                h,
+                payload,
+                anchor,
+                localFinalized!.height
+            );
+
+            const outcome = await applyPayloads(h, requester, forkId, [
+                conflicting.payload
+            ]);
+
+            expect(outcome.outcomes[0]).to.deep.include({
+                accepted: false,
+                threw: ""
+            });
+            expect(
+                await syncEvidenceView(h, requester, conflicting.finalSnapshot)
+            ).to.equal(null);
+            const pair = [
+                (await h
+                    .control(requester)
+                    .query.getBlockByHeight(forkId, localFinalized!.height)
+                    .request())!.hash,
+                String(lastServedBlock(conflicting.payload).hash)
+            ];
+            expect(
+                await doubleSignProofHashes(h, requester, [
+                    h.getPeer(0).address,
+                    h.getPeer(1).address
+                ])
+            ).to.deep.equal({
+                [h.getPeer(0).address]: [pair],
+                [h.getPeer(1).address]: [pair]
+            });
+        });
+
+        it("a participant served a tail block at its own final height, by that height's author and confirmed by one more participant → the conflict kill holds: not installed, kept as sync evidence; each other signer of both blocks gets a double-sign proof and the participant disputes the fork at once", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, anchor, payload } = await stageAnchoredHistory(h, {
+                blocksAfter: 2
+            });
+            const requester = h.getPeer(2);
+            const localFinalized = (await localFinalizedView(
+                h,
+                requester.index
+            ))!;
+            const stored = (await h
+                .control(requester)
+                .query.getBlockByHeight(forkId, localFinalized.height)
+                .request())!;
+            // the one participant that is neither the requester nor the author
+            const coSigner = [0, 1].find(
+                (index) => h.getPeer(index).address !== stored.author
+            )!;
+            const served = await servingConflictAt(
+                h,
+                payload,
+                anchor,
+                localFinalized.height,
+                [coSigner]
+            );
+            const doubleSigners = [stored.author, h.getPeer(coSigner).address]
+                .map(String)
+                .filter((address) => address !== requester.address)
+                .sort();
+
+            const outcome = await applyPayloads(h, requester, forkId, [served]);
+
+            expect(outcome.outcomes[0]).to.deep.include({
+                accepted: false,
+                threw: ""
+            });
+            expect(
+                (await syncEvidenceView(h, requester, anchor))?.finalizedHash
+            ).to.equal(String(anchor.hash));
+            const pair = [
+                String(stored.hash),
+                String(lastServedBlock(served).hash)
+            ];
+            expect(
+                await doubleSignProofHashes(h, requester, doubleSigners)
+            ).to.deep.equal(
+                Object.fromEntries(
+                    doubleSigners.map((address) => [address, [pair]])
+                )
+            );
+            await h.assert.dispute.committedWait({
+                peersIndices: [requester.index],
+                expectedCount: 1
+            });
+            expect(
+                (await readSigningOn(h, requester, forkId)).disputing
+            ).to.equal(true);
+        });
+
+        it("an observer whose local diamond missed a consumed top-up is served the channel's history with every block from height 1 signed a second time → no kill in either direction: not installed, no verdict and no blame, but each signer of both blocks at a height the observer holds gets a double-sign proof there; an observer opens no dispute", async function () {
+            const h = TestSession.getHarness();
+            const staged = await stageRelinkedHistoryOverMissedTopUp(h);
+            const { requester, forkId } = staged;
+            try {
+                // premise: some served block is a second block at a held height
+                expect(staged.conflicts).to.not.deep.equal([]);
+                const outcome = await applyPayloads(
+                    h,
+                    requester,
+                    forkId,
+                    [staged.payload],
+                    { observeWalks: true, readLocalFinality: true }
+                );
+
+                expect(outcome.walks!.storage.local.answers).to.deep.equal([
+                    false
+                ]);
+                expect(outcome.walks!.storage.chain.answers).to.deep.equal([
+                    true
+                ]);
+                expect(outcome.outcomes[0]).to.deep.include({
+                    accepted: false,
+                    threw: ""
+                });
+                expect(outcome.stateWrites).to.deep.equal([0]);
+                expect(outcome.localFinalizedHeights).to.deep.equal([
+                    staged.localFinalized.height
+                ]);
+                expect(outcome.rejections).to.deep.equal([]);
+                expect(outcome.blacklisted).to.equal(false);
+                const participants = [0, 1, 2].map(
+                    (index) => h.getPeer(index).address
+                );
+                const expected = Object.fromEntries(
+                    participants.map((address) => [
+                        address,
+                        staged.conflicts
+                            .filter(({ stored }) =>
+                                stored.signers.includes(address)
+                            )
+                            .map(({ stored, servedHash }) => [
+                                stored.hash,
+                                servedHash
+                            ])
+                    ])
+                );
+                expect(
+                    await doubleSignProofHashes(h, requester, participants)
+                ).to.deep.equal(expected);
+                expect(
+                    (await readSigningOn(h, requester, forkId)).disputing
+                ).to.equal(false);
+            } finally {
+                await staged.hold.release();
+                await staged.restoreGossip();
+            }
         });
 
         it("a participant whose signing a synced proof stopped is then served its responder's honest proof, which verifies from its own final point → the stop is never lifted on that fork", async function () {
