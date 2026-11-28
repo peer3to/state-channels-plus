@@ -7,6 +7,7 @@ import { Block } from "@/models";
 import type ParticipantTimeoutService from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
+import type { Address } from "@/types/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
@@ -91,12 +92,14 @@ export default class CalldataCommittedStrategy extends AValidationStrategy {
     }
     public async doubleSignDetected(
         conflictingBlock: Block,
-        block: Block
+        block: Block,
+        doubleSigners: Set<Address>
     ): Promise<BlockValidationResult> {
         // DOUBLE SIGN
         return this.blockValidationStrategy.doubleSignDetected(
             conflictingBlock,
-            block
+            block,
+            doubleSigners
         );
     }
     public async invalidStateTransitionDetected(

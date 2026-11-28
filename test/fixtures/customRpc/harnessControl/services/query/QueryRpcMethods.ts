@@ -7,6 +7,7 @@ import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import { syncEvidenceKey } from "@/storage/keys";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import { Status } from "@/types/flags";
+import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import type { Address, ForkId, Hash, BlockHeight } from "@/types/types";
 import { Codec, Type, hash } from "@/utils";
 import { getChecksumAddress } from "@/utils/address";
@@ -851,6 +852,37 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
             .getFraudProofsForParticipant(String(participantAddress))
             .at(-1);
         return fp ? String(fp.proofType) : null;
+    }
+
+    /** Solidity proof-types (as strings) of every fraud proof stored against a peer, in order. */
+    public getFraudProofTypes(participantAddress: Address): string[] {
+        return this.service.storage.fraudProofs
+            .getFraudProofsForParticipant(String(participantAddress))
+            .map((proof) => String(proof.proofType));
+    }
+
+    /**
+     * The block hashes of every BlockDoubleSign proof stored against
+     * `participantAddress`, each pair in proof order.
+     */
+    public getDoubleSignProofBlockHashes(
+        participantAddress: Address
+    ): string[][] {
+        const doubleSign = String(
+            toSolidityFraudProofType(FraudProofType.BlockDoubleSign)
+        );
+        return this.service.storage.fraudProofs
+            .getFraudProofsForParticipant(String(participantAddress))
+            .filter((proof) => String(proof.proofType) === doubleSign)
+            .map((proof) => {
+                const { block1, block2 } = Codec.decode(
+                    proof.encodedProof,
+                    FraudProofType.BlockDoubleSign
+                );
+                return [block1, block2].map((signed) =>
+                    ethers.keccak256(signed.encodedBlock)
+                );
+            });
     }
 
     /** Solidity proof-types (as strings) of all stored dispute fraud proofs. */

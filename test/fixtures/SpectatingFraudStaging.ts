@@ -42,7 +42,16 @@ export async function assertSpectatingFraud(
         Type.SignedBlock
     ) as SignedBlockStruct;
     const block = Codec.decode(signed.encodedBlock, Type.Block) as BlockStruct;
-    const author = h.peers.find((peer) => peer.address === stored!.author)!;
+    // the conflicting block's author signed the stored block too: its
+    // author, or a co-signer when that author is the victim (no peer
+    // proves its own double sign)
+    const doubleSigner =
+        stored!.author !== victim.address
+            ? stored!.author
+            : stored!.confirmationSignerAddresses.find(
+                  (address) => address !== victim.address
+              )!;
+    const author = h.peers.find((peer) => peer.address === doubleSigner)!;
     const encoded = await factory.buildAndEncodeBlock(author.signer, {
         header: {
             channelId: h.channelId,
@@ -66,7 +75,8 @@ export async function assertSpectatingFraud(
         expect(result.fraudProofType).to.equal(null);
         await waitFor(() => host.isClosed, h.event.protocolEventTimeoutMs());
     } else {
-        expect(result.disputedForkIds).to.deep.equal([forkId]);
+        // a co-signer's double sign asks again after the author's verdict
+        expect([...new Set(result.disputedForkIds)]).to.deep.equal([forkId]);
         expect(result.fraudProofType).to.equal(
             String(toSolidityFraudProofType(FraudProofType.BlockDoubleSign))
         );

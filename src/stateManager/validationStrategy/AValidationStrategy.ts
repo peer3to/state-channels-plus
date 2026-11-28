@@ -2,6 +2,7 @@ import type { SignerAdmission } from "@/agreementManager/AgreementManager";
 import { Block, StateSnapshot } from "@/models";
 import type { QueuedBlockEntry } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
+import type { Address } from "@/types/types";
 import {
     BlockConfirmationStruct,
     MessageBlockStruct
@@ -77,9 +78,15 @@ export default abstract class AValidationStrategy {
         entry: QueuedBlockEntry
     ): Promise<BlockValidationResult>;
 
+    /**
+     * `block` and the stored `conflictingBlock` are two different blocks at
+     * one coordinate, and each of `doubleSigners` (never this peer) signed
+     * both (`findDoubleSigners`): one double-sign proof per signer.
+     */
     public abstract doubleSignDetected(
         conflictingBlock: Block,
-        block: Block
+        block: Block,
+        doubleSigners: Set<Address>
     ): Promise<BlockValidationResult>;
 
     public abstract invalidStateTransitionDetected(

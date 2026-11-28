@@ -172,6 +172,8 @@ export type BlockValidationProbe = {
     abortCalled: boolean;
     signerAddress: string;
     fraudProofType: string | null;
+    /** Every fraud proof this run stored: its target and type, in order. */
+    storedFraudProofs: { participant: string; proofType: string }[];
     /** Source attribution the entry carried into validation. */
     sourcePeers: string[];
     /** How many times validation asked EventSyncService to recover calldata. */
@@ -1533,6 +1535,10 @@ export class ValidationProbeService extends ANetworkRpcService<
             abortCalled: run.recorded.abortCalled,
             signerAddress: String(run.block.signerAddress),
             fraudProofType: fraudProof ? String(fraudProof.proofType) : null,
+            storedFraudProofs: run.recorded.storedFraudProofs.map((proof) => ({
+                participant: String(proof.participant),
+                proofType: String(proof.proofType)
+            })),
             sourcePeers: [...getSourcePeers(run.entry)].map(String),
             calldataRecoveryQueries: run.recorded.calldataRecoveryQueries,
             subjectiveWarningCount: run.recorded.subjectiveWarningCount

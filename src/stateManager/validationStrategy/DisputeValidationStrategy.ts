@@ -13,6 +13,7 @@ import type {
     QueuedBlockEntry
 } from "@/storage/QueueStorage";
 import { BlockValidationResult, Hash, Signature } from "@/types";
+import type { Address } from "@/types/types";
 import { Logger } from "@/utils";
 import {
     BlockConfirmationStruct,
@@ -211,11 +212,19 @@ export default class DisputeValidationStrategy extends AValidationStrategy {
     }
     public async doubleSignDetected(
         conflictingBlock: Block,
-        block: Block
+        block: Block,
+        doubleSigners: Set<Address>
     ): Promise<BlockValidationResult> {
         // Create and apply normal fraud proof to slash the offender + DEFER creating a new dispute - this dispute may still be honest, so continute validation
-        this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
-        // TODO - apply the fraud proof without creating a new dispute
+        // The stored proofs ride with this peer's own dispute upload: the
+        // kill multicall after an invalid verdict, or the evidence it adds
+        // to a valid dispute.
+        for (const signer of doubleSigners)
+            this.fraudProofService.createDoubleSignProof(
+                conflictingBlock,
+                block,
+                signer
+            );
         return BlockValidationResult.SUCCESS; // so we continue 'syncing' and checking new blocks
     }
     public async invalidStateTransitionDetected(

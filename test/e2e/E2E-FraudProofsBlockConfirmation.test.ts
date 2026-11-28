@@ -1,8 +1,9 @@
 import Clock from "@/Clock";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import { FraudProofType } from "@/types/sol-enums";
+import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
 import { Codec, tryDecodeCustomError, Type } from "@/utils";
 import type { BlockBundle } from "@test/fixtures/customRpc/harnessControl/services/query/QueryRpcMethods";
+import { craftCoSignedConflict } from "@test/fixtures/DoubleSignStaging";
 import { stageChainPastGenesis } from "@test/fixtures/WrongGenesisPastGenesisStaging";
 import { MathTestSession as TestSession, sleep } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -655,7 +656,44 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
-    it("wrong genesis → WrongGenesis", async function () {
+    it("a block at a taken height by another author, confirmed by another signer of the stored block, reaches one honest participant → it proves both signers' double signs and disputes; the chain slashes the two of them and not the honest participant", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(4, 2);
+        const forkId = h.activeForkId!;
+        const honest = h.getPeer(0);
+        const conflict = await craftCoSignedConflict(h, honest, {
+            forkId,
+            height: 1
+        });
+        const offenders = [conflict.author, conflict.coSigner].map(
+            (address) => h.peers.find((peer) => peer.address === address)!
+        );
+        for (const offender of offenders)
+            h.contextApi.markMaliciousPeer({
+                maliciousPeerIndex: offender.index
+            });
+
+        await h
+            .control(offenders[0]!)
+            .byzantine.sendBlockConfirmation(conflict.encoded, honest.address)
+            .request();
+
+        await h.assert.dispute.committedWait({
+            peersIndices: [honest.index],
+            expectedCount: 1
+        });
+        const slashed = (
+            await h.channelManager.getOnChainSlashedParticipants(h.channelId)
+        ).map(String);
+        expect(slashed).to.include.members([
+            conflict.author,
+            conflict.coSigner
+        ]);
+        expect(slashed).to.not.include(honest.address);
+        await h.dispute.resolveDisputeWait({ forkId });
+    });
+
+    it("wrong genesis → WrongGenesis, then BlockDoubleSign: the forger also signed the stored block 0", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 2);
         const forkId = h.activeForkId!;
@@ -665,17 +703,26 @@ describe("E2E: Block Fraud Proofs", function () {
         await h.byzantine.submitWrongGenesisBlock(maliciousPeerIndex);
 
         await h.assert.dispute.initiatedAndCommitedWait();
-        await h.assert.storage.honestPeersStoredFraudProof({
-            fraudProofType: FraudProofType.WrongGenesis,
-            maliciousPeerIndex
-        });
+        const forger = h.getPeer(maliciousPeerIndex).address;
+        for (const index of [0, 1])
+            expect(
+                await h
+                    .control(h.getPeer(index))
+                    .query.getFraudProofTypes(forger)
+                    .request()
+            ).to.deep.equal(
+                [
+                    FraudProofType.WrongGenesis,
+                    FraudProofType.BlockDoubleSign
+                ].map((type) => String(toSolidityFraudProofType(type)))
+            );
 
         await h.dispute.resolveDisputeWait({ forkId });
         await h.assert.sync.onlyHonestPeersInSync();
     });
 
     // the chain no longer judges block 0 once it holds the fork past genesis -> filing the proof would only revert
-    it("wrong genesis after a snapshot moved the fork past genesis → the forger is cut, no fraud proof, no dispute, nobody slashed", async function () {
+    it("wrong genesis after a snapshot moved the fork past genesis → the forger is cut and no wrong-genesis proof is built; it also signed the stored block 0, so the honest peers prove its double sign, dispute, and the chain slashes it alone", async function () {
         const h = TestSession.getHarness();
         const { forkId, blockZeroAuthor } = await stageChainPastGenesis(h);
         const maliciousPeerIndex = h.peers.find(
@@ -701,17 +748,25 @@ describe("E2E: Block Fraud Proofs", function () {
                         .request(),
                 h.event.protocolEventTimeoutMs()
             );
+        h.contextApi.markMaliciousPeer({ maliciousPeerIndex });
+        await h.assert.dispute.committedWait({
+            peersIndices: honestPeerIndices,
+            expectedCount: 1
+        });
         for (const index of honestPeerIndices)
             expect(
                 await h
                     .control(h.getPeer(index))
                     .query.getFraudProofType(forger.address)
                     .request()
-            ).to.equal(null);
-        await h.assert.dispute.didNotInitiate({ peers: honestPeerIndices });
-        expect(await h.query.onChainSlashedParticipants()).to.deep.equal(
-            slashedBefore
-        );
+            ).to.equal(
+                String(toSolidityFraudProofType(FraudProofType.BlockDoubleSign))
+            );
+        expect(await h.query.onChainSlashedParticipants()).to.deep.equal([
+            ...slashedBefore,
+            forger.address
+        ]);
+        await h.dispute.resolveDisputeWait({ forkId });
     });
 
     it("unexpected next leader → BlockInvalidStateTransition", async function () {

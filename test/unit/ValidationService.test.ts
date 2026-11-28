@@ -6,6 +6,10 @@ import { Codec, hash, Type } from "@/utils";
 import * as factory from "@test/factory";
 
 import { normalizeRealConfirmations } from "@test/fixtures/ConfirmationNormalizationFixture";
+import {
+    craftCoSignedConflict,
+    doubleSignProofHashes
+} from "@test/fixtures/DoubleSignStaging";
 import { probeWrongLeaderInsertion } from "@test/fixtures/MathInsertionFixture";
 import { stagePrunedGenuineInbound } from "@test/fixtures/PrunedInboundStaging";
 import {
@@ -580,7 +584,7 @@ describe("Unit: ValidationService", function () {
             expect(r.disconnectedAddresses).to.deep.equal([]);
         });
 
-        it("conflict at height 0 from another author while the chain holds the fork past genesis → DISCONNECT of sources and author, no fraud proof, no dispute", async function () {
+        it("conflict at height 0 from another author while the chain holds the fork past genesis → DISCONNECT of sources and author and no wrong-genesis proof; that author also signed the stored block 0, so it gets a double-sign proof and the fork is disputed", async function () {
             const h = TestSession.getHarness();
             const { forkId, blockZeroAuthor } = await stageChainPastGenesis(h);
             const observer = h.getPeer(0);
@@ -592,10 +596,18 @@ describe("Unit: ValidationService", function () {
                 .validation.runBlockValidation(encoded)
                 .request();
 
-            expect(r.firedHooks).to.include("wrongGenesisDetected");
+            expect(r.firedHooks).to.deep.equal([
+                "wrongGenesisDetected",
+                "doubleSignDetected"
+            ]);
             expect(r.resultName).to.equal("DISCONNECT");
-            expect(r.fraudProofType).to.equal(null);
-            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(r.storedFraudProofs).to.deep.equal([
+                {
+                    participant: other.address,
+                    proofType: solProofType(FraudProofType.BlockDoubleSign)
+                }
+            ]);
+            expect(r.disputedForkIds).to.deep.equal([forkId]);
             expect(r.disconnectedAddresses).to.include(other.address);
         });
 
@@ -1033,7 +1045,7 @@ describe("Unit: ValidationService", function () {
             ).to.be.null;
         });
 
-        it("conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof", async function () {
+        it("conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof, then a double-sign proof against that author, which signed the stored block 0 too", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 1); // block 0 stored
             const observer = h.getPeer(0);
@@ -1062,10 +1074,18 @@ describe("Unit: ValidationService", function () {
                 .request();
 
             expect(r.resultName).to.equal("DISPUTE");
-            expect(r.disputedForkIds).to.deep.equal([forkId]);
-            expect(r.fraudProofType).to.equal(
-                solProofType(FraudProofType.WrongGenesis)
-            );
+            // the wrong genesis and the double sign each ask for the dispute
+            expect(r.disputedForkIds).to.deep.equal([forkId, forkId]);
+            expect(r.storedFraudProofs).to.deep.equal([
+                {
+                    participant: other.address,
+                    proofType: solProofType(FraudProofType.WrongGenesis)
+                },
+                {
+                    participant: other.address,
+                    proofType: solProofType(FraudProofType.BlockDoubleSign)
+                }
+            ]);
         });
 
         it("the peer's own stored block replayed verbatim → no conflict, never a double-sign of its honest author", async function () {
@@ -1128,6 +1148,170 @@ describe("Unit: ValidationService", function () {
             expect(r.firedHooks).to.include(
                 "conflictingButNotLinkedBlockDetected"
             );
+        });
+
+        it("an unlinked block at a taken height by another author, confirmed by another signer of the stored block → each of the two signed both blocks: one BlockDoubleSign proof per signer over the stored and the arriving block, the fork is disputed, and the unlinked block still cuts its senders", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const conflict = await craftCoSignedConflict(h, observer, {
+                forkId,
+                height: 1
+            });
+            // premise: both signed the stored block
+            expect(conflict.storedSigners).to.include.members([
+                conflict.author,
+                conflict.coSigner
+            ]);
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(conflict.encoded)
+                .request();
+
+            expect(r.resultName).to.equal("DISCONNECT");
+            expect(r.firedHooks).to.include.members([
+                "conflictingButNotLinkedBlockDetected",
+                "doubleSignDetected"
+            ]);
+            expect(r.disputedForkIds).to.deep.equal([forkId]);
+            const doubleSign = solProofType(FraudProofType.BlockDoubleSign);
+            expect(
+                r.storedFraudProofs
+                    .map(({ participant, proofType }) => [
+                        participant,
+                        proofType
+                    ])
+                    .sort()
+            ).to.deep.equal(
+                [
+                    [conflict.author, doubleSign],
+                    [conflict.coSigner, doubleSign]
+                ].sort()
+            );
+            expect(
+                await doubleSignProofHashes(h, observer, [
+                    conflict.author,
+                    conflict.coSigner
+                ])
+            ).to.deep.equal({
+                [conflict.author]: [[conflict.storedHash, conflict.hash]],
+                [conflict.coSigner]: [[conflict.storedHash, conflict.hash]]
+            });
+        });
+
+        it("a linked block at a taken height by another author, confirmed by another signer of the stored block → the author's invalid-state-transition proof is stored first, then a BlockDoubleSign proof for each signer of both blocks, and the fork is disputed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const conflict = await craftCoSignedConflict(h, observer, {
+                forkId,
+                height: 1,
+                linked: true
+            });
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(conflict.encoded)
+                .request();
+
+            expect(r.resultName).to.equal("DISPUTE");
+            expect(r.firedHooks).to.deep.equal([
+                "invalidStateTransitionDetected",
+                "doubleSignDetected"
+            ]);
+            expect(r.disputedForkIds[0]).to.equal(forkId);
+            const doubleSign = solProofType(FraudProofType.BlockDoubleSign);
+            expect(r.storedFraudProofs[0]).to.deep.equal({
+                participant: conflict.author,
+                proofType: solProofType(
+                    FraudProofType.BlockInvalidStateTransition
+                )
+            });
+            expect(
+                r.storedFraudProofs
+                    .slice(1)
+                    .map(({ participant, proofType }) => [
+                        participant,
+                        proofType
+                    ])
+                    .sort()
+            ).to.deep.equal(
+                [
+                    [conflict.author, doubleSign],
+                    [conflict.coSigner, doubleSign]
+                ].sort()
+            );
+        });
+
+        it("a conflicting block at a taken height that the peer itself also confirmed → the peer builds no proof against its own address", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const conflict = await craftCoSignedConflict(h, observer, {
+                forkId,
+                height: 1,
+                withOwnSignature: true
+            });
+            // premise: the peer signed the stored block too
+            expect(conflict.storedSigners).to.include(observer.address);
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(conflict.encoded)
+                .request();
+
+            expect(
+                r.storedFraudProofs.map(({ participant }) => participant)
+            ).to.not.include(observer.address);
+            expect(
+                await doubleSignProofHashes(h, observer, [observer.address])
+            ).to.deep.equal({ [observer.address]: [] });
+        });
+
+        it("dispute replay meets a block at a taken height confirmed by another signer of the stored block → both signers' double-sign proofs are stored and the peer's own dispute, which a kill rides with, lists both as slashed", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const observer = h.getPeer(0);
+            const forkId = h.activeForkId!;
+            const { dispute } = await h.dispute.fetchConstructedDispute(1);
+            const conflict = await craftCoSignedConflict(h, observer, {
+                forkId,
+                height: 1,
+                linked: true
+            });
+
+            const r = await h
+                .control(observer)
+                .validation.runBlockValidation(conflict.encoded, {
+                    strategy: "dispute",
+                    encodedDispute: Codec.encode(
+                        dispute,
+                        Type.Dispute
+                    ) as string
+                })
+                .request();
+
+            expect(r.strategyName).to.equal("DisputeValidationStrategy");
+            expect(r.firedHooks).to.include("doubleSignDetected");
+            expect(r.disputedForkIds).to.deep.equal([]);
+            expect(
+                await doubleSignProofHashes(h, observer, [
+                    conflict.author,
+                    conflict.coSigner
+                ])
+            ).to.deep.equal({
+                [conflict.author]: [[conflict.storedHash, conflict.hash]],
+                [conflict.coSigner]: [[conflict.storedHash, conflict.hash]]
+            });
+            const own = await h.dispute.fetchConstructedDispute(0);
+            expect(own.dispute.input.onChainSlashes).to.include.members([
+                conflict.author,
+                conflict.coSigner
+            ]);
         });
     });
 

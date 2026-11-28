@@ -1,4 +1,5 @@
 import EventSyncService from "../eventSync/EventSyncService";
+import { findDoubleSigners } from "../utils/findDoubleSigners";
 import FraudProofService from "../utils/FraudProofService";
 import AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
@@ -449,13 +450,58 @@ export default class ValidationService {
         // name change for clarity, it isn't a maybe anymore
         const conflictingBlock = maybePreExistingBlock;
 
+        // every signer of both blocks but this peer double signed
+        const doubleSigners = findDoubleSigners(
+            conflictingBlock,
+            block,
+            this.stateManager.checksumSignerAddress as Address
+        );
         if (conflictingBlock.author === block.author) {
             this.logger.warn("checkConflictingBlock - double sign detected", {
                 block: LoggerUtils.getBlockMetadata(block, this.storage)
             });
-            return await strategy.doubleSignDetected(conflictingBlock, block);
+            return await strategy.doubleSignDetected(
+                conflictingBlock,
+                block,
+                doubleSigners
+            );
         }
 
+        const authorResult = await this.judgeConflictingAuthor(
+            entry,
+            conflictingBlock,
+            strategy
+        );
+        if (doubleSigners.size === 0) return authorResult;
+        // the signers of both blocks are proven too; the author's verdict
+        // stands unless it lets the block continue
+        this.logger.warn(
+            "checkConflictingBlock - co-signer double sign detected",
+            {
+                block: LoggerUtils.getBlockMetadata(block, this.storage),
+                ...LoggerUtils.getSlashSetMetadata([...doubleSigners])
+            }
+        );
+        const doubleSignResult = await strategy.doubleSignDetected(
+            conflictingBlock,
+            block,
+            doubleSigners
+        );
+        return authorResult === BlockValidationResult.SUCCESS
+            ? doubleSignResult
+            : authorResult;
+    }
+
+    /**
+     * `entry`'s block conflicts with the stored `conflictingBlock` of
+     * another author: the linkage judges the block's author.
+     */
+    private async judgeConflictingAuthor(
+        entry: QueuedBlockEntry,
+        conflictingBlock: Block,
+        strategy: AValidationStrategy
+    ): Promise<BlockValidationResult> {
+        const block = entry.block;
         // If not linked we can't slash since the peer could have been building on the wrong 'reality' since someone performed a double sign
         if (
             this.isLinked(

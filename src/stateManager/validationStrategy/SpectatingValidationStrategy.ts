@@ -14,6 +14,7 @@ import {
 } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
+import type { Address } from "@/types/types";
 import { Logger } from "@/utils";
 import {
     BlockConfirmationStruct,
@@ -155,12 +156,14 @@ export default class SpectatingValidationStrategy extends AValidationStrategy {
     }
     public async doubleSignDetected(
         _conflictingBlock: Block,
-        _block: Block
+        _block: Block,
+        doubleSigners: Set<Address>
     ): Promise<BlockValidationResult> {
         if (isCommittedParticipantStatus(this.p2pManager.stateManager.status))
             return this.blockValidationStrategy.doubleSignDetected(
                 _conflictingBlock,
-                _block
+                _block,
+                doubleSigners
             );
         // Provable fraud by a channel participant - stop following this channel.
         this.abort();

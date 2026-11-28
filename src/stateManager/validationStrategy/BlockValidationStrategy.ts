@@ -15,6 +15,7 @@ import {
     type QueuedBlockEntry
 } from "@/storage/QueueStorage";
 import { BlockValidationResult, Signature, Status } from "@/types";
+import type { Address } from "@/types/types";
 import { Logger } from "@/utils";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import {
@@ -163,13 +164,19 @@ export default class BlockValidationStrategy extends AValidationStrategy {
     }
     public async doubleSignDetected(
         conflictingBlock: Block,
-        block: Block
+        block: Block,
+        doubleSigners: Set<Address>
     ): Promise<BlockValidationResult> {
         this.logger.warn("Double sign detected", {
-            participant: block.signerAddress,
+            ...LoggerUtils.getSlashSetMetadata([...doubleSigners]),
             blockHeight: block.height
         });
-        this.fraudProofService.createDoubleSignProof(conflictingBlock, block);
+        for (const signer of doubleSigners)
+            this.fraudProofService.createDoubleSignProof(
+                conflictingBlock,
+                block,
+                signer
+            );
         this.disputeManager.requestDispute(block.forkId);
         return BlockValidationResult.DISPUTE;
     }

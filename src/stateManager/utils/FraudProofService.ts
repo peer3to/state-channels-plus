@@ -158,23 +158,43 @@ export default class FraudProofService {
         });
     }
 
-    createDoubleSignProof(conflictingBlock: Block, originalBlock: Block): Hash {
+    /**
+     * Double-sign proof against `signer`, author or co-signer, from its own
+     * signature on each of two different blocks at one coordinate
+     * (`findDoubleSigners`).
+     */
+    createDoubleSignProof(
+        conflictingBlock: Block,
+        originalBlock: Block,
+        signer: Address
+    ): Hash {
         this.logFraudDetection({
             fraudType: FraudProofType.BlockDoubleSign,
             reason: "Participant signed two conflicting blocks at same height",
             block: conflictingBlock,
             additionalFields: {
-                participant: originalBlock.signerAddress,
+                participant: signer,
                 originalBlockAuthor: originalBlock.author
             }
         });
 
+        const signedBy = (block: Block): SignedBlockStruct => {
+            const signature = block.findSignature(signer);
+            if (!signature)
+                throw new Error(
+                    `Cannot create double-sign proof: ${signer} did not sign block ${block.hash}`
+                );
+            return {
+                encodedBlock: block.encode(),
+                signature: signature as Bytes
+            };
+        };
         const proof: BlockDoubleSignProofStruct = {
-            block1: conflictingBlock.signedBlock,
-            block2: originalBlock.signedBlock
+            block1: signedBy(conflictingBlock),
+            block2: signedBy(originalBlock)
         };
 
-        return this.storeFraudProof(originalBlock.signerAddress, {
+        return this.storeFraudProof(signer, {
             type: FraudProofType.BlockDoubleSign,
             struct: proof
         });
