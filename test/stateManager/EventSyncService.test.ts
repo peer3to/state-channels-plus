@@ -1,7 +1,9 @@
 import { Hash } from "@/types/types";
 import {
     assertDirectSlashRecovery,
-    assertRecoveredSlashTimestampAndDedup
+    assertHandledSlashesClearedWithStorage,
+    assertRecoveredSlashTimestampAndDedup,
+    assertRecoveredSlashQueriesExhausted
 } from "@test/fixtures/DisputeSlashRecoveryStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
@@ -23,8 +25,13 @@ describe("EventSyncService", function () {
     it("authoritative slash recovery exposes a failed source read", async function () {
         await assertDirectSlashRecovery(TestSession.getHarness(), true);
     });
+
     it("authoritative slash recovery preserves the kill timestamp and deduplicates a repeated query", async function () {
         await assertRecoveredSlashTimestampAndDedup(TestSession.getHarness());
+    });
+
+    it("a recovered slash counts as handled, and the chain clearing the channel's storage empties the handled slashes", async function () {
+        await assertHandledSlashesClearedWithStorage(TestSession.getHarness());
     });
 
     it("authoritative slash recovery rejects a missing chain head", async function () {
@@ -47,10 +54,7 @@ describe("EventSyncService", function () {
     });
 
     it("authoritative slash recovery rejects exhausted chain log queries", async function () {
-        await assertRecoveredSlashTimestampAndDedup(
-            TestSession.getHarness(),
-            true
-        );
+        await assertRecoveredSlashQueriesExhausted(TestSession.getHarness());
     });
 
     it("joins concurrent calldata recovery onto one chain query", async function () {
@@ -275,31 +279,32 @@ describe("EventSyncService", function () {
             await held.release({ replay: false });
         });
 
-        it("local diamond failure applying a recovered log → recovery rejects with it", async function () {
+        it("handler failure applying a recovered log → recovery rejects with it", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 0);
             const lagging = 2;
             const dropped = await h.rpcStub.dropInboundMessageLogs(lagging);
             const inboundHead = await stageInboundHead(h, lagging);
             await dropped.waitUntilDropped();
-            await h.mirror.failNextUpdate(
-                lagging,
-                "onInboundMessagesProcessed"
-            );
+            const failing =
+                await h.rpcStub.failInboundMessagesProcessedHandler(lagging);
 
-            const probe = await h
-                .control(h.getPeer(lagging))
-                .validation.probeInboundRunRecovery(inboundHead)
-                .request();
+            try {
+                const probe = await h
+                    .control(h.getPeer(lagging))
+                    .validation.probeInboundRunRecovery(inboundHead)
+                    .request();
 
-            expect(probe.threw).to.match(
-                /^Local contract call failed: Error: Local EVM execution failed: revert/
-            );
-            expect(probe.heldBefore).to.equal(false);
-            expect(probe.queryCount).to.equal(1);
-            expect(probe.blockCount).to.equal(null);
-
-            await dropped.release();
+                expect(probe.threw).to.contain(
+                    "stubbed onInboundMessagesProcessed failure"
+                );
+                expect(probe.heldBefore).to.equal(false);
+                expect(probe.queryCount).to.equal(1);
+                expect(probe.blockCount).to.equal(null);
+            } finally {
+                await failing.restore();
+                await dropped.release();
+            }
         });
     });
 
@@ -459,13 +464,15 @@ describe("EventSyncService", function () {
                     .request(),
                 "the held log must not have stored its dispute yet"
             ).to.equal(false);
-            // the handler's first step, before the dispute is stored
-            await h.mirror.failNextUpdate(observerIndex, "onDisputeCommitted");
+            // the in-flight handling fails before the dispute is stored
+            await held.failHandling();
 
             try {
                 await expect(
                     observer.dispute.recoverCommittedDisputes(forkId).request()
-                ).to.be.rejectedWith(/Local EVM execution failed: revert/);
+                ).to.be.rejectedWith(
+                    /stubbed in-flight onDisputeCommitted failure/
+                );
             } finally {
                 await held.release();
             }
@@ -473,14 +480,17 @@ describe("EventSyncService", function () {
             // same failure instead of reporting the window unreadable
             await expect(
                 observer.dispute.recoverCommittedDisputes(forkId).request()
-            ).to.be.rejectedWith(/Local EVM execution failed: revert/);
+            ).to.be.rejectedWith(
+                /stubbed in-flight onDisputeCommitted failure/
+            );
             expect(
                 await observer.query
                     .hasDisputeConfirmation(commitments[0])
                     .request()
             ).to.equal(false);
             await TestSession.settleDetached({
-                expectedErrorIncludes: "Local EVM execution failed: revert"
+                expectedErrorIncludes:
+                    "stubbed in-flight onDisputeCommitted failure"
             });
         });
 

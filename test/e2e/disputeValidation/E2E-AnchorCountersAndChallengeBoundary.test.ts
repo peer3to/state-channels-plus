@@ -16,7 +16,6 @@ import {
     expectLastRunHeights,
     expectNoChallengeThroughKillPeriod,
     invalidTransitionChallenge,
-    onlyAuditorKills,
     prependStoredBlocks,
     relinkChallengeBlock,
     reissueBlock,
@@ -59,31 +58,6 @@ describe("E2E: dispute validation / anchor counters and block-challenge boundary
                 slashedIndices: [1]
             });
             await h.dispute.resolveDisputeWait({ forkId });
-        });
-
-        it("E02 ext: an auditor whose local mirror never applied the block-zero snapshot post kills the stale empty-proof genesis dispute from the chain's anchor", async function () {
-            const h = TestSession.getHarness();
-            const lagging = 2;
-            const { stale, genesisHash } = await stageStaleGenesisClaim(h, {
-                laggingIndex: lagging
-            });
-            const [other] = await onlyAuditorKills(h, lagging, [0, lagging]);
-
-            await uploadStaleDispute(h, 1, stale);
-
-            await expectKilledByChallenge(h, {
-                proofType:
-                    DisputeFraudProofType.DisputeStateProofBelowOnChainAnchor,
-                auditorIndices: [lagging, other.index],
-                slashedIndices: [1]
-            });
-            // the current auditor reached the same verdict and stayed out of the kill
-            await other.kill.waitUntilSkipped();
-            // the counter was decided from the chain's anchor: this mirror
-            // still holds the genesis snapshot
-            expect(
-                (await h.query.getLocalStateSnapshot(h.getPeer(lagging))).hash
-            ).to.equal(genesisHash);
         });
     });
 

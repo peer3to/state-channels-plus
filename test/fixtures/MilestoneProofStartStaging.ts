@@ -77,7 +77,7 @@ export async function stageChainAnchor(
         // farm: the kill period keeps headroom over that.
         timeConfig: { evidenceTime: 12 }
     });
-    // Pin the anchor before authoring; mining and mirror delivery must not
+    // Pin the anchor before authoring; mining and event delivery must not
     // consume the next writer's window.
     const forkId = h.activeForkId!;
     const publisher = h.getPeer(0);
@@ -104,7 +104,7 @@ export async function stageChainAnchor(
                     prepared.callData
                 );
             await transaction.wait();
-            // the mirror wait compares with the prepared anchor: the chain
+            // the event wait compares with the prepared anchor: the chain
             // must hold exactly that snapshot
             expect(
                 StateSnapshot.from(

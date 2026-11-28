@@ -107,17 +107,29 @@ export class StateQueryActions<
         ).hash;
     }
 
-    public async getLocalStateSnapshot(
+    /** The snapshot the peer reads from the chain through its own provider. */
+    public async getPeerChainStateSnapshot(
         peer: TestPeer<THost>
     ): Promise<StateSnapshot> {
         const { encodedSnapshot } = await this.harness
             .control(peer)
-            .query.getLocalStateSnapshotStruct()
+            .query.getChainStateSnapshotStruct()
             .request();
         return StateSnapshot.from(
             Codec.decode(encodedSnapshot, Type.StateSnapshot)
         );
     }
+
+    public async getOnChainStateSnapshot(
+        channelId?: Hash
+    ): Promise<StateSnapshot> {
+        return StateSnapshot.from(
+            await this.harness.channelManager.getStateSnapshot(
+                channelId ?? this.harness.channelId
+            )
+        );
+    }
+
     /**
      * Get the next peer that should write a block
      */

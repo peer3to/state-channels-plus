@@ -8,17 +8,12 @@ import {
     type ProofTierWalk,
     type StateProofEvidence
 } from "@/agreementManager/AgreementManager";
-import {
-    isChainProven,
-    replicatedStateSource
-} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import Storage from "@/storage";
 import type { BlockPredecessor } from "@/storage/QueueStorage";
 import { timeoutWaitTime } from "@/types";
 import { Address, Bytes, ChannelId, Hash, Signature } from "@/types/types";
 import { hash, isSubset, Logger } from "@/utils";
-import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
@@ -639,11 +634,10 @@ export default class DisputeValidationService {
     private async tryCreateHeaderMismatchProof(
         dispute: DisputeStruct
     ): Promise<boolean> {
-        const hasHeaderMismatch = await this.localFirst(
-            (contract) =>
-                contract.hasStateProofHeaderMismatch.staticCall(dispute),
-            (hasMismatch) => !hasMismatch
-        );
+        const hasHeaderMismatch =
+            await this.stateChannelManagerContract.hasStateProofHeaderMismatch.staticCall(
+                dispute
+            );
         if (!hasHeaderMismatch) return false;
         this.logger.warn(
             "DisputeStateProofHeaderMismatch: a challengeable block names another channel or fork",
@@ -735,7 +729,7 @@ export default class DisputeValidationService {
         return true;
     }
 
-    /** Stores `DisputeOnChainSlashesNotSubset`; a lagging mirror is double-checked on chain. */
+    /** Stores `DisputeOnChainSlashesNotSubset`; the chain holds the slashes. */
     private async tryCreateOnChainSlashesNotSubsetProof(
         dispute: DisputeStruct
     ): Promise<boolean> {
@@ -744,11 +738,10 @@ export default class DisputeValidationService {
         );
         const isSlashSubset = (slashes: string[]) =>
             isSubset(disputeOnChainSlashes, new Set(slashes as Address[]));
-        const onChainSlashes = await this.localFirst(
-            (contract) =>
-                contract.getOnChainSlashedParticipants(dispute.input.channelId),
-            isSlashSubset
-        );
+        const onChainSlashes =
+            await this.stateChannelManagerContract.getOnChainSlashedParticipants(
+                dispute.input.channelId
+            );
         if (isSlashSubset(onChainSlashes)) return false;
         this.disputeFraudProofService.createDisputeOnChainSlashesNotSubset(
             dispute
@@ -943,12 +936,10 @@ export default class DisputeValidationService {
 
         // [check] isTimedoutTooEarly
         const timeoutTimestamp = Number(
-            await (
-                await replicatedStateSource(
-                    this.diamondStateMachine.localDiamondContract,
-                    this.stateChannelManagerContract
-                )
-            ).getDisputeWindowCreationTimestamp(dispute.input.channelId, forkId)
+            await this.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                dispute.input.channelId,
+                forkId
+            )
         );
         if (!timeoutTimestamp)
             throw new Error(
@@ -1034,16 +1025,11 @@ export default class DisputeValidationService {
             // The contract owns every predicate used by the apply handler.
             // Preflight the exact proof so an auditor never submits an
             // invalid proof and gets itself slashed.
-            // A proof the local mirror rejects is not pursued; one it
-            // accepts is confirmed on-chain before it is stored.
-            const isValid = await this.localFirst(
-                (contract) =>
-                    contract.validateTimeoutCalldataPostedProof.staticCall(
-                        proof,
-                        dispute
-                    ),
-                (isValid) => !isValid
-            );
+            const isValid =
+                await this.stateChannelManagerContract.validateTimeoutCalldataPostedProof.staticCall(
+                    proof,
+                    dispute
+                );
             if (isValid) {
                 this.disputeFraudProofService.storeTimeoutCalldataPosted(
                     dispute,
@@ -1145,30 +1131,13 @@ export default class DisputeValidationService {
         );
     }
 
-    // ── Local-first checks ────────────────────────────────────────────────
-    // Each check runs on the local diamond; only the answer that would make this
-    // node act against the disputer is confirmed on-chain (see preferLocal).
-    // While chain reads are proven, the chain answers each check alone.
-
-    private localFirst<T>(
-        read: (contract: StateChannelManagerInterface) => Promise<T>,
-        acceptLocal: (answer: T) => boolean
-    ): Promise<T> {
-        return preferLocal(
-            () => read(this.diamondStateMachine.localDiamondContract),
-            () => read(this.stateChannelManagerContract),
-            acceptLocal,
-            () => isChainProven(this.stateChannelManagerContract)
-        );
-    }
+    // ── Chain checks ──────────────────────────────────────────────────────
 
     private isAuditingDataOmissionAllowed(
         dispute: DisputeStruct
     ): Promise<boolean> {
-        return this.localFirst(
-            (contract) =>
-                contract.isAuditingDataOmissionAllowed.staticCall(dispute),
-            (isAllowed) => isAllowed
+        return this.stateChannelManagerContract.isAuditingDataOmissionAllowed.staticCall(
+            dispute
         );
     }
 
@@ -1176,13 +1145,9 @@ export default class DisputeValidationService {
         dispute: DisputeStruct,
         genesisStateSnapshotData: SnapshotDataStruct
     ): Promise<boolean> {
-        return this.localFirst(
-            (contract) =>
-                contract.isCorrectLatestState.staticCall(
-                    dispute,
-                    genesisStateSnapshotData
-                ),
-            (isCorrect) => isCorrect
+        return this.stateChannelManagerContract.isCorrectLatestState.staticCall(
+            dispute,
+            genesisStateSnapshotData
         );
     }
 
@@ -1213,24 +1178,18 @@ export default class DisputeValidationService {
         snapshotData: SnapshotDataStruct,
         encodedStateMachineState: BytesLike
     ): Promise<boolean> {
-        return this.localFirst(
-            (contract) =>
-                contract.verifyBalanceInvariantCheckSnapshot.staticCall(
-                    channelId,
-                    snapshotData,
-                    encodedStateMachineState
-                ),
-            (isValid) => isValid
+        return this.stateChannelManagerContract.verifyBalanceInvariantCheckSnapshot.staticCall(
+            channelId,
+            snapshotData,
+            encodedStateMachineState
         );
     }
 
     private isDisputeInboundHashValid(
         dispute: DisputeStruct
     ): Promise<boolean> {
-        return this.localFirst(
-            (contract) =>
-                contract.isDisputeInboundHashValid.staticCall(dispute),
-            (isValid) => isValid
+        return this.stateChannelManagerContract.isDisputeInboundHashValid.staticCall(
+            dispute
         );
     }
 

@@ -4,9 +4,7 @@ import type {
     ObservableRead,
     MirrorReadFault,
     MirrorReadObservation,
-    MirrorReleaseOrder,
-    MirrorService,
-    MirrorUpdate
+    MirrorService
 } from "./MirrorService";
 import ANetworkRpcMethods from "@/rpc/network/ANetworkRpcMethods";
 import type NetworkTransport from "@/transport/NetworkTransport";
@@ -34,14 +32,6 @@ export class MirrorRpcMethods extends ANetworkRpcMethods<MirrorService> {
         return true;
     }
 
-    public failNextLocalRead(
-        read: ObservableRead,
-        fault: MirrorReadFault
-    ): boolean {
-        this.service.failNextLocalRead(read, fault);
-        return true;
-    }
-
     public failNextChainRead(
         read: ObservableRead,
         fault: MirrorReadFault
@@ -55,31 +45,6 @@ export class MirrorRpcMethods extends ANetworkRpcMethods<MirrorService> {
         event: MirrorChainEvent
     ): Promise<number> {
         return this.service.serveChainReadsBefore(read, event);
-    }
-
-    public failNextUpdate(update: MirrorUpdate): boolean {
-        this.service.failNextUpdate(update);
-        return true;
-    }
-
-    public holdUpdates(update: MirrorUpdate): boolean {
-        this.service.holdUpdates(update);
-        return true;
-    }
-
-    public getHeldUpdateCount(update: MirrorUpdate): number {
-        return this.service.heldUpdateCount(update);
-    }
-
-    public releaseUpdates(
-        update: MirrorUpdate,
-        order: MirrorReleaseOrder
-    ): Promise<number> {
-        return this.service.releaseUpdates(update, order);
-    }
-
-    public discardUpdates(update: MirrorUpdate): number {
-        return this.service.discardUpdates(update);
     }
 }
 

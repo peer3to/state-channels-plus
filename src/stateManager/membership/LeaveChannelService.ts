@@ -197,14 +197,6 @@ export default class LeaveChannelService {
             return;
         const hash = StateSnapshot.from(snapshot).hash;
         if (sm.storage.stateSnapshots.getStateSnapshotByHash(hash)) return;
-        // an older snapshot the mirror already replaced decides nothing: a
-        // local read spares the chain reads below
-        const mirrored = StateSnapshot.from(
-            await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                sm.channelId
-            )
-        );
-        if (mirrored.hash !== hash) return;
         if (await sm.membershipService.isSignerOnChain()) return;
         this.logger.warn(
             "Removed by a snapshot this peer never installed: leaving",

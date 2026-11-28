@@ -212,7 +212,7 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
     /** Participants slashed on-chain for this channel. */
     public async getOnChainSlashedParticipants(): Promise<string[]> {
         const sm = this.service.sm;
-        return await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
+        return await sm.stateChannelManagerContract.getOnChainSlashedParticipants(
             sm.channelId
         );
     }
@@ -458,25 +458,13 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         forkId: ForkId
     ): Promise<string[]> {
         const windows =
-            await this.service.sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
+            await this.service.sm.stateChannelManagerContract.getDisputeWindows(
                 this.service.sm.channelId,
                 [forkId]
             );
         const window = windows[0];
         if (!window) return [];
         return window.evidence.disputeCommitments.map(String);
-    }
-
-    /** Reduced fork the local diamond records for `forkId`'s window (zero hash when unreduced). */
-    public async getLocalDisputeWindowReducedForkId(
-        forkId: ForkId
-    ): Promise<ForkId> {
-        const [window] =
-            await this.service.sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
-                this.service.sm.channelId,
-                [forkId]
-            );
-        return window.reducedResult.forkId as ForkId;
     }
 
     /** Encoded (`Type.StateSnapshot`) snapshot with `snapshotHash`, or null. */
@@ -650,12 +638,12 @@ export class QueryRpcMethods extends ANetworkRpcMethods<QueryService> {
         return Clock.getTimeInSeconds();
     }
 
-    /** The peer's local-diamond state snapshot, encoded (`Type.StateSnapshot`). */
-    public async getLocalStateSnapshotStruct(): Promise<{
+    /** The state snapshot the peer reads from the chain through its own provider, encoded (`Type.StateSnapshot`). */
+    public async getChainStateSnapshotStruct(): Promise<{
         encodedSnapshot: string;
     }> {
         const snapshot =
-            await this.service.sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
+            await this.service.sm.stateChannelManagerContract.getStateSnapshot(
                 this.service.sm.channelId
             );
         return {

@@ -525,21 +525,6 @@ export class DisputeService extends ANetworkRpcService<DisputeRpcMethods> {
         return true;
     }
 
-    /** Both sources the audit's inbound-hash check consults, read separately. */
-    async probeDisputeInboundHashSources(
-        encodedDispute: string
-    ): Promise<{ local: boolean; rpc: boolean }> {
-        const dispute = Codec.decode(encodedDispute, Type.Dispute);
-        return {
-            local: await this.sm.diamondStateMachine.localDiamondContract.isDisputeInboundHashValid.staticCall(
-                dispute
-            ),
-            rpc: await this.sm.stateChannelManagerContract.isDisputeInboundHashValid.staticCall(
-                dispute
-            )
-        };
-    }
-
     /** Run the real dispute audit; project verdict + the stored fraud proof. */
     async runDisputeValidation(
         encodedDispute: string,

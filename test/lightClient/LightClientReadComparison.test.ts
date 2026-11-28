@@ -1,10 +1,10 @@
 // @distributed-requires: lightClient
 import { REVERT_ERROR_CODE } from "@/evm/p2pRuntime/rpcNodes/lightClient/LocalReadParser";
 import { LightClientProviderFixture } from "@test/fixtures/lightClient/LightClientProviderFixture";
+import { numberStorageInterface } from "@test/fixtures/lightClient/LightClientProxyRecords";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { Contract, Interface, toBeHex } from "ethers";
-import { ethers } from "hardhat";
 
 const DIFFERENT_ANSWER =
     "Light client answered a read otherwise than the RPC node at the same block";
@@ -22,11 +22,6 @@ describe("Light client read comparison", function () {
         await fixture?.stop();
         fixture = undefined;
     });
-
-    async function numberStorageInterface() {
-        return (await ethers.getContractFactory("SimpleNumberStorage"))
-            .interface;
-    }
 
     it("asks the node each read it answers at the block that proved it, and finds them alike, a revert included", async function () {
         fixture = await LightClientProviderFixture.start({

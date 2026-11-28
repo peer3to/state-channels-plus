@@ -44,3 +44,6 @@ fetch proofs and does not cover how the state root is obtained.
 - `throws on an odd partial key whose padding is not zero`: UNIT-TEST-STPROOF-1-K1CTJZ.P18
 - `throws on a branch that has no child`: UNIT-TEST-STPROOF-1-K1CTJZ.P19
 - `throws on a value length nothing can hold`: UNIT-TEST-STPROOF-1-K1CTJZ.P20
+- `reads from nodes already keyed by their hash what a proof of the same nodes reads`: UNIT-TEST-STPROOF-1-K1CTJZ.P25
+- `finds a node only under the hash its caller keyed it by: it does not hash nodes already keyed`: UNIT-TEST-STPROOF-1-K1CTJZ.P26
+- `reuses a proof it is given and builds one from the nodes it is given`: UNIT-TEST-STPROOF-1-K1CTJZ.P27

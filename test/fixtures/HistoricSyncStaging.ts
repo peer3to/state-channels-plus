@@ -201,6 +201,9 @@ export async function stageOutboundAroundAnchor(
         (await chainSnapshot(h)).hash,
         "the first exit snapshot stays the chain anchor"
     ).to.equal(anchor.hash);
+    // the held post is parked before it is handed out: a release before then
+    // restores the send and the post is mined without waiting for its block
+    await heldPost.waitUntilHeld();
     return {
         forkId: h.activeForkId!,
         anchor,
@@ -208,65 +211,4 @@ export async function stageOutboundAroundAnchor(
         heldLeaver: heldLeaver.index,
         heldPost
     };
-}
-
-/**
- * `stageOutboundAroundAnchor`, then the held exit post lands: the chain anchor
- * and the remaining peers' local diamonds move to the second exit's snapshot.
- * Returns the chain block just before that post, where the chain still holds
- * the first exit's anchor.
- */
-export async function stageAnchorAdvancedPastFirstExit(
-    h: MathPeerTestHarness,
-    options: { finalBlocks: number }
-) {
-    const staged = await stageOutboundAroundAnchor(h, options);
-    await staged.heldPost.waitUntilHeld();
-    expect(await staged.heldPost.release()).to.equal(null);
-    await waitFor(
-        async () =>
-            (await chainSnapshot(h)).latestOutboundMessageBlockHeight === 2,
-        h.event.protocolEventTimeoutMs()
-    );
-    const posts = await h.channelManager.queryFilter(
-        h.channelManager.filters.StateSnapshotUpdated(h.channelId)
-    );
-    const blockBeforePost = posts.at(-1)!.blockNumber - 1;
-    for (const index of staged.remaining)
-        await waitFor(
-            async () =>
-                (await h.execOnHost(
-                    h.getPeer(index),
-                    async (sm, args) =>
-                        Number(
-                            (
-                                await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                                    args.channelId
-                                )
-                            ).snapshotData.latestOutboundMessageBlockHeight
-                        ),
-                    { channelId: h.channelId }
-                )) === 2,
-            h.event.protocolEventTimeoutMs()
-        );
-    return { ...staged, blockBeforePost };
-}
-
-/** The latest outbound block height of `peer`'s local diamond snapshot. */
-export async function localDiamondOutboundHeight(
-    h: MathPeerTestHarness,
-    peer: { index: number }
-): Promise<number> {
-    return await h.execOnHost(
-        h.getPeer(peer.index),
-        async (sm, args) =>
-            Number(
-                (
-                    await sm.diamondStateMachine.localDiamondContract.getStateSnapshot(
-                        args.channelId
-                    )
-                ).snapshotData.latestOutboundMessageBlockHeight
-            ),
-        { channelId: h.channelId }
-    );
 }

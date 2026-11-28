@@ -29,3 +29,4 @@ Connection lifecycle of one endpoint
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P11` — a socket's unsubscribe answered after destroy: no unhandled rejection
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P12` — a socket's unsubscribe answered with an error by a live node: no unhandled rejection, reads continue
 - [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P13` — a socket's `eth_subscribe` cancelled by the provider's destroy right after a log subscription: no unhandled rejection
+- [x] `UNIT-TEST-RPC-NODE-1-VTXH1M.P14` — the chain id is asked once per connection, by its socket; the network stays known while the node is down

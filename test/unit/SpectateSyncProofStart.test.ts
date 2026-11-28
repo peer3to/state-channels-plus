@@ -3,8 +3,6 @@ import StateSnapshot from "@/models/StateSnapshot";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import {
     forgedOutboundBlock,
-    localDiamondOutboundHeight,
-    stageAnchorAdvancedPastFirstExit,
     stageAnchoredSyncPayload,
     stageOutboundAroundAnchor
 } from "@test/fixtures/HistoricSyncStaging";
@@ -17,7 +15,7 @@ import {
     storedConfirmations
 } from "@test/fixtures/ProofOwnerStaging";
 import {
-    applyAfterMissedTopUp,
+    applyAfterConsumedTopUp,
     withHeldFreshRequester,
     holdCanonicalProofWalk,
     applyOnFreshRequester,
@@ -89,7 +87,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         });
     });
 
-    it("U26: a participant requester whose local finalized state verifies the proof → accepted at that tier, the local diamond and chain walks never run", async function () {
+    it("U26: a participant requester whose local finalized state verifies the proof → accepted at that tier, the chain walk never runs", async function () {
         const h = TestSession.getHarness();
         const { forkId, requester, payload, latestHeight } =
             await stageAnchoredSyncPayload(h);
@@ -105,7 +103,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         ]);
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.answers).to.include(true);
+        expect(outcome.walks!.trustedStart.chain.answers).to.include(true);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.reads).to.equal(0);
     });
@@ -129,12 +127,12 @@ describe("Unit: SpectateService sync proof verification order", function () {
         expect(outcome.rejections).to.deep.equal([
             "latest-fork outbound blocks invalid"
         ]);
-        expect(outcome.walks!.trustedStart.local.answers).to.include(true);
+        expect(outcome.walks!.trustedStart.chain.answers).to.include(true);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.reads).to.equal(0);
     });
 
-    it("U27: a fresh requester with no local finalized state → the tier is skipped, the local diamond walk accepts, the chain walk never runs", async function () {
+    it("U27: a fresh requester with no local finalized state → the tier is skipped, the chain walk accepts, the mirror is never read", async function () {
         const h = TestSession.getHarness();
         const { forkId, payload, latestHeight } =
             await stageAnchoredSyncPayload(h);
@@ -149,12 +147,12 @@ describe("Unit: SpectateService sync proof verification order", function () {
         ]);
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
-        expect(outcome.walks!.storage.local.answers).to.deep.equal([true]);
-        expect(outcome.walks!.storage.chain.reads).to.equal(0);
+        expect(outcome.walks!.trustedStart.chain.reads).to.equal(0);
+        expect(outcome.walks!.storage.local.reads).to.equal(0);
+        expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
     });
 
-    it("U27: chain reads proven on a fresh requester with no local finalized state → the local diamond's walk is skipped, the chain walk accepts, the sync completes", async function () {
+    it("U27: chain reads proven (light client) on a fresh requester with no local finalized state → the chain walk accepts, the sync completes", async function () {
         const h = TestSession.getHarness();
         const { forkId, payload, latestHeight } =
             await stageAnchoredSyncPayload(h);
@@ -178,7 +176,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         ]);
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
+        expect(outcome.walks!.trustedStart.chain.reads).to.equal(0);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
     });
@@ -204,7 +202,8 @@ describe("Unit: SpectateService sync proof verification order", function () {
                 threw: ""
             });
             expect(outcome.rejections).to.deep.equal([]);
-            expect(outcome.walks!.storage.local.answers).to.deep.equal([true]);
+            expect(outcome.walks!.storage.local.reads).to.equal(0);
+            expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
             const served = outcome.served!.outboundMessageBlocksOfTheLatestFork;
             expect(served).to.have.length(1);
             expect(served[0].previousBlockHash).to.equal(anchorHead);
@@ -248,79 +247,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
         });
     });
 
-    it("a fresh requester whose RPC node lags the second exit's snapshot that its local diamond already applied → the sync waits for the responder's chain block and ends with no verdict: no rejection, the responder not blacklisted, the local diamond keeps the newer anchor", async function () {
-        const h = TestSession.getHarness();
-        const { forkId, remaining, blockBeforePost } =
-            await stageAnchorAdvancedPastFirstExit(h, { finalBlocks: 2 });
-        await withHeldFreshRequester(h, async (requester) => {
-            await waitFor(
-                async () =>
-                    (await localDiamondOutboundHeight(h, requester)) === 2,
-                h.event.protocolEventTimeoutMs()
-            );
-            const lag = await h.rpcStub.lagChainView(requester.index, {
-                holdLogs: false,
-                atBlock: blockBeforePost
-            });
-            const outcome = await applyPayloads(
-                h,
-                requester,
-                String(forkId),
-                ["served"],
-                { responderIndex: remaining[0] }
-            ).finally(lag.release);
-            expect(outcome.outcomes[0]).to.deep.include({
-                accepted: false,
-                threw: ""
-            });
-            expect(outcome.rejections).to.deep.equal([]);
-            expect(outcome.blacklisted).to.equal(false);
-            expect(await localDiamondOutboundHeight(h, requester)).to.equal(2);
-        });
-    });
-
-    it("a peer whose RPC node lags the second exit's snapshot that its local diamond already applied refreshes its opened status → the lagged read does not move its local anchor back", async function () {
-        const h = TestSession.getHarness();
-        const { blockBeforePost } = await stageAnchorAdvancedPastFirstExit(h, {
-            finalBlocks: 2
-        });
-        await withHeldFreshRequester(h, async (requester) => {
-            await waitFor(
-                async () =>
-                    (await localDiamondOutboundHeight(h, requester)) === 2,
-                h.event.protocolEventTimeoutMs()
-            );
-            const lag = await h.rpcStub.lagChainView(requester.index, {
-                holdLogs: false,
-                atBlock: blockBeforePost
-            });
-            await h
-                .execOnHost(requester, async (sm) => {
-                    await sm.refreshOpenedStatusFromChain();
-                })
-                .finally(lag.release);
-
-            expect(await localDiamondOutboundHeight(h, requester)).to.equal(2);
-        });
-    });
-
-    it("U28: a fresh requester whose local diamond missed a consumed top-up → the local diamond walk is false, the chain walk accepts, the sync completes", async function () {
-        const h = TestSession.getHarness();
-        const outcome = await applyAfterMissedTopUp(h, {
-            observeWalks: true
-        });
-        expect(outcome.outcomes[0]).to.deep.include({
-            accepted: true,
-            threw: ""
-        });
-        expect(outcome.rejections).to.deep.equal([]);
-        expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
-        expect(outcome.walks!.storage.local.answers).to.deep.equal([false]);
-        expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
-    });
-
-    it("U27: a participant requester whose local finalized walk returns false (an authentic block conflicting with its local final point) → the local diamond walk accepts the proof, the chain walk never runs; replaying the conflicting block then rejects the sync", async function () {
+    it("U27: a participant requester whose local finalized walk returns false (an authentic block conflicting with its local final point) → the chain walk accepts the proof; replaying the conflicting block then rejects the sync", async function () {
         const h = TestSession.getHarness();
         const { forkId, anchor, payload, latestHeight } =
             await stageAnchoredHistory(h, { blocksAfter: 2 });
@@ -340,9 +267,9 @@ describe("Unit: SpectateService sync proof verification order", function () {
             [conflicting],
             { observeWalks: true }
         );
-        expect(outcome.walks!.trustedStart.local.answers).to.include(false);
-        expect(outcome.walks!.storage.local.answers).to.deep.equal([true]);
-        expect(outcome.walks!.storage.chain.reads).to.equal(0);
+        expect(outcome.walks!.trustedStart.chain.answers).to.include(false);
+        expect(outcome.walks!.storage.local.reads).to.equal(0);
+        expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
         expect(outcome.outcomes).to.deep.equal([
             { accepted: false, threw: "", head: latestHeight }
         ]);
@@ -352,9 +279,9 @@ describe("Unit: SpectateService sync proof verification order", function () {
         expect(outcome.blacklisted).to.equal(true);
     });
 
-    it("U28: a requester whose local diamond holds no anchor (the chain's anchor follows a top-up its mirror missed) → the local diamond walks from the genesis and fails, the chain's anchor walk accepts, the sync completes", async function () {
+    it("U28: a requester whose own finalized state is below a newer chain anchor (the anchor follows a top-up it consumed) → the chain's anchor walk accepts, the sync completes", async function () {
         const h = TestSession.getHarness();
-        const outcome = await applyAfterMissedTopUp(h, {
+        const outcome = await applyAfterConsumedTopUp(h, {
             anchor: "afterTopUp",
             observeWalks: true
         });
@@ -364,29 +291,11 @@ describe("Unit: SpectateService sync proof verification order", function () {
         });
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
-        expect(outcome.walks!.storage.local.answers).to.deep.equal([false]);
+        expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
     });
 
-    it("U28: a requester whose local diamond anchor walk returns false (it missed a top-up consumed after the anchor) → the chain's anchor walk accepts, the sync completes", async function () {
-        const h = TestSession.getHarness();
-        const outcome = await applyAfterMissedTopUp(h, {
-            anchor: "beforeTopUp",
-            observeWalks: true
-        });
-        expect(outcome.outcomes[0]).to.deep.include({
-            accepted: true,
-            threw: ""
-        });
-        expect(outcome.rejections).to.deep.equal([]);
-        expect(outcome.blacklisted).to.equal(false);
-        expect(outcome.walks!.trustedStart.local.reads).to.equal(0);
-        expect(outcome.walks!.storage.local.answers).to.deep.equal([false]);
-        expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
-    });
-
-    it("U29: every tier walks a proof whose last block does not decode as false → rejected, milestones invalid, responder blacklisted", async function () {
+    it("U29: the local finalized and chain tiers walk a proof whose last block does not decode as false → rejected, milestones invalid, responder blacklisted", async function () {
         const h = TestSession.getHarness();
         const { forkId, requester, payload } =
             await stageAnchoredSyncPayload(h);
@@ -406,12 +315,12 @@ describe("Unit: SpectateService sync proof verification order", function () {
         expect(outcome.outcomes[0].threw).to.equal("");
         expect(outcome.rejections).to.deep.equal(["milestones invalid"]);
         expect(outcome.blacklisted).to.equal(true);
-        expect(outcome.walks!.trustedStart.local.answers).to.include(false);
-        expect(outcome.walks!.storage.local.answers).to.deep.equal([false]);
+        expect(outcome.walks!.trustedStart.chain.answers).to.include(false);
+        expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.answers).to.deep.equal([false]);
     });
 
-    it("U30: the local finalized tier's walk fails at the executor connection → the sync throws it, no later tier walks, nobody is rejected or blacklisted", async function () {
+    it("U30: the local finalized tier's chain walk meets a refused RPC connection → the sync throws it, no later tier walks, nobody is rejected or blacklisted", async function () {
         const h = TestSession.getHarness();
         const { forkId, requester, payload } =
             await stageAnchoredSyncPayload(h);
@@ -423,40 +332,22 @@ describe("Unit: SpectateService sync proof verification order", function () {
             { walkFault: "localFinalized" }
         );
         expect(outcome.outcomes[0].accepted).to.equal(false);
-        expect(outcome.outcomes[0].threw).to.contain("Malformed RPC request");
-        expect(outcome.walks!.trustedStart.local.failures).to.have.length(1);
+        expect(outcome.outcomes[0].threw).to.contain("ECONNREFUSED");
+        expect(outcome.walks!.trustedStart.chain.failures).to.have.length(1);
         expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.reads).to.equal(0);
         expect(outcome.rejections).to.deep.equal([]);
         expect(outcome.blacklisted).to.equal(false);
     });
 
-    it("U30: the local diamond tier's walk fails at the executor connection → the sync throws it, the chain never walks, nothing is installed, nobody is rejected or blacklisted", async function () {
-        const h = TestSession.getHarness();
-        const { forkId, payload } = await stageAnchoredSyncPayload(h);
-        const outcome = await applyOnFreshRequester(
-            h,
-            String(forkId),
-            [payload],
-            { walkFault: "localDiamond" }
-        );
-        expect(outcome.outcomes[0].accepted).to.equal(false);
-        expect(outcome.outcomes[0].threw).to.contain("Malformed RPC request");
-        expect(outcome.walks!.storage.local.failures).to.have.length(1);
-        expect(outcome.walks!.storage.chain.reads).to.equal(0);
-        expect(outcome.head).to.equal(-1);
-        expect(outcome.rejections).to.deep.equal([]);
-        expect(outcome.blacklisted).to.equal(false);
-    });
-
     it("U30: the chain tier's walk meets a refused RPC connection → the sync throws it, nothing is installed, nobody is rejected or blacklisted", async function () {
         const h = TestSession.getHarness();
-        const outcome = await applyAfterMissedTopUp(h, {
+        const outcome = await applyAfterConsumedTopUp(h, {
             walkFault: "chain"
         });
         expect(outcome.outcomes[0].accepted).to.equal(false);
         expect(outcome.outcomes[0].threw).to.contain("ECONNREFUSED");
-        expect(outcome.walks!.storage.local.answers).to.deep.equal([false]);
+        expect(outcome.walks!.storage.local.reads).to.equal(0);
         expect(outcome.walks!.storage.chain.failures).to.have.length(1);
         expect(outcome.head).to.equal(-1);
         expect(outcome.rejections).to.deep.equal([]);
@@ -636,7 +527,7 @@ describe("Unit: SpectateService sync proof verification order", function () {
             ]);
             expect(outcome.rejections).to.deep.equal(["milestones invalid"]);
             expect(outcome.blacklisted).to.equal(true);
-            expect(outcome.walks!.storage.local.answers).to.deep.equal([false]);
+            expect(outcome.walks!.storage.local.reads).to.equal(0);
             expect(outcome.walks!.storage.chain.answers).to.deep.equal([false]);
             expect(outcome.blocks).to.deep.equal(
                 [0, 1, ...proofBlockHeights].map(() => null)

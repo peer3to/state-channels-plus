@@ -1,5 +1,4 @@
 import Clock from "@/Clock";
-import { replicatedStateSource } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { StateSnapshot } from "@/models";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
 import { JoinCollectionError } from "@/rpc/network/services/joinChannel/JoinCollectionError";
@@ -565,7 +564,7 @@ export default class ChannelJoinService {
 
     private async checkJoinLanded(join: JoinRecord): Promise<void> {
         const sm = this.stateManager;
-        if (await sm.membershipService.isSignerPendingInMirror())
+        if (await sm.membershipService.isSignerPendingAtLastPendingSetChange())
             return this.onJoinObserved(join);
         // a timer that fires early (or a check run before the deadline)
         // waits for the deadline again rather than ending the check
@@ -574,7 +573,7 @@ export default class ChannelJoinService {
         const { timestamp } = await Clock.getBlockchainTime();
         if (timestamp <= join.authorizationDeadline)
             return this.armUntilJoinExpiry(join);
-        // listed on chain: the mirror shows the join next
+        // listed on chain: the last handled inbound event shows the join next
         if (await sm.membershipService.isSignerOnChain()) return;
         if (!this.isActive(join)) return;
         this.logger.info(
@@ -634,12 +633,10 @@ export default class ChannelJoinService {
             return sm.membershipService.dropMembership();
         }
         const disputeWindowCreationTimestamp = Number(
-            await (
-                await replicatedStateSource(
-                    sm.diamondStateMachine.localDiamondContract,
-                    sm.stateChannelManagerContract
-                )
-            ).getDisputeWindowCreationTimestamp(sm.channelId, forkId)
+            await sm.stateChannelManagerContract.getDisputeWindowCreationTimestamp(
+                sm.channelId,
+                forkId
+            )
         );
         if (
             disputeWindowCreationTimestamp !== 0 &&

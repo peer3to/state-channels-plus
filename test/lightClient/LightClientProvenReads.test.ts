@@ -1,17 +1,15 @@
 // @distributed-requires: lightClient
 import type { SubstrateHeaderJson } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
-import type { ProvenBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/AProvenStateReader";
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
-import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
-import FrontierProvenStateReader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader";
 import {
     contractStorageKey,
     systemAccountKey
 } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
-import type { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
-import { LightClientNodeFixture } from "@test/fixtures/lightClient/LightClientNodeFixture";
+import {
+    LightClientNodeFixture,
+    readerOver
+} from "@test/fixtures/lightClient/LightClientNodeFixture";
 import { rejectionOf } from "@test/utils/rejectionOf";
-import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { toBeHex, ZeroHash } from "ethers";
 
@@ -19,13 +17,6 @@ const SLOT_ONE = toBeHex(1, 32);
 const SLOT_TWO = toBeHex(2, 32);
 /** A Frontier digest log: a consensus item of the engine `fron`. */
 const FRONTIER_LOG = "0x0466726f6e";
-
-function readerOver(socket: JsonRpcSocket): FrontierProvenStateReader {
-    return new FrontierProvenStateReader(
-        (method, params) => socket.request(method, params),
-        PEER3_CHAIN_CONSTANTS
-    );
-}
 
 describe("Light client proven reads", function () {
     let node: LightClientNodeFixture | undefined;
@@ -35,18 +26,6 @@ describe("Light client proven reads", function () {
         node = undefined;
     });
 
-    /** The node's best block, once its Ethereum RPC serves that block too. */
-    async function servedHead(
-        fixture: LightClientNodeFixture,
-        reader: FrontierProvenStateReader
-    ): Promise<ProvenBlock> {
-        const head = await reader.head();
-        await waitFor(
-            async () => (await fixture.provider.getBlock(head.number)) !== null
-        );
-        return head;
-    }
-
     it("reads slots, code and accounts proven at the node's best block, equal to the node's own answers", async function () {
         node = await LightClientNodeFixture.start();
         const contract = await node.deployStoreAndLogContract();
@@ -55,7 +34,7 @@ describe("Light client proven reads", function () {
         const socket = await node.connectToNode();
         const reader = readerOver(socket);
 
-        const head = await servedHead(node, reader);
+        const head = await node.servedHead(reader);
         const [ofContract, ofSender] = await reader.read(head, [
             {
                 address: contract,
@@ -368,7 +347,7 @@ describe("Light client proven reads", function () {
         await node.store(contract, SLOT_ONE, toBeHex(0xaaaa, 32));
         const { proxy, socket } = await node.connectToNodeThroughProxy();
         const reader = readerOver(socket);
-        const head = await servedHead(node, reader);
+        const head = await node.servedHead(reader);
         const read = [contract, node.senderAddress].map((address) => ({
             address,
             slots: [],
@@ -416,7 +395,7 @@ describe("Light client proven reads", function () {
         const contract = await node.deployStoreAndLogContract();
         const socket = await node.connectToNode();
         const reader = readerOver(socket);
-        const head = await servedHead(node, reader);
+        const head = await node.servedHead(reader);
 
         expect(
             await reader.read(head, [

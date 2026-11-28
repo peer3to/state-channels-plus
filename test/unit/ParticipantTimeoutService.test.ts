@@ -16,7 +16,6 @@ import {
     checkTimeoutAfterDeadline,
     assertProvenChainReadFailureRearms,
     skipHeightOnObserver,
-    stageChainOnlyWindowBeforeTimeoutDeadline,
     stageWindowBeforeTimeoutDeadline
 } from "@test/fixtures/EarlyTimeoutRetryStaging";
 import { assertTimeoutCheckWaitsForSyncInstall } from "@test/fixtures/PinnedSyncStaging";
@@ -968,23 +967,6 @@ describe("Unit: ParticipantTimeoutService", function () {
     });
 
     describe("chain reads proven", function () {
-        it("a dispute window on the chain that the local diamond has not applied, opened before the deadline → no plain timeout", async function () {
-            const h = TestSession.getHarness();
-            const staged = await stageChainOnlyWindowBeforeTimeoutDeadline(h);
-            try {
-                expect(await staged.localWindowOpenedAt()).to.equal(0);
-                await checkTimeoutAfterDeadline(h, staged.observer.index, {
-                    forkId: staged.forkId,
-                    height: staged.height,
-                    writer: staged.writer.address,
-                    isForced: false
-                });
-                expect(await staged.recorder.submissions()).to.deep.equal([]);
-            } finally {
-                await staged.restore();
-            }
-        });
-
         it("a failed chain read of the dispute window's creation time re-arms the check and the timeout still commits", async function () {
             await assertProvenChainReadFailureRearms(
                 TestSession.getHarness(),

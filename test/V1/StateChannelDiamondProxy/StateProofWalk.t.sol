@@ -65,6 +65,31 @@ contract StateProofWalkTest is StateProofStaging {
         assertFalse(_diamond().isStateProofBelowOnChainAnchor(dispute), "not below the anchor");
     }
 
+    // ---- trusted start: the same walk from a snapshot the caller trusts (verifyMilestonesFromTrustedStart) ----
+
+    function test_trustedStart_fromTheStoredAnchorMatchesTheWalkFromTheChainsAnchor() public {
+        StateSnapshot memory anchor = _seedAnchor(50);
+        MilestoneProof[] memory milestones = _one(_run(50, 1, keccak256("block 49"), _signers(ALICE_KEY)));
+        ProofWalkInput memory input =
+            ProofWalkInput(CHANNEL, forkId, StateProof(milestones), genesisData, _entries(anchor));
+        ProofWalkResult memory fromTrusted = _diamond().verifyMilestonesFromTrustedStart(input, anchor);
+        _assertFinalized(fromTrusted, anchor, 1);
+        assertEq(keccak256(abi.encode(fromTrusted)), keccak256(abi.encode(_walk(milestones, _entries(anchor)))));
+    }
+
+    function test_trustedStart_fromASnapshotTheChainDoesNotHoldFinalizesThatSnapshot() public view {
+        StateSnapshot memory trusted = _snapshot(50, genesisData.participants);
+        MilestoneProof[] memory milestones = _one(_run(50, 1, keccak256("block 49"), _signers(ALICE_KEY)));
+        ProofWalkInput memory input =
+            ProofWalkInput(CHANNEL, forkId, StateProof(milestones), genesisData, _entries(trusted));
+        _assertFinalized(_diamond().verifyMilestonesFromTrustedStart(input, trusted), trusted, 1);
+        ProofWalkResult memory fromChain = _walk(milestones, _entries(trusted));
+        assertTrue(
+            keccak256(abi.encode(fromChain.finalizedSnapshot)) != keccak256(abi.encode(trusted)),
+            "the chain's own start does not finalize it"
+        );
+    }
+
     // ---- U05-U07: genesis-linked block zero and the block-zero anchor ----
 
     function test_U05_unfinalizedGenesisZeroAloneReplaysFromZero() public view {

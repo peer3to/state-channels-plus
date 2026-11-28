@@ -4,7 +4,6 @@ import AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 
 import Clock from "@/Clock";
-import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { Block, StateSnapshot } from "@/models";
 import type StateManager from "@/stateManager";
 import Storage from "@/storage";
@@ -23,7 +22,6 @@ import {
     Signature
 } from "@/types/types";
 import { Codec, hash, Logger, Type } from "@/utils";
-import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import type { MessageBlockStruct } from "@typechain-types/contracts/V1/types/DataTypes";
@@ -217,46 +215,32 @@ export default class ValidationService {
     }
 
     /**
-     * The per-block ingest gate: this peer disputed the fork, or the local
-     * diamond holds its dispute. It reads the local diamond even while chain
-     * reads are proven: it runs for every block under the state mutex, where
-     * a chain read could wait a block time or fail and lose the block.
+     * The per-block ingest gate: this peer disputed the fork, or the chain
+     * holds its dispute. That chain read runs under the state mutex, so it can
+     * wait for the light client's block, and its failure propagates to the
+     * caller.
      */
     public async isDisputedFork(
         forkId: ForkId,
         channelId: ChannelId
     ): Promise<boolean> {
-        return (
-            this.storage.disputes.didIDispute(forkId) ||
-            (await this.diamondStateMachine.localDiamondContract.isForkDisputed(
-                channelId,
-                forkId
-            ))
+        if (this.storage.disputes.didIDispute(forkId)) return true;
+        return await this.stateChannelManagerContract.isForkDisputed(
+            channelId,
+            forkId
         );
     }
 
     /**
-     * Whether the chain holds a dispute of `forkId`. The local diamond's
-     * "disputed" stands; its "not disputed" may lag, so the chain confirms
-     * it, and while chain reads are proven the chain answers alone.
+     * Whether the chain holds a dispute of `forkId`.
      */
     public async isForkDisputedOnChain(
         channelId: ChannelId,
         forkId: ForkId
     ): Promise<boolean> {
-        return await preferLocal(
-            () =>
-                this.diamondStateMachine.localDiamondContract.isForkDisputed(
-                    channelId,
-                    forkId
-                ),
-            () =>
-                this.stateChannelManagerContract.isForkDisputed(
-                    channelId,
-                    forkId
-                ),
-            (isDisputed) => isDisputed,
-            () => isChainProven(this.stateChannelManagerContract)
+        return await this.stateChannelManagerContract.isForkDisputed(
+            channelId,
+            forkId
         );
     }
 
@@ -400,14 +384,25 @@ export default class ValidationService {
         );
     }
 
+    /**
+     * When the block's calldata was posted on chain, against its deadline.
+     * Without a stored on-chain timestamp it is recovered from the chain only
+     * when `recoversFromChain`: for a block received within agreementTime a
+     * post found now is never too late, so the read cannot change its verdict.
+     */
     private async getOnChainPostTiming(
         previousTimestamp: Timestamp,
-        block: Block
+        block: Block,
+        recoversFromChain: boolean
     ): Promise<OnChainPostTiming> {
         const storedOnChainTimestamp = this.getStoredOnChainTimestamp(block);
         if (storedOnChainTimestamp !== undefined) {
             block.onChainTimestamp = storedOnChainTimestamp;
         }
+
+        // a block received in time is not posted too late: nothing to fetch
+        if (block.onChainTimestamp === undefined && !recoversFromChain)
+            return OnChainPostTiming.NOT_POSTED;
 
         // if doesn't have on-chain timestamp try and fetch it
         if (block.onChainTimestamp === undefined) {
@@ -517,6 +512,31 @@ export default class ValidationService {
     }
 
     /**
+     * Recover the previous block's calldata from the chain and, when it
+     * matches, record its on-chain timestamp on the block and in storage.
+     */
+    private async recoverPreviousOnChainTimestamp(
+        previousBlock: Block
+    ): Promise<void> {
+        await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
+            previousBlock.forkId,
+            previousBlock.height,
+            previousBlock.author
+        );
+
+        const recoveredPreviousCalldata =
+            this.storage.blockCalldata.getMatchingBlockCalldata(previousBlock);
+        if (recoveredPreviousCalldata) {
+            previousBlock.onChainTimestamp =
+                recoveredPreviousCalldata.onChainTimestamp;
+            this.storage.blocks.setOnChainTimestamp(
+                previousBlock.hash,
+                recoveredPreviousCalldata.onChainTimestamp
+            );
+        }
+    }
+
+    /**
      * Ensure block.timestamp is within the allowed
      * p2pTime window of the previous timestamp, optionally
      * fetching a better on-chain timestamp if needed.
@@ -535,6 +555,22 @@ export default class ValidationService {
         let previousStateSnapshot: StateSnapshot | undefined;
         // previous block or snapshot
         const previous = this.previousOf(entry);
+        // The chain reads the previous block's on-chain timestamp from the
+        // proof (0 = unknown): when the chain holds that block's calldata
+        // but this peer has not recovered it, recover it before asking.
+        if (
+            previous.block &&
+            previous.block.onChainTimestamp === undefined &&
+            (
+                await this.stateChannelManagerContract.getBlockCallDataCommitment(
+                    block.channelId,
+                    previous.block.forkId,
+                    previous.block.height,
+                    previous.block.author
+                )
+            ).found
+        )
+            await this.recoverPreviousOnChainTimestamp(previous.block);
         if (previous.block) {
             previousBlock = previous.block;
             previousTimestamp = previousBlock.getRelevantTimestamp(
@@ -551,7 +587,7 @@ export default class ValidationService {
         const invalidTimestampProof =
             this.fraudProofService.buildInvalidTimestampProof(block, previous);
         const isValidTimestamp =
-            !(await this.diamondStateMachine.localDiamondContract.hasInvalidTimestamp.staticCall(
+            !(await this.stateChannelManagerContract.hasInvalidTimestamp.staticCall(
                 invalidTimestampProof
             ));
 
@@ -584,24 +620,7 @@ export default class ValidationService {
             }
 
             // Try on-chain query to schedule validation for the previous block.
-            await this.eventSyncService.tryRecoverBlockCalldataAndScheduleValidation(
-                previousBlock.forkId,
-                previousBlock.height,
-                previousBlock.author
-            );
-
-            const recoveredPreviousCalldata =
-                this.storage.blockCalldata.getMatchingBlockCalldata(
-                    previousBlock
-                );
-            if (recoveredPreviousCalldata) {
-                previousBlock.onChainTimestamp =
-                    recoveredPreviousCalldata.onChainTimestamp;
-                this.storage.blocks.setOnChainTimestamp(
-                    previousBlock.hash,
-                    recoveredPreviousCalldata.onChainTimestamp
-                );
-            }
+            await this.recoverPreviousOnChainTimestamp(previousBlock);
 
             const previousBlockOnChainTimestamp =
                 this.storage.blocks.getBlock(previousBlock.hash)
@@ -638,10 +657,15 @@ export default class ValidationService {
             return this.validateTimeLogic(entry, strategy);
         }
 
+        const receivedWithinAgreementTime =
+            Math.abs(nowSeconds - block.timestamp) <=
+            this.timeConfig.agreementTime;
+
         // OBJECTIVE: Check if block was posted too late on-chain
         const onChainPostTiming = await this.getOnChainPostTiming(
             previousTimestamp,
-            block
+            block,
+            !receivedWithinAgreementTime
         );
         if (onChainPostTiming === OnChainPostTiming.TOO_LATE) {
             // Block posted too late - create InvalidTimestamp fraud proof
@@ -679,10 +703,6 @@ export default class ValidationService {
         // verified synchronization proof is proven history, not a live
         // arrival: the agreement-window judgment does not apply to it, or a
         // suffix older than one window could never be applied.
-        const receivedWithinAgreementTime =
-            Math.abs(nowSeconds - block.timestamp) <=
-            this.timeConfig.agreementTime;
-
         if (!receivedWithinAgreementTime) {
             return await strategy.subjectiveInvalidTimestampDetected(block);
         }

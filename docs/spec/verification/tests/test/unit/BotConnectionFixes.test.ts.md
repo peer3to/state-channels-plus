@@ -150,4 +150,3 @@ is timed out.
 - `U76: blocks committed during the agreementTime grace after the joiner observes its join are not counted; counting starts at the first block after it`: INV-TJOIN-2-H7JSQM.T2.P6, UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P40
 - `U130: a leave of another topic during the handoff → the join still rematches on its own topic`: REQ-LOBBY-9-N894C0.T1.P27
 - `U130: a new join after a leave during the handoff → its failed negotiation rematches again`: REQ-LOBBY-9-N894C0.T1.P29
-- `a force-join deadline with chain reads proven reads the expired window's creation time from the chain while its local diamond lacks the window → the join is retained without submitting`: UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P118, REQ-MIRROR-5-N5SZC9.T4.P17

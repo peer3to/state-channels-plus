@@ -225,21 +225,21 @@ describe("JoinChannel signature requests", function () {
         await assertJoinSignatureDeadlineBoundary(TestSession.getHarness());
     });
 
-    it("collects every countersignature while a threshold member's chain RPC holds every read: the member answers from its local clock and mirror", async function () {
+    it("collects every countersignature while a threshold member's chain reads count as proven: the member reads its threshold membership from the chain, not its mirror", async function () {
         const h = TestSession.getHarness();
-        const heldIndex = 1;
-        await h.lifecycle.start(2, 0, {
-            rpcNodeProxiesByPeer: { [heldIndex]: 1 }
-        });
+        const provenIndex = 1;
+        await h.lifecycle.start(2, 0);
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
         const thresholdSet = await h
             .control(h.getPeer(0))
             .query.getOnChainThresholdSet()
             .request();
-        const [proxy] = h.getRpcNodeProxies(heldIndex);
-        const releases = ["eth_call", "eth_getBlockByNumber"].map((method) =>
-            proxy.holdRequests(method)
+        const proven = h.control(h.getPeer(provenIndex));
+        await proven.stub.stubProvenChainReads().request();
+        const reads = await h.mirror.observe(
+            h.getPeer(provenIndex).index,
+            "getOnChainThresholdSet"
         );
         try {
             const chainTime = await Clock.getBlockchainTime();
@@ -263,28 +263,28 @@ describe("JoinChannel signature requests", function () {
                     )
                 )
             ).to.have.deep.members(thresholdSet);
+            const { local, chain } = await reads.observation();
+            expect(local.reads).to.equal(0);
+            expect(chain.reads).to.be.greaterThan(0);
         } finally {
-            for (const release of releases) release();
+            await reads.restore();
+            await proven.stub.restoreProvenChainReads().request();
         }
     });
 
-    it("collects every countersignature while a threshold member's chain RPC holds every read and its chain reads count as proven: the member still answers from its local clock and mirror", async function () {
+    it("collects every countersignature: the member reads its threshold membership from the chain, not its mirror", async function () {
         const h = TestSession.getHarness();
-        const heldIndex = 1;
-        await h.lifecycle.start(2, 0, {
-            rpcNodeProxiesByPeer: { [heldIndex]: 1 }
-        });
+        const memberIndex = 1;
+        await h.lifecycle.start(2, 0);
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
         const thresholdSet = await h
             .control(h.getPeer(0))
             .query.getOnChainThresholdSet()
             .request();
-        const held = h.control(h.getPeer(heldIndex));
-        await held.stub.stubProvenChainReads().request();
-        const [proxy] = h.getRpcNodeProxies(heldIndex);
-        const releases = ["eth_call", "eth_getBlockByNumber"].map((method) =>
-            proxy.holdRequests(method)
+        const reads = await h.mirror.observe(
+            h.getPeer(memberIndex).index,
+            "getOnChainThresholdSet"
         );
         try {
             const chainTime = await Clock.getBlockchainTime();
@@ -308,38 +308,46 @@ describe("JoinChannel signature requests", function () {
                     )
                 )
             ).to.have.deep.members(thresholdSet);
+            const { local, chain } = await reads.observation();
+            expect(local.reads).to.equal(0);
+            expect(chain.reads).to.be.greaterThan(0);
         } finally {
-            for (const release of releases) release();
-            await held.stub.restoreProvenChainReads().request();
+            await reads.restore();
         }
     });
 
-    it("signs for a threshold member whose mirror misses its own pending join: the chain lists it", async function () {
+    it("signs for a threshold member whose local view does not list its own pending join yet: the chain lists it", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
         const member = await h.join.addSpectatorWait();
         const joiner = await h.join.addSpectatorWait();
         await h.assert.sync.peersInSyncWait();
-        const held = await h.mirror.holdUpdates(
-            member.index,
-            "onInboundMessagesProcessed"
-        );
+        // the member's event handler handles no inbound log: its local view
+        // never sees its own join
+        const held = await h.rpcStub.holdInboundMessageEvents(member.index);
         try {
-            await h.join.forceInboundJoinWait({ participant: member.address });
-            // the member's mirror missed its join
+            await h.join.forceInboundJoinWait({
+                participant: member.address,
+                observePeerIndices: [0, 1, joiner.index]
+            });
             await waitFor(async () => (await held.heldCount()) > 0);
+            // its stored inbound head is not the chain's: it never saw the
+            // block of its own join
+            const chainInboundHead = (
+                await h.channelManager.getChannelBalance(h.channelId)
+            ).latestInboundMessageBlockHash;
+            expect(
+                await h
+                    .control(h.getPeer(member.index))
+                    .query.getLatestInboundMessageHash()
+                    .request()
+            ).to.not.equal(chainInboundHead);
             const listing = await h.execOnHost(
                 h.getPeer(member.index),
                 async (sm) => ({
-                    mirror: (
-                        await sm.diamondStateMachine.localDiamondContract.getOnChainThresholdSet(
-                            sm.channelId
-                        )
-                    ).map(String),
                     chain: await sm.membershipService.getOnChainThresholdSet()
                 })
             );
-            expect(listing.mirror).to.not.include(member.address);
             expect(listing.chain).to.include(member.address);
 
             const chainTime = await Clock.getBlockchainTime();

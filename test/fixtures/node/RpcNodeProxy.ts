@@ -33,11 +33,42 @@ const HARDHAT_REVERT_ERROR: JsonRpcErrorObject = {
 /** One request a client sent through the proxy. */
 export type ForwardedRequest = { method: JsonRpcMethod; params: unknown };
 
+/**
+ * A request or notification as a proxy recorded it: `sequence` orders it
+ * among every proxy's records in this process, `at` is when it passed (Unix
+ * milliseconds).
+ */
+export type RecordedMessage = ForwardedRequest & {
+    sequence: number;
+    at: number;
+    /**
+     * How the node answered a request: `"result"`, or the error it replied
+     * with. Unset while unanswered, for a reply the proxy made itself, and for
+     * notifications.
+     */
+    reply?: "result" | { error: unknown };
+};
+
+/** The sequence number of the next record, shared by every proxy in this process. */
+let nextRecordSequence = 0;
+
+function record(method: JsonRpcMethod, params: unknown): RecordedMessage {
+    return { method, params, sequence: nextRecordSequence++, at: Date.now() };
+}
+
+/** The bytes of one WebSocket frame. */
+function frameBytes(data: RawData): number {
+    if (Array.isArray(data))
+        return data.reduce((total, chunk) => total + chunk.length, 0);
+    return data instanceof ArrayBuffer ? data.byteLength : data.length;
+}
+
 /** The method, id and params of a JSON-RPC request, or the id of a response. */
 function readJsonRpcFrame(data: RawData): {
     method?: JsonRpcMethod;
     id?: JsonRpcId;
     params?: unknown;
+    error?: unknown;
 } {
     try {
         const message: unknown = JSON.parse(data.toString());
@@ -52,7 +83,8 @@ function readJsonRpcFrame(data: RawData): {
                 ? message.id
                 : undefined;
         const params = "params" in message ? message.params : undefined;
-        return { method, id, params };
+        const error = "error" in message ? message.error : undefined;
+        return { method, id, params, error };
     } catch {
         // not JSON: forwarded unread
         return {};
@@ -113,9 +145,13 @@ export class RpcNodeProxy {
     /** JSON-RPC methods clients sent to this proxy, in order, forwarded or not. */
     readonly forwardedMethods: JsonRpcMethod[] = [];
     /** The requests behind {@link forwardedMethods}, with their params. */
-    readonly forwardedRequests: ForwardedRequest[] = [];
+    readonly forwardedRequests: RecordedMessage[] = [];
     /** The notifications of the node this proxy sent on to a client, in order. */
-    readonly sentNotifications: ForwardedRequest[] = [];
+    readonly sentNotifications: RecordedMessage[] = [];
+    /** Bytes of every request frame clients sent to this proxy. */
+    requestBytes = 0;
+    /** Bytes of every reply frame the node sent back, notifications not included. */
+    replyBytes = 0;
     private readonly server: WebSocketServer;
     private readonly upstreamUrl: string;
     /** Each client socket and its upstream socket to the node. */
@@ -448,6 +484,8 @@ export class RpcNodeProxy {
         this.links.set(client, upstream);
         // client frames sent before the node socket opened
         const pending: { data: RawData; isBinary: boolean }[] = [];
+        // the requests on this link the node has not answered yet, by their id
+        const awaitingReply = new Map<JsonRpcId, RecordedMessage>();
         const end = () => {
             this.links.delete(client);
             client.terminate();
@@ -460,9 +498,12 @@ export class RpcNodeProxy {
         };
         client.on("message", (data, isBinary) => {
             const { method, id, params } = readJsonRpcFrame(data);
+            this.requestBytes += frameBytes(data);
             if (method) {
                 this.forwardedMethods.push(method);
-                this.forwardedRequests.push({ method, params });
+                const recorded = record(method, params);
+                this.forwardedRequests.push(recorded);
+                if (id !== undefined) awaitingReply.set(id, recorded);
             }
             // recorded, then lost: the path to the node is dead
             if (this.isBlackholed) return;
@@ -549,7 +590,13 @@ export class RpcNodeProxy {
         });
         upstream.on("message", (data, isBinary) => {
             if (this.isBlackholed) return;
-            const { method, id, params } = readJsonRpcFrame(data);
+            const { method, id, params, error } = readJsonRpcFrame(data);
+            const answered =
+                !method && id !== undefined ? awaitingReply.get(id) : undefined;
+            if (answered && id !== undefined) {
+                awaitingReply.delete(id);
+                answered.reply = error === undefined ? "result" : { error };
+            }
             if (!method && id !== undefined && this.swallowedReplyIds.has(id))
                 return;
             const send = () => {
@@ -568,7 +615,7 @@ export class RpcNodeProxy {
                 const sentParams = change ? change(params) : params;
                 if (sentParams === undefined) return;
                 const deliver = () => {
-                    this.sentNotifications.push({ method, params: sentParams });
+                    this.sentNotifications.push(record(method, sentParams));
                     if (change && client.readyState === WebSocket.OPEN)
                         client.send(
                             JSON.stringify({
@@ -584,6 +631,7 @@ export class RpcNodeProxy {
                 else deliver();
                 return;
             }
+            this.replyBytes += frameBytes(data);
             const heldReplies =
                 !method && id !== undefined
                     ? this.heldReplyIds.get(id)

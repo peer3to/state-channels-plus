@@ -98,7 +98,7 @@ async function holdComputedSuccessor(
                     args.forkId
                 ))!
             );
-            return (await sm.reductionManager.computeReductionLocally(
+            return (await sm.reductionManager.computeReduction(
                 args.forkId,
                 disputes
             ))!.reducedForkId;
@@ -443,202 +443,6 @@ export async function expectSyncPayloadAboveRequestedHeightWhileAhead(
         responderLatest!.height,
         "sync payload must prove the responder's latest height"
     );
-}
-
-export async function assertSyncWindowReadRace(
-    h: MathPeerTestHarness,
-    landOnChain: boolean
-): Promise<void> {
-    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
-    const source = h.getPeer(0);
-    const observer = h.getPeer(2);
-    const events = await h.rpcStub.holdReductionRace(observer.index);
-    await h
-        .control(observer)
-        .stub.holdSyncWindowPersistence("afterPersist")
-        .request();
-    const sync = h.execOnHost(
-        observer,
-        async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService.requestSync(
-                args.source,
-                sm.channelId,
-                args.forkId
-            ),
-        { source: source.address, forkId: sourceForkId }
-    );
-    try {
-        await waitFor(
-            async () =>
-                (await h
-                    .control(observer)
-                    .stub.getSyncWindowPersistenceEntered()
-                    .request()) === 1
-        );
-        if (landOnChain) {
-            await h.control(source).stub.restoreReductionTasks(true).request();
-            await waitFor(async () =>
-                h.execOnHost(
-                    source,
-                    async (sm, { forkId }) =>
-                        sm.stateChannelManagerContract.isReduceChallengePeriodExpired(
-                            sm.channelId,
-                            forkId
-                        ),
-                    { forkId: sourceForkId }
-                )
-            );
-            expect(
-                await h.execOnHost(
-                    observer,
-                    async (sm, { forkId }) =>
-                        (
-                            await sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
-                                sm.channelId,
-                                [forkId]
-                            )
-                        )[0].reducedResult.forkId,
-                    { forkId: sourceForkId }
-                )
-            ).to.equal(ZeroHash);
-        } else {
-            // Finish a real competing verification after the outer call refreshes
-            // its chain window, so the shared VM contains a local-only reduction.
-            const innerAccepted = await h.execOnHost(
-                observer,
-                async (sm, args) => {
-                    const request = {
-                        channelId: sm.channelId,
-                        forkId: args.forkId
-                    };
-                    const response =
-                        await sm.p2pManager.remoteRpc.spectateService
-                            .onSpectateRequest(request)
-                            .request(args.source);
-                    if (!("encodedSyncPayload" in response)) {
-                        throw new Error("responder still syncing");
-                    }
-                    return sm.p2pManager.localRpc.spectateService
-                        .applySyncResponse(
-                            args.source,
-                            request,
-                            response.encodedSyncPayload
-                        )
-                        .then(({ synced }) => synced);
-                },
-                { source: source.address, forkId: sourceForkId }
-            );
-            expect(innerAccepted).to.equal(true);
-        }
-        expect(
-            await h.execOnHost(
-                source,
-                async (sm, { forkId }) =>
-                    sm.stateChannelManagerContract.isReduceChallengePeriodExpired(
-                        sm.channelId,
-                        forkId
-                    ),
-                { forkId: sourceForkId }
-            )
-        ).to.equal(landOnChain);
-        await h.control(observer).stub.releaseSyncWindowPersistence().request();
-        expect(await sync).to.equal(SyncResult.Synced);
-        expect(
-            await h
-                .control(observer)
-                .query.isBlacklisted(source.address)
-                .request()
-        ).to.equal(false);
-        expect(
-            await h
-                .control(source)
-                .query.isBlacklisted(observer.address)
-                .request()
-        ).to.equal(false);
-    } finally {
-        await h.control(observer).stub.releaseSyncWindowPersistence().request();
-        await sync;
-        await events.release({ replayEvents: false, keepTasksHeld: true });
-    }
-}
-
-export async function assertConcurrentSyncWindowOverwrite(
-    h: MathPeerTestHarness
-) {
-    const { sourceForkId } = await h.scenario.stageReducibleDisputedFork();
-    const observer = h.getPeer(2);
-    const sources = [h.getPeer(0), h.getPeer(3)];
-    const events = await h.rpcStub.holdReductionRace(observer.index);
-    const stub = h.control(observer).stub;
-    await stub.holdSyncReductionResult().request();
-    const first = h.execOnHost(
-        observer,
-        async (sm, args) =>
-            sm.p2pManager.localRpc.spectateService.requestSync(
-                args.source,
-                sm.channelId,
-                args.forkId
-            ),
-        { source: sources[0].address, forkId: sourceForkId }
-    );
-    let second: Promise<SyncResult> | undefined;
-    try {
-        await waitFor(
-            async () => (await stub.getSyncReductionEntered().request()) === 1
-        );
-        await stub.holdSyncWindowPersistence("afterPersist").request();
-        second = h.execOnHost(
-            observer,
-            async (sm, args) =>
-                sm.p2pManager.localRpc.spectateService.requestSync(
-                    args.source,
-                    sm.channelId,
-                    args.forkId
-                ),
-            { source: sources[1].address, forkId: sourceForkId }
-        );
-        await waitFor(
-            async () =>
-                (await stub.getSyncWindowPersistenceEntered().request()) === 1
-        );
-        expect(
-            await h.execOnHost(
-                observer,
-                async (sm, args) =>
-                    (
-                        await sm.diamondStateMachine.localDiamondContract.getDisputeWindows(
-                            sm.channelId,
-                            [args.forkId]
-                        )
-                    )[0].reducedResult.forkId,
-                { forkId: sourceForkId }
-            )
-        ).to.equal(ZeroHash);
-        await stub.releaseSyncReductionResult().request();
-        expect(await first).to.equal(SyncResult.Synced);
-        await stub.releaseSyncWindowPersistence().request();
-        expect(await second).to.equal(SyncResult.Synced);
-        for (const source of sources) {
-            expect(
-                await h
-                    .control(observer)
-                    .query.isBlacklisted(source.address)
-                    .request()
-            ).to.equal(false);
-            expect(
-                await h
-                    .control(source)
-                    .query.isBlacklisted(observer.address)
-                    .request()
-            ).to.equal(false);
-        }
-    } finally {
-        await stub.releaseSyncReductionResult().request();
-        await stub.releaseSyncWindowPersistence().request();
-        await first;
-        await second;
-        await events.release({ replayEvents: false, keepTasksHeld: true });
-    }
 }
 
 export async function assertBatchedSyncFinality(h: MathPeerTestHarness) {
@@ -1023,8 +827,10 @@ export async function applySyncPayload(
  * Peers 0-3 hold their own reductions and count incoming sync requests;
  * peer 1 opens a valid self-removal dispute; a fresh joiner connects inside
  * the kill period, or after it when `connectAfterKillPeriod`. Returns once
- * the joiner applied its first answer and waits for the reduction, and the
- * kill period has ended with the window still unreduced on chain: the
+ * the joiner applied its first answer (inside the kill period it then waits
+ * for the reduction; after it, the chain's reduction call proves the window
+ * and it syncs), and the kill period has ended with the window still
+ * unreduced on chain: the
  * joiner's state then, its responder, and handles to reduce the window and
  * read the outcome. `holdInitialSyncDeadline` never runs the joiner's
  * initial-sync deadline, for a case about what happens before it: a slow

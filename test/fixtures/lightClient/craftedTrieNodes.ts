@@ -82,6 +82,9 @@ export const craftedTrieNodes = {
     bigIntegerLength: "0x4003"
 };
 
+/** A key any one-node trie of these tests holds its entry under. */
+export const ANY_TRIE_KEY = "0x0a";
+
 /**
  * Reads `key` from the trie whose root node is `rootNode`, with `otherNodes`
  * as the rest of the proof.
@@ -94,6 +97,22 @@ export function readCraftedTrie(
     return new SubstrateTrieProof([rootNode, ...otherNodes]).read(
         rootOfSingleNodeTrie(rootNode),
         key
+    );
+}
+
+/** `length` bytes that differ from their neighbours, so a misread length shows. */
+export function patternedValue(length: number): string {
+    return hexlify(Uint8Array.from({ length }, (_, index) => index % 251));
+}
+
+/** What a trie of one leaf that holds `value` under `ANY_TRIE_KEY` reads for it. */
+export function readFromSingleLeaf(value: string) {
+    const node = singleLeafNode(ANY_TRIE_KEY, value);
+    return hexlify(
+        new SubstrateTrieProof([node]).read(
+            rootOfSingleNodeTrie(node),
+            ANY_TRIE_KEY
+        )!
     );
 }
 

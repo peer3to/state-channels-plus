@@ -20,7 +20,7 @@ import { expect } from "chai";
  * error; it stores no counter and sends no kill and no dispute.
  */
 describe("E2E: fatal dispute audits", function () {
-    it("E21: a verification read that throws during a live audit is fatal: no fraud proof, no kill, no dispute, and no fallback to the chain read", async function () {
+    it("E21: a chain verification read that throws during a live audit is fatal: no fraud proof, no kill, no dispute", async function () {
         const h = TestSession.getHarness();
         await h.scenario.preDisputeSetup({ peerCount: 4 });
         const forkId = h.activeForkId!;
@@ -39,8 +39,8 @@ describe("E2E: fatal dispute audits", function () {
             auditor.index,
             "isCorrectLatestState"
         );
-        // the executor connection fails the read without a verdict
-        await h.mirror.failNextLocalRead(
+        // the RPC connection fails the read without a verdict
+        await h.mirror.failNextChainRead(
             auditor.index,
             "isCorrectLatestState",
             "transport"
@@ -49,16 +49,16 @@ describe("E2E: fatal dispute audits", function () {
         // without the fault, the auditor would kill this dispute
         const spam = await postSpamDispute(h, 1);
         await waitFor(
-            async () => (await reads.observation()).local.failures.length > 0,
+            async () => (await reads.observation()).chain.failures.length > 0,
             h.event.protocolEventTimeoutMs()
         );
         await TestSession.settleDetached({
-            expectedErrorIncludes: "Malformed RPC request"
+            expectedErrorIncludes: "ECONNREFUSED"
         });
 
         const { local, chain } = await reads.observation();
-        expect(local.failures).to.have.length(1);
-        expect(chain.reads).to.equal(0);
+        expect(chain.failures).to.have.length(1);
+        expect(local.reads).to.equal(0);
         expect(
             await h.control(auditor).query.getDisputeFraudProofTypes().request()
         ).to.deep.equal([]);
@@ -113,7 +113,7 @@ describe("E2E: fatal dispute audits", function () {
         expect(lastMilestoneFirstBlock(opening).height).to.equal(height - 1);
 
         await waitFor(
-            async () => (await reads.observation()).local.reads > 0,
+            async () => (await reads.observation()).chain.reads > 0,
             h.event.protocolEventTimeoutMs()
         );
         await TestSession.settleDetached({
@@ -175,7 +175,7 @@ describe("E2E: fatal dispute audits", function () {
         expect(lastMilestoneFirstBlock(opening).hash).to.equal(authored.hash);
 
         await waitFor(
-            async () => (await reads.observation()).local.reads > 0,
+            async () => (await reads.observation()).chain.reads > 0,
             h.event.protocolEventTimeoutMs()
         );
         await TestSession.settleDetached({

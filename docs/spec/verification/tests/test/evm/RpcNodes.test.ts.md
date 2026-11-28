@@ -67,6 +67,10 @@ starting with "Chain access requires a reachable WebSocket provider at ", naming
 scheme and host and without the secret, and, after every proxy is restored, no request at any proxy
 within the one-second window (every node was destroyed).
 
+Two cases count `eth_chainId` at the proxies: one node asks once per connection, again after a cut
+and restore, and answers its network while cut; a provider over two nodes adds no request to each
+socket's own detection.
+
 ## Tests
 
 - `doubles the reconnect delay from 250 ms up to a 5 s bound`: UNIT-TEST-RPC-NODE-1-VTXH1M.P1, REQ-CHAINOBS-3-N137ZP.T1.P1
@@ -98,6 +102,7 @@ within the one-second window (every node was destroyed).
 - `starts the runtime chain context while one of its nodes is unreachable`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P5, REQ-CHAINOBS-1-5JTHY8.T1.P5
 - `fails runtime startup when no node is reachable and names every node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P6, REQ-CHAINOBS-1-5JTHY8.T1.P6
 - `refuses a node that serves another chain than the first connected node`: UNIT-TEST-RPC-NODE-1-VTXH1M.P8, REQ-CHAINOBS-1-5JTHY8.T1.P8
+- `asks its node for the chain id once per connection and knows it while the node is down`: UNIT-TEST-RPC-NODE-1-VTXH1M.P14
 - `marks a node whose socket stops answering as dead and fails the read over`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P12, REQ-CHAINOBS-3-N137ZP.T1.P6
 - `fails a transaction over to the next node when the first drops after forwarding it`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P7, REQ-CHAINOBS-2-2NCSQ3.T1.P7
 - `resolves a transaction wait from a node socket's block event after a reconnect`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P8, REQ-CHAINOBS-3-N137ZP.T1.P9
@@ -106,6 +111,7 @@ within the one-second window (every node was destroyed).
 - `rejects a read waiting for a node when reconnects stop`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P11, REQ-CHAINOBS-2-2NCSQ3.T1.P10
 - `rejects the exported chain access startup when no node is reachable and destroys every node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P13, REQ-CHAINOBS-4-JA3YF8.T1.P7
 - `starts the runtime chain context without waiting for a silent node`: UNIT-TEST-RUNTIME-CHAIN-URLS-1-VRHEVW.P7, REQ-CHAINOBS-1-5JTHY8.T1.P7
+- `asks no node for the chain id beyond each node socket's own detection`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P34
 - `logs nothing and leaves no unhandled rejection when destroyed during a connection attempt`: UNIT-TEST-RPC-NODE-1-VTXH1M.P9
 - `keeps a node whose heartbeat is answered with an error`: UNIT-TEST-RPC-NODE-1-VTXH1M.P10, REQ-CHAINOBS-3-N137ZP.T1.P16
 - `passes the first node's error answer to the caller without failing over`: UNIT-TEST-MULTI-RPC-1-SVGGZ5.P13, REQ-CHAINOBS-2-2NCSQ3.T1.P11

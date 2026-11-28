@@ -56,8 +56,8 @@ no `onAbort` and no host error. The status is awaited, not read once: the leave 
 `onLeftChannel` when the membership drops, before the channel-close handler sets `NOT_OPENED`, and the
 specification does not order the two.
 The pruned-history join case starts three founders, lands a top-up that a block consumes, and posts a
-same-fork snapshot with no dispute window whose inbound head is the top-up. The chain and each honest
-founder's local diamond then hold the head and no longer hold the open's inbound block below it. The next writer is then
+same-fork snapshot with no dispute window whose inbound head is the top-up. The chain then holds the head and no longer holds the open's inbound block below it, as each honest
+founder reads it. The next writer is then
 disconnected, and the timeout reduction moves the two honest founders to a new fork. Each founder's
 genesis snapshot of that fork carries the chain's inbound head hash and height. Once the chain's
 snapshot is on the reduced fork, a spectator joins

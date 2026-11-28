@@ -173,16 +173,6 @@ export default class ReductionManager {
         return this.reductionComputationService.compute(forkId, disputes);
     }
 
-    public computeReductionLocally(
-        forkId: ForkId,
-        disputes: DisputeStruct[]
-    ): Promise<ReductionComputation | undefined> {
-        return this.reductionComputationService.computeLocally(
-            forkId,
-            disputes
-        );
-    }
-
     public prepareReducedGenesis(
         computation: ReductionComputation,
         genesisTimestamp: Timestamp

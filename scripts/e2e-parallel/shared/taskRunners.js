@@ -20,8 +20,7 @@ const KNOWN_TASK_RUNNERS = new Set(Object.values(TASK_RUNNERS));
 
 // What a test file can name in `@distributed-requires` that is no runner: a
 // dependency of its tests that only some environments have. Light client tests
-// need a peer3 node with the light client endpoints; the runner image carries
-// zero-fee-node, but no worker protocol advertises the lightClient runner yet.
+// need a peer3 node binary with `--light-client`, which worker protocol 16 provides.
 const TASK_REQUIREMENTS = {
     LIGHT_CLIENT: "lightClient"
 };

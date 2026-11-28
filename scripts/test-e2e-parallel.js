@@ -46,6 +46,7 @@ const {
 } = require("./e2e-parallel/local/scheduler");
 const {
     provisionSlots,
+    readGivenSlot,
     teardownInfra,
     startGasMonitor
 } = require("../test/utils/nodeInfra");
@@ -203,6 +204,19 @@ function orderTasks(mochaTasks, forgeTasks, browserTasks) {
 function resolveSlotCount(tasks, requestedSlotCount, maxSlots) {
     if (!tasks.some(requiresChainSlot)) return 0;
     return Math.min(requestedSlotCount, maxSlots);
+}
+
+/**
+ * The local run's slots: the one `useSlot` names, started and kept by the
+ * caller (nothing to tear down, its cache dir kept), or `slotCount` new ones.
+ */
+async function resolveLocalSlots(useSlot, slotCount, logDir) {
+    if (useSlot !== undefined && slotCount > 0)
+        return {
+            slots: [readGivenSlot(useSlot)],
+            infra: { nodes: [], discoveries: [] }
+        };
+    return provisionSlots(slotCount, logDir);
 }
 
 function resolveDistributedExecutionProfile(profile, slotCount) {
@@ -608,12 +622,18 @@ async function main(options = {}) {
             }
         }
 
-        const provisioned = await provisionSlots(slotCount, logDir);
+        const provisioned = await resolveLocalSlots(
+            cli.useSlot,
+            slotCount,
+            logDir
+        );
         infra = provisioned.infra;
         const slots = provisioned.slots;
         if (slotCount > 0) {
             console.log(
-                `Provisioned ${slotCount} slot(s). Starting scheduler.`
+                cli.useSlot !== undefined
+                    ? `Using the given slot (node ${slots[0].nodeUrl}). Starting scheduler.`
+                    : `Provisioned ${slotCount} slot(s). Starting scheduler.`
             );
         }
 
@@ -701,5 +721,6 @@ module.exports = {
     resolveDistributedExecutionProfile,
     resolveDistributedOrchestratorKeyPair,
     resolveSlotCount,
+    resolveLocalSlots,
     main
 };

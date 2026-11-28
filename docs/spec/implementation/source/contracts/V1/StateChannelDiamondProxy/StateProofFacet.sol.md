@@ -54,3 +54,5 @@ Proof predicates
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P30` — Standalone milestone finality accepts the authentic block-zero control when its author is the entire supplied threshold set, returning the latest snapshot hash
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P84` — `isDisputeOutboundRunInvalid` judges a committed run whose block keeps its predecessor and height but carries a `MaxUint256` message balance invalid without reverting, so the counter kills the dispute.
 - [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P85` — `isDisputeOutboundRunInvalid` judges a committed run invalid without reverting when the latest state (signed only by its author) has its outbound head at an overflowing block right above the anchor, so the counter kills the dispute.
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P86` — `verifyMilestonesFromTrustedStart` called with the stored chain anchor as the trusted snapshot returns the same walk result as `verifyMilestones`
+- [x] `UNIT-TEST-STATE-PROOF-FACET-1-JSB4SR.P87` — `verifyMilestonesFromTrustedStart` called with a snapshot the chain does not hold starts the walk there and finalizes that snapshot

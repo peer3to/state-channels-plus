@@ -354,7 +354,7 @@ that holds for the worst case it can reach, and a test chain that enforces the l
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6)
 is implemented:
 [MembershipService](../implementation/source/src/stateManager/membership/MembershipService.ts.md)
-owns `isSignerPendingInMirror` (local-only pending observation for the force-join counters),
+owns `isSignerPendingAtLastPendingSetChange` (the pending observation for the force-join counters, pinned at the last handled pending-set event; formerly the mirror-only `isSignerPendingInMirror`),
 `isSignerPendingOnChain` (local-first pending lookup with chain confirmation on absence) and
 `isSignerOnChain` (direct-chain seated-plus-pending lookup).
 [ChannelJoinService](../implementation/source/src/stateManager/membership/ChannelJoinService.ts.md)
@@ -412,7 +412,7 @@ its transition replay requirement does not establish a bound on all reduction wo
 A local failure on a window the chain has not reduced is no verdict since
 [`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa); the verdict on a reduced window
 and the gas bound stay open.
-The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
+The local-mirror failure rule ([`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)) forbids turning local resource failures into verdicts.
 The sync failure rule ([`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)) separates invalid evidence from internal failures.
 
 **Evidence limit.** No valid served reduction was reproduced exhausting its local grant in this assessment,
@@ -978,7 +978,7 @@ caller at once with the disposal rejection; each operation's later outcome is dr
 
 ### FIND-RUNTIME-2-4B0D0Q
 
-**Defect:** _Open (2026-10-15); the disposal half resolved 2026-10-31._ Disposal is now a clean cut-off ([`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw)); the sender blame below stays open. Runtime disposal was not a clean cut-off, and block ingest blames the sender for a local failure. Observed 2026-10-15 on a live poker bot: bot Bob busted and posted his exit snapshot. The chain's `ChannelStorageCleared` made [`EventHandler.onChannelStorageCleared`](../implementation/source/src/eventHandlers/EventHandler.ts.md) reset Bob's eligibility cache. Alice's block confirmation arrived in that gap, so [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) started the eligibility refresh (chain reads and local EVM calls through [`MembershipService.resolveSourceEligibility`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) → `refreshOnChainEligibility` → [`EventSyncService.synchronizeChainMembership`](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)). Bob's leave completed and the poker client disposed the runtime. [`StateManager.stop`](../implementation/source/src/stateManager/StateManager.ts.md) → `BlockQueueManager.dispose` drains only `inFlight` (filled by `track`), and `ingestBlockConfirmation` is not tracked, so the root ([`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md), [`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) disposed the VM child under the running refresh → "Local contract transaction failed: Runtime child disposed". (2) The catch-all in `ingestBlockConfirmation` (`catch (error) { logger.error(...); return false; }`) turned that local failure into a sender verdict, and [`StateTransitionRpcMethods`](../implementation/source/src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts.md) blacklisted the honest Alice. The same catch-all blames the sender for any local failure (chain read, local EVM), contrary to [`REQ-GOSSIP-4-J5Z4DF.T1.P40`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p40) (a local mirror failure during the refresh is fatal) and the rule that internal failures are fatal; see also [`DEF-9-724SXP`](open-findings.md#def-9-724sxp) and [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw). Impact today: low. The blacklist lives only in memory and is not persisted, so Bob's next session starts with nobody blacklisted.
+**Defect:** _Open (2026-10-15); the disposal half resolved 2026-10-31._ Disposal is now a clean cut-off ([`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw)); the sender blame below stays open. Runtime disposal was not a clean cut-off, and block ingest blames the sender for a local failure. Observed 2026-10-15 on a live poker bot: bot Bob busted and posted his exit snapshot. The chain's `ChannelStorageCleared` made [`EventHandler.onChannelStorageCleared`](../implementation/source/src/eventHandlers/EventHandler.ts.md) reset Bob's eligibility cache. Alice's block confirmation arrived in that gap, so [`BlockQueueManager.ingestBlockConfirmation`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md) started the eligibility refresh (chain reads and local EVM calls through [`MembershipService.resolveSourceEligibility`](../implementation/source/src/stateManager/membership/MembershipService.ts.md) → `refreshOnChainEligibility` → [`EventSyncService.synchronizeChainMembership`](../implementation/source/src/stateManager/eventSync/EventSyncService.ts.md)). Bob's leave completed and the poker client disposed the runtime. [`StateManager.stop`](../implementation/source/src/stateManager/StateManager.ts.md) → `BlockQueueManager.dispose` drains only `inFlight` (filled by `track`), and `ingestBlockConfirmation` is not tracked, so the root ([`AInternalRpcRoot.disposeRoot`](../implementation/source/src/rpc/internal/AInternalRpcRoot.ts.md), [`P2pRuntimeHostRoot`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)) disposed the VM child under the running refresh → "Local contract transaction failed: Runtime child disposed". (2) The catch-all in `ingestBlockConfirmation` (`catch (error) { logger.error(...); return false; }`) turned that local failure into a sender verdict, and [`StateTransitionRpcMethods`](../implementation/source/src/rpc/network/services/stateTransition/StateTransitionRpcMethods.ts.md) blacklisted the honest Alice. The same catch-all blames the sender for any local failure (chain read, local EVM), contrary to the rule that a local mirror failure during the refresh is fatal (GOSSIP-4 P40, retired 2026-11-27 with the mirror; [`REQ-GOSSIP-4-J5Z4DF.T1.P46`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p46) keeps the rule for a recovered log) and the rule that internal failures are fatal; see also [`DEF-9-724SXP`](open-findings.md#def-9-724sxp) and [`FIND-ROOT-DISPOSAL-1-1ZDQAW`](open-findings.md#find-root-disposal-1-1zdqaw). Impact today: low. The blacklist lives only in memory and is not persisted, so Bob's next session starts with nobody blacklisted.
 
 **Proposed direction:** Design disposal as a hard cut-off of the process: first make sure persisted storage cannot be corrupted during disposal, then cut the network and RPC/chain connections, then shut the runtime down. After the cut-off nothing has lasting consequences, so internal components may fail as they stop; the part to design carefully is that unhandled and detached work (`DetachedPromises`, timeout tasks, in-flight ingest) cannot crash the top-level host process. Removing the ingest catch-all (local failures fatal, peer verdicts only from validation results, [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)) is part of the same design and is deferred with it. Deferred by Luka on 2026-10-15.
 
@@ -1106,7 +1106,7 @@ stores no inbound block.
 
 **Proposed direction:** None — fixed; covered by
 `test_openReplay_eitherOrder_storesTheGenesisInboundBlockOnlyThroughTheInboundEvent`
-([`UNIT-TEST-LOCAL-DIAMOND-1-PJE47M.P3`](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md#unit-test-local-diamond-1-pje47m)).
+(the mirror replication test, retired 2026-11-27 with the mirror).
 
 <a id="def-4-qb3kqm"></a>
 
@@ -1260,8 +1260,11 @@ node. The probe now asks only the peers that sent the block, not an author that 
 block before sending it, so an honest one can prove it; a replayer cannot, and takes a counted close
 ([`REQ-BLOCK-PIPE-4-CF52J6` (Recovery without bypass)](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6),
 [`BlockQueueManager`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md),
-[`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11)).
-Engineer decision (Luke, 2026-10-27).
+[`REQ-BLOCK-PIPE-4-CF52J6.T1.P10`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p10)).
+Engineer decision (Luke, 2026-10-27). Revised 2026-11-27: since the disputed-fork check reads the chain, a replayed block
+of a fork the chain still shows as disputed is dropped at ingest without a probe
+([`REQ-BLOCK-PIPE-4-CF52J6.T1.P11`](../specification/block-progression/block-processing.md#req-block-pipe-4-cf52j6.t1.p11));
+the probe above still runs once a later snapshot cleared the fork's dispute record.
 
 **Proposed direction:** None.
 
@@ -2198,7 +2201,7 @@ was rejected before ([`FIND-STORAGE-2-NK2XBF`](open-findings.md#find-storage-2-n
 
 **Fix:** a local recomputation that reverts on a window the chain has not reduced is no verdict; the
 sync waits for the chain's reduction, after which the recomputation returns the chain's result and
-nothing depends on the local inbound head ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)). Regressions: [`REQ-SYNC-4-AWHFPA.T1.P9`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p9), [`REQ-SYNC-4-AWHFPA.T1.P15`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p15), [`REQ-SYNC-4-AWHFPA.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p16).
+nothing depends on the local inbound head ([`REQ-SYNC-4-AWHFPA` (No verdict for a dispute window the chain has not reduced)](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa)). Since the mirror removal ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)) the recomputation is an `eth_call` of the chain's `reduceAndFinalize`, which reads the chain's inbound head, so a joiner past the kill period no longer waits; P9 now checks that it syncs at once. Regressions: [`REQ-SYNC-4-AWHFPA.T1.P9`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p9), [`REQ-SYNC-4-AWHFPA.T1.P15`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p15), [`REQ-SYNC-4-AWHFPA.T1.P16`](../specification/peer-communication/synchronization.md#req-sync-4-awhfpa.t1.p16).
 
 <a id="find-sync-4-kgp4kf"></a>
 
@@ -2327,8 +2330,8 @@ never moves back. The sync still checks from the fetched onChainSnapshot, after 
 node reaches the responder's `chainBlock`
 ([`FIND-SYNC-5-7W9TWW`](open-findings.md#find-sync-5-7w9tww)): a lagging node ends the sync with no
 verdict. `LocalDiamond` no longer applies a `(0, 0)` coordinate unconditionally: no caller is left.
-Tests: [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P130`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct)
-(the sync) and [`UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P131`](../implementation/source/src/rpc/network/services/spectate/SpectateService.ts.md#unit-test-spectate-service-1-sjbyct) (the opened-status refresh).
+Tests (retired 2026-11-27 with the mirror): the lagging-node sync test
+(the sync) and its opened-status variant (the opened-status refresh).
 
 **Remaining variants (code-traced, not executed):**
 
@@ -2942,6 +2945,36 @@ The protocol trusts every application contract to meet them.
 
 **Proposed direction:** Ship a reusable conformance suite an integrator runs against its own state
 machine, or record these as documented integrator obligations with review guidance.
+
+<a id="find-consumer-1-wp31n1"></a>
+
+### FIND-CONSUMER-1-WP31N1
+
+**Defect:** Open (2026-11-21). Any account can call the consumer adapter's `deposit` and `withdraw`
+directly through the manager.
+[`StateChannelManagerProxy`](../implementation/source/contracts/V1/StateChannelDiamondProxy/StateChannelManagerProxy.sol.md)
+sends every selector it does not route to the consumer facet by `delegatecall`, and
+[`AConsumerFacet`](../implementation/source/contracts/V1/StateChannelDiamondProxy/AConsumerFacet.sol.md)
+declares both hooks `external` with no `onlySelf`. The protocol's own path, `depositAssetsComposable`
+and `withdrawAssetsComposable`, is `onlySelf`; the direct path skips it, its bookkeeping and its
+events.
+[`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
+requires direct external access to be refused; its planned test
+[`REQ-ENFSM-2-G4HBKG.T1.P1`](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg.t1.p1)
+has no evidence. A throwaway Foundry test on 761be8b11, with the deposit-counting test consumer
+facet etched in, showed it: called from an unrelated address, `deposit` returned `true`, wrote the
+manager's storage and logged nothing, and `withdraw` returned `true`. `MathConsumerFacet` does
+nothing in either hook, so the example deployment loses nothing. An adapter that holds assets would
+pay out on a direct `withdraw`.
+
+**Proposed direction:** Refuse the adapter hooks at the manager unless the manager itself calls
+them, and add the test of
+[`REQ-ENFSM-2-G4HBKG.T1.P1`](../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg.t1.p1). Where the check lives (the proxy fallback, the
+abstract adapter, or each adapter) is the engineer's decision.
+
+**Fix in review (2026-11-22):** the engineer chose the proxy fallback. PR #614, against `dev`, refuses
+both hooks there unless the manager itself calls, adds the test, and resolves [`OQ-17-6Z5Q0J` (Consumer-facet functions are externally reachable)](../implementation/open-questions.md#oq-17-6z5q0j) on `dev`,
+which tracked the same defect. This finding closes when #614 merges and the stack takes it in.
 
 <a id="find-join-unopened-1-bn4qym"></a>
 

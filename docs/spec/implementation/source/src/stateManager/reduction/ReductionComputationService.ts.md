@@ -5,11 +5,12 @@
 ## Requirements
 
 - [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 
 ## UNIT-TEST-REDUCTION-COMPUTE-1-GNX0RP
 
-Mirrored compute
+Compute through the chain's reduction
 
 - Setup: Compute over permuted committed sets
 - Oracle: Identical successor for every order (documents the [`OQ-4-JGDCNX` (Dispute-reduction order-independence)](../../../../../verification/open-questions.md#oq-4-jgdcnx) caveat where it fails)

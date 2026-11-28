@@ -45,7 +45,6 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `stateProof.milestones = [] -> stored genesis snapshot + forkId == snapshotDataHash, true`: none
 - `one genesis-linked run from block 0 (partial-signature fork) -> true`: none
 - `dispute.input.forkId = random on an empty stateProof -> no stored genesis, the audit throws`: none
-- `localDiamond.isDisputeInboundHashValid false + RPC true -> no DisputeInboundHashNotInChain`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P29
 - `milestones[-1].blockConfirmations[-1] = forged head committing a forged snapshot -> false + DisputeInvalidBlockInStateProofApplyFraudProof`: none
 - `onBlockConfirmationStruct false with an empty disputeFraudProofs store -> throw`: none
 - `dispute.outputSnapshotDataHash = random -> false + DisputeInvalidOutputState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P32
@@ -67,6 +66,7 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `timeout dispute audited before the window reaches the local chain view -> throw`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P53
 - `a replay holds the state mutex with the predecessor state installed while the timeout audit peeks the next writer -> the audit settles under the hold and judges the disputed state, true, no TimeoutParticipantNotNext`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129, UNIT-TEST-SM-EVM-ADAPTER-5-ZH1AXW.P5
 - `fork advances while the audit is parked at getOnChainSlashedParticipants -> false + DisputeNotLatestState`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P54
-- `chain reads proven, a timely timeout -> the window's creation time is read from the chain, not the mirror, and the timeout checks pass, true`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P132, REQ-MIRROR-5-N5SZC9.T4.P16
+- `chain reads proven, a timely timeout -> the window's creation time is read from the chain, not the mirror, and the timeout checks pass, true`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P132, REQ-MIRROR-6-0WSB4V.T3.P6
+- `a timely timeout -> the window's creation time is read from the chain, not the mirror, and the timeout checks pass, true`: REQ-MIRROR-6-0WSB4V.T1.P1
 
 The previous-block signature test captures block 2’s next writer before opening the dispute window. It must not read the mutable VM’s current writer concurrently with a subscribed audit’s temporary replay state. The empty, timed-out-signer and wrong-signer signature variants retain their exact TimeoutTooEarly oracles and the unchanged authored/calldata timing bounds.

@@ -11,6 +11,79 @@ scores are what they are** and which lever moves each one.
 
 The simplification coverage uses real pre-deployment ports, authenticated host probes, factory-built blocks, actual provider loading and real logger stores. The full distributed gate passed all 1,987 runnable cases; Node and browser typechecks and both real browser gates passed. The review follow-up passed all 1,987 cases again in run-1653 after the separate import-order cleanup; the focused dependency/storage/manager run passed 125 cases. Existing skipped cases and unassigned specification permutations remain gaps, not evidence. New declarations have exact component permutations; moved declarations retain their existing claims only where the actual oracle still matches.
 
+## Channel follow on a peer3 node — 2026-11-28
+
+Five declarations in [LightClientChannelFollow.test.ts](../verification/tests/test/lightClient/LightClientChannelFollow.test.ts.md)
+cover [`REQ-LC-8-BBYC51.T1`](../specification/runtime/light-client.md#req-lc-8-bbyc51.t1) `P1`-`P5`, until now gaps:
+participants with the light client on over a peer3 slot node started with `--light-client` (PR #3 at `cd6e503`),
+behind a recording proxy. Four faults each failed two to four declarations: the old subscription not ended,
+the topics not sent, the manager not followed at start, and the listener's removal not ending the follow.
+They run with `--lc-tests --parachain` and `PEER3_NODE_LIGHT_CLIENT=1`, and fail at once otherwise. On the farm,
+distributed protocol 16 hosts ran the light client suites: 114 of 114 three times without `--parachain`, and
+with it 119 of 119 twice and 118 of 119 once (a `LightClientPushedPartitions` node start that timed out
+after 30 s; that test passed in the other five runs).
+
+## Watched keys — 2026-11-25
+
+Eleven declarations in [LightClientWatchedKeys.test.ts](../verification/tests/test/lightClient/LightClientWatchedKeys.test.ts.md)
+cover [`REQ-LC-12-VPAAP0.T1`](../specification/runtime/light-client.md#req-lc-12-vpaap0.t1) `P1`-`P10` and `P13`, and
+[`REQ-LC-5-MM0BM9.T1.P19`](../specification/runtime/light-client.md#req-lc-5-mm0bm9.t1.p19), against a peer3 node built from
+PR #3 at `6bf84b6` behind the recording proxy. Eleven faults each failed a declaration: no watch, the
+method list ignored (twice), the first message not waited for, no watch again on a new subscription,
+the watch again sent before the first message, the answer's block not checked, its taken keys not
+checked, the asked keys kept instead of the taken ones, the contract dropped at the last unfollow, and
+the reader ignoring the watch. Three of them first survived: the refusal declarations answered with an
+empty proof, which fails anyway, and the new subscription's first message reached the participant
+before the watch could; the declarations now answer with the node's own proof and hold the first
+message, and catch them. Gaps: `P11` and `P12` (more than 1,024 keys) and
+[`REQ-LC-8-BBYC51.T1.P5`](../specification/runtime/light-client.md#req-lc-8-bbyc51.t1.p5), the start-up follow, which
+needs a participant on a peer3 node as `T1.P1`-`P4` do; the local channel flows show it. The light client
+suites passed 116 of 116 locally (run-193) and the canonical distributed gate 4324 of 4324. Local
+channel flows (peer3 node, Mac, three repeats): the steady state asks 0.52 requests per rotation round
+against 2.19 before the watch and 6.00 without the light client; with the reads compared, 413 matched and
+none differed.
+
+## Startup chain requests: chain id once per connection, one latest-block read per clock sync — 2026-11-23
+
+The node and multi-node providers take the network a node's socket detected instead of asking for
+the chain id again, and the startup clock log uses the block the clock synchronization read. Two
+declarations in [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) count
+`eth_chainId` at the proxies
+([`UNIT-TEST-RPC-NODE-1-VTXH1M.P14`](../implementation/source/src/evm/p2pRuntime/rpcNodes/RpcNodeProvider.ts.md#unit-test-rpc-node-1-vtxh1m),
+[`UNIT-TEST-MULTI-RPC-1-SVGGZ5.P34`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5));
+one in [Clock.test.ts](../verification/tests/test/Clock.test.ts.md) checks the kept block
+([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0.P6`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0));
+one in [E2E-MultiRpcNodes.test.ts](../verification/tests/test/e2e/E2E-MultiRpcNodes.test.ts.md)
+counts a proxied peer's startup requests
+([`UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG`](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md#unit-test-p2p-runtime-host-36-z741vg)
+P1, P2). Six faults (each provider's override removed, the node's network not kept while it is
+down, the startup log reading the block again, the sync keeping another block) each failed a
+declaration. On the distributed runner RpcNodes passed 58 of 58, Clock 12 of 12, E2E-MultiRpcNodes
+28 of 28, StateManagerAbort 12 of 12 and DisputeManager 111 of 112; the one is "a capped kill whose
+preflight at its limit passes…", which fails the same way on `dev` under Hardhat. The light client
+suites passed 105 of 105 locally (run-141). The replay requirement stays read by the dispute manager
+on its first replaying send, as [`UNIT-TEST-DISPUTE-MANAGER-6-YRBGQ9`](../implementation/source/src/disputeManager/DisputeManager.ts.md#unit-test-dispute-manager-6-yrbgq9) P10-P13 specify (engineer's
+decision, 2026-11-23).
+
+## Light client reads share proofs and best-block lookups — 2026-11-23
+
+Reads at one block now ask the endpoint once for each value, and reads made at once while nothing is
+pushed ask once for the best block. Four declarations cover the shared proofs
+([`REQ-LC-9-KWXV43.T1.P13`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t1.p13)-`P15` in
+[LightClientFollowedChannel.test.ts](../verification/tests/test/lightClient/LightClientFollowedChannel.test.ts.md), and
+[`REQ-LC-9-KWXV43.T2.P1`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t2.p1) in
+[LightClientProvider.test.ts](../verification/tests/test/lightClient/LightClientProvider.test.ts.md)); the
+proxy holds the first read's proof request and counts what the endpoint is asked. Four faults (no
+sharing, block values not shared, slots of one account not told apart, a failed proof kept) each failed
+its declaration. Two declarations cover the shared best-block lookup
+([`REQ-LC-1-JT5PKT.T1.P27`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p27),
+[`P28`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p28)): the proxy holds the
+lookup's request, or its answer while the block floor rises. Three faults (no sharing, the floor
+ignored, a lookup kept after its answer) each failed a declaration; the last failed `T2.P1`, which
+needs a second lookup after the first was answered. The light client suites passed 105 of 105
+locally against the local build of peer3-parachain PR #3 (`--lc-tests`, run-129). Not run yet: the
+distributed gate and the farm flows for these changes.
+
 ## Storage proof verifier tests — 2026-11-18
 
 [SubstrateTrieProof.test.ts](../verification/tests/test/unit/SubstrateTrieProof.test.ts.md) (20 declarations) and
@@ -77,33 +150,6 @@ variant number, and each of three shape checks switched off) failed a declaratio
 version 0 produces, an inline value longer than 32 bytes, is tested in the pull request whose crafted leaf
 can hold one. On 2026-11-20, after the second review, two more declarations refuse a proof node and a
 digest log of odd-length hex; with odd lengths let through, both failed.
-
-## Gas estimates at the pending block, genesis-free block time, parachain test runs — 2026-11-20
-
-Engineer decisions (Luke, 2026-11-20, PR #605):
-
-- The runtime's provider estimates gas at the `pending` block, the one a transaction lands in. ethers
-  sends no block, and geth and Frontier then estimate at the latest block's timestamp, so a timeout
-  claim sent at its `minTimeStamp` failed its first estimate. Frontier runs even a `pending` estimate
-  on the head's state and timestamp, so the peer3 node answers a `pending` estimate of a call on a
-  pending block of its own, stamped with the next block's slot time (peer3-parachain #1).
-  [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) checks that a call valid
-  only after the latest block's second estimates
-  ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`).
-  A revert at the pending block is confirmed at the latest block before it stands, and the pending
-  block's revert is the one reported: a pending block can hold other senders' unmined transactions
-  (geth's does), and a competitor's pending reduce that never lands must not end ours (`.P30`, `.P31`;
-  each fails without its rule).
-- The clock leaves genesis out of the measured block time: a fresh parachain's genesis has timestamp 0
-  ([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
-- `--parachain` runs the slot nodes, the isolated test nodes and the tests on the parachain dev node,
-  locally or on the workers, whose runner image copies the node image peer3-parachain publishes
-  (`docker/zero-fee-node.Dockerfile` there). In E2E-Timeouts, "should handle timeout when next peer to write does not
-  author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
-  peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects", with
-  all of RpcNodes.test.ts, passed with `--parachain` on the pinned node, peer3-parachain `e5f29f6`, on
-  three workers running this branch's runner image (run-1229, 2026-11-24, 173 passing with the timeout,
-  join, gas and dispute E2E files).
 
 [FrontierAccountProofVerifier.test.ts](../verification/tests/test/unit/FrontierAccountProofVerifier.test.ts.md)
 (18 declarations, added 2026-11-19) covers all 18 planned cases of [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64). Its positive oracles are
@@ -186,7 +232,7 @@ refused or ended subscription opened again after one block time
 ([`REQ-LC-7-W8WDN3.T1.P5`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p5)), an endpoint without the light client endpoints among two ([`REQ-LC-4-E29Y46.T1.P7`](../specification/runtime/light-client.md#req-lc-4-e29y46.t1.p7)), a call
 reading the blob base fee ([`REQ-LC-2-PMY1VG.T1.P7`](../specification/runtime/light-client.md#req-lc-2-pmy1vg.t1.p7)), the block floor after a receipt and with the pushes stopped
 ([`REQ-LC-1-JT5PKT.T1.P17`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p17), [`P18`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p18)), an earlier pushed block refused ([`REQ-STPROOF-3-NVJGR0.T1.P28`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1.p28)), and the replay at
-the receipt's block in the default tier ([`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P42`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-1-dp1mjf), `P43`). The light client
+the receipt's block in the default tier ([`UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P45`](../implementation/source/src/utils/evmErrorHandler.ts.md#unit-test-evm-error-handler-1-dp1mjf), `P46`; renumbered from P42 and P43 when dev was merged in, whose own P42 to P44 came first). The light client
 suites passed 68 of 68 locally against the node built from peer3-parachain PR #3 with that day's fixes.
 The bot review that followed added three declarations, and each failed with its fix removed: new heads
 a million blocks ahead from the endpoint that does not serve the requests keep no read off the pushed
@@ -204,13 +250,12 @@ counted and logged, and a failed one was counted as not compared. The declaratio
 block named by its Substrate hash and with every answer taken as alike. With the chain's reads proven,
 the local-first reads, the mirror's state-proof tier and the eight plain mirror read sites (window
 time three times, commitment twice, slashed participants once, the proof anchor once, the spectator's
-snapshot once) go to the chain alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)). After the bot's first review round the evidence is:
-`preferLocal`'s unit suite with 11 declarations ([`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P13`](../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)-`P15` for
-proven reads); [`REQ-LC-11-MTCBF9.T1.P6`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p6)-`P13` for failover, a lost connection, the proving block's
+snapshot once) go to the chain alone (the proven-reads requirement of that day, retired 2026-11-27, see the revision at the end of this entry). After the bot's first review round the evidence was:
+`preferLocal`'s unit suite with 11 declarations (deleted 2026-11-27); [`REQ-LC-11-MTCBF9.T1.P6`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p6)-`P13` for failover, a lost connection, the proving block's
 hash after the chain moved, and each kind of differing answer; and
-[`REQ-MIRROR-5-N5SZC9.T4`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4), run on the test chain with a harness stub that makes a runtime's chain
+the plan item of the proven-reads requirement that ran on the test chain with a harness stub that makes a runtime's chain
 reads count as proven (`stubProvenChainReads`): the timeout check's reads
-([`UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md#unit-test-participant-timeout-service-1-q0paf5)-`P45`), construction and verification
+(the unapplied-window timeout test (retired 2026-11-27 with the mirror)-`P45`), construction and verification
 ([`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d), `P68`), the pending-set check and the countersigner's
 exception ([`REQ-JOINSIG-1-8X1A4V.T1.P34`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p34)). Each of these failed with its fix removed. On 17a2c37e4
 the whole Mocha suite passed 3615 of 3615 on the distributed runner and the light client suites 83
@@ -218,10 +263,15 @@ of 83 against the node built from peer3-parachain PR #3. A first full run found 
 which had imported the chain provider) that failed `InternalTransport.test.ts` 11 of 11; the helpers
 moved to `provenChainReads.ts` and the file passed 11 of 11. Not run: participants on a peer3 node
 with the light client on and the reads compared
-([`REQ-MIRROR-5-N5SZC9.T3.P1`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t3.p1), a gap), because the test harness runs participants on Hardhat nodes only; running them on a peer3 node with
+(the flows on a peer3 node, a gap that stays open as the last permutation of the third chain-reads plan item of [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)), because the test harness runs participants on Hardhat nodes only; running them on a peer3 node with
 the channel contracts deployed is planned with the farm workers step. The engineer's two exceptions
 stay local while proven, the join countersigner's membership check and the ingest gate's disputed
-flag, and neither goes to the chain while proven.
+flag, and neither goes to the chain while proven. Revised 2026-11-22, when the engineer removed both
+exceptions: the countersigner declaration now shows the threshold read on the chain and none on the
+mirror (now [`REQ-MIRROR-6-0WSB4V.T1.P19`](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v.t1.p19)), and a new unit declaration shows the ingest gate asking the
+chain (now [`REQ-MIRROR-6-0WSB4V.T1.P20`](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v.t1.p20)), and two unit declarations show a failed gate read
+putting queued blocks back ([`UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P62`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md#unit-test-block-queue-manager-1-yws2d2) and [`UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P63`](../implementation/source/src/stateManager/ingest/BlockQueueManager.ts.md#unit-test-block-queue-manager-1-yws2d2)); each failed with its source change
+reverted.
 
 A second review of the merged stack on 2026-11-21 led to fixes in the light client and in each mirror
 read site. Each new declaration failed with its fix removed: a log the serving endpoint delivered raises
@@ -234,8 +284,7 @@ end it ([`REQ-LC-7-W8WDN3.T1.P6`](../specification/runtime/light-client.md#req-l
 counted by what the read used ([`REQ-LC-9-KWXV43.T1.P7`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t1.p7)), and a compared call at a block the
 endpoint no longer has is not compared ([`REQ-LC-11-MTCBF9.T1.P14`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p14)); nine declarations, nine
 faults, all caught. Every mirror read site now has a declaration with the chain's reads proven
-([`REQ-MIRROR-5-N5SZC9.T4.P10`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p10)-`P17`, and
-[`P8`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p8) for the spectate requester): the slash handler, the acknowledgment responder,
+(the first chain-reads plan item of [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)): the slash handler, the acknowledgment responder,
 dispute construction (the omission answer and the slashed participants), the spectate responder's
 snapshot, the audit's local-first predicate and window time, and the force-join deadline. Thirteen
 faults switched a site back to the mirror, or skipped the chain's anchor and tier at construction and
@@ -250,6 +299,37 @@ log-search answer and a block answered by number raise the floor
 caught. The peer3 node numbers its pending block at its best block, so P26 has the endpoint number it
 one above, as geth and Hardhat do. On 8a9a0178f the light client suites passed 94 of 94 against the
 node built from 42e5e80.
+
+Revised 2026-11-27, step 2 of replacing the event-built mirror with chain reads ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)). The mirror-or-chain switch is gone from `src`, so its evidence went with it: the `preferLocal` suite, the mirror-tier cases of the spectate, sync-verification and audit-tier suites, the local-revert and local-executor-failure cases of the audit and construction suites, the local-diamond-tier executor failure cases, the `D6` hop whose JOIN is consumed (its only test, which ran the local-diamond tier; the permutation it covered is untested again), and the countersigner case that answered from the local clock and mirror. The remaining declarations now assert the chain as the source: each audit read, construction read, membership read and window read asserts one chain read and no mirror read, and the light-client-stubbed groups run the same reads with the chain access reporting proven reads. Two end-to-end declarations still describe a lagging mirror driving the builder or auditor: `E06` in the milestone-sync reconstruction suite asserts a genesis-start proof from a lagging mirror, which construction no longer builds, so it is mapped to no permutation until it is rewritten; the lagging-mirror challenge-target declarations that were not renamed were not re-read in this pass. This documentation pass ran no tests.
+
+Revised 2026-11-27, step 3 ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)). New declarations: `test/unit/EventHandlerSnapshotMembership.test.ts` (three cases: the chain still holds the snapshot, a newer snapshot landed, an older event handled after a newer one) and two `MembershipService` cases (the pending lookup follows the last handled pending-set block; a JOIN a later handled snapshot consumed is no longer pending). The `MembershipService`, `SpectateSyncProofStart` and `AgreementManagerBuildFallback` declarations were renamed to describe the handled-event pin and the chain's trusted-start walk, and the walk fixtures now observe the chain's `verifyMilestonesFromTrustedStart`. `DisputeAuditTiers` `U32` (an unproven hop above the auditor's trusted start) was removed by the owner: it needs an auditor without the threshold signatures while the proof's last milestone is final, and the only staging found relied on mirror lag, so [`REQ-SP-9-RNXP56.T7.P6`](../specification/disputes/state-proofs.md#req-sp-9-rnxp56.t7.p6) and [`UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09.P109`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md#unit-test-dispute-validation-service-1-xbca09) are untested; this is a coverage gap for the engineer. The window-commitments permutation, the closing-snapshot and lagging-read-node permutations of snapshot membership, the handled-slash replay and clearing permutation, and the direct-fetch-does-not-move-the-pin permutation have no test. The reduction, timestamp and trusted-start permutations are covered by declarations that pass through the single remaining chain path; none of them compares a lagging mirror, because the mirror path no longer exists. This documentation pass ran no tests.
+
+## Gas estimates at the pending block, genesis-free block time, parachain test runs — 2026-11-20
+
+Engineer decisions (Luke, 2026-11-20, PR #605):
+
+- The runtime's provider estimates gas at the `pending` block, the one a transaction lands in. ethers
+  sends no block, and geth and Frontier then estimate at the latest block's timestamp, so a timeout
+  claim sent at its `minTimeStamp` failed its first estimate. Frontier runs even a `pending` estimate
+  on the head's state and timestamp, so the peer3 node answers a `pending` estimate of a call on a
+  pending block of its own, stamped with the next block's slot time (peer3-parachain #1).
+  [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) checks that a call valid
+  only after the latest block's second estimates
+  ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`).
+  A revert at the pending block is confirmed at the latest block before it stands, and the pending
+  block's revert is the one reported: a pending block can hold other senders' unmined transactions
+  (geth's does), and a competitor's pending reduce that never lands must not end ours (`.P30`, `.P31`;
+  each fails without its rule).
+- The clock leaves genesis out of the measured block time: a fresh parachain's genesis has timestamp 0
+  ([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
+- `--parachain` runs the slot nodes, the isolated test nodes and the tests on the parachain dev node,
+  locally or on the workers, whose runner image copies the node image peer3-parachain publishes
+  (`docker/zero-fee-node.Dockerfile` there). In E2E-Timeouts, "should handle timeout when next peer to write does not
+  author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
+  peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects", with
+  all of RpcNodes.test.ts, passed with `--parachain` on the pinned node, peer3-parachain `e5f29f6`, on
+  three workers running this branch's runner image (run-1229, 2026-11-24, 173 passing with the timeout,
+  join, gas and dispute E2E files).
 
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 

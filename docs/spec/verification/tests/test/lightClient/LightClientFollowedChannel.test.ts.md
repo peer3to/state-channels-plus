@@ -25,7 +25,7 @@ the proxy saw: a read the pushed partition answers asks the endpoint nothing. It
 - `follows over two endpoints and keeps answering from pushed state when one of them goes`: REQ-LC-5-MM0BM9.T1.P13
 - `keeps the other channel's subscription when one of two channels is unfollowed`: REQ-LC-5-MM0BM9.T1.P14
 - `tries a subscription that failed on an open connection again`: REQ-LC-5-MM0BM9.T1.P15
-- `keeps the stages of each accepted pushed block, in block order`: REQ-LC-10-YCP80W.T1.P1
+- `keeps the stages of each accepted pushed block, in block order`: REQ-LC-10-YCP80W.T1.P1, REQ-LC-10-YCP80W.T1.P2
 - `reads at the block the endpoint serving its requests pushed, not at a higher one another endpoint pushes`: REQ-LC-9-KWXV43.T1.P5
 - `uses nothing a connection pushed once it ended: a read before the new sync is proven at the endpoint's best block`: REQ-LC-5-MM0BM9.T1.P16
 - `opens a subscription the endpoint ended again, counts it and answers from its new sync`: REQ-LC-7-W8WDN3.T1.P4
@@ -48,3 +48,8 @@ the proxy saw: a read the pushed partition answers asks the endpoint nothing. It
 - `asks an endpoint whose connection reopened again whether it serves the light client, and answers from proven state once it does`: REQ-LC-4-E29Y46.T1.P8
 - `opens a refused subscription again when the endpoint fails its unsubscribe, with a warning and no error`: REQ-LC-7-W8WDN3.T1.P7
 - `hands on no push of a refused subscription that arrives before the endpoint ends it, and counts the refusal once`: REQ-LC-7-W8WDN3.T1.P6
+- `reads the followed contract's slots from the push and proves another contract's account, then its slots, in two requests`: REQ-LC-9-KWXV43.T1.P11
+- `reads an ERC-20 balance of a holder the push names, proving the token's account and code, then its balance and supply together, and proves them again at a later block`: REQ-LC-9-KWXV43.T1.P12
+- `proves a value two reads miss at once at the same block in one request`: REQ-LC-9-KWXV43.T1.P13
+- `proves a value no read at the block has asked for in a request of its own, while another read's proof is awaited`: REQ-LC-9-KWXV43.T1.P14
+- `asks for a proof again after the one a read at the same block asked for failed`: REQ-LC-9-KWXV43.T1.P15

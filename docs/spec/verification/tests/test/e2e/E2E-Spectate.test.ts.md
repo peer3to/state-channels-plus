@@ -63,12 +63,15 @@ participant.
 
 The unreduced-window cases share one staging: every participant holds its own reduction and counts
 sync requests, peer 1 opens a valid self-removal dispute, and a fresh joiner connects inside the
-kill period or after it; once its first answer is applied (held after apply, then released, so
-the wait has started) and the kill period ended, the joiner is still OPENED and the chain has not reduced the window. After one participant reduces it, the
-joiner reaches SYNCED with exactly one responder answering twice, no abort and no blacklist. Cutting
+kill period or after it. A joiner inside the kill period waits: once its first answer is applied
+(held after apply, then released, so the wait has started) and the kill period ended, the joiner is
+still OPENED and the chain has not reduced the window. After one participant reduces it, the
+joiner reaches SYNCED with exactly one responder answering twice, no abort and no blacklist. A
+joiner after the kill period recomputes the unreduced window through the chain's reduction call and
+reaches SYNCED with one request while the window stays unreduced, no abort and no blacklist. Cutting
 the joiner at its responder during the wait makes the initial load abort once with no internal
 error; disposing the joiner's runtime resolves, sends no further request and aborts nothing; a status moved to SYNCED
-during the wait stays SYNCED with no abort; a failing local milestone walk on the repeated request
+during the wait stays SYNCED with no abort; a failing milestone walk on the repeated request
 reaches the top-level error handling once and never runs the connection hook for that responder.
 
 The participant probe case commits an honest invalid-transition dispute and has one honest
@@ -115,7 +118,7 @@ answered twice, neither peer blacklisted the other and the transport stayed open
 - `serves a newer sync payload when the minimum is the leave-block height`: UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD.P7, REQ-SYNC-1-T2589H.T1.P17
 - `serves a newer sync payload across a leave above the minimum height`: REQ-SYNC-1-T2589H.T1.P5
 - `a joiner whose initial load lands in an open kill period waits for the chain's reduction, then syncs without aborting or blacklisting a responder`: REQ-SYNC-4-AWHFPA.T1.P7
-- `a fresh joiner whose served window the chain has not reduced waits for the chain's reduction, then syncs without aborting or blacklisting its responder`: REQ-SYNC-4-AWHFPA.T1.P9
+- `a fresh joiner whose served window is past its kill period but unreduced on chain recomputes it through the chain's reduction call and syncs without waiting: one request, no abort, no blacklist`: REQ-SYNC-4-AWHFPA.T1.P9
 - `a joiner's responder cutting it during the wait fails the repeated request: the initial load aborts once, with no internal error`: REQ-SYNC-4-AWHFPA.T1.P13
 - `disposing a joiner during the wait ends it: disposal resolves, no further request, no abort`: REQ-SYNC-4-AWHFPA.T1.P12
 - `a joiner the chain moves out of OPENED during the wait settles engaged: the late repeated sync aborts nothing`: REQ-SYNC-4-AWHFPA.T1.P14

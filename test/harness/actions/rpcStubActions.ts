@@ -1017,6 +1017,38 @@ export class RpcStubActions<
     }
 
     /**
+     * Make a peer's onInboundMessagesProcessed throw -> every inbound log
+     * dispatched to it fails, a recovery's dispatch included.
+     */
+    async failInboundMessagesProcessedHandler(peerIndex: number): Promise<{
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubFailInboundMessagesProcessedHandler().request();
+        return {
+            restore: async () => {
+                await ctl().restoreInboundMessagesProcessedHandler().request();
+            }
+        };
+    }
+
+    /**
+     * Make a peer's onChainSlashed and onDisputeKilled throw -> every slash or
+     * kill log dispatched to it fails, a recovery's dispatch included.
+     */
+    async failSlashHandlers(peerIndex: number): Promise<{
+        restore: () => Promise<void>;
+    }> {
+        const ctl = () => this.peerStub(peerIndex);
+        await ctl().stubFailSlashHandlers().request();
+        return {
+            restore: async () => {
+                await ctl().restoreSlashHandlers().request();
+            }
+        };
+    }
+
+    /**
      * Hold a peer's onDisputeCommitted until its next chain log query for
      * dispute logs has answered: a dispute log streamed meanwhile stays in
      * flight, so a window recovery finds its handling scheduled and joins it.
@@ -1027,6 +1059,8 @@ export class RpcStubActions<
     ): Promise<{
         /** Wait until a dispute log's handling is held in flight. */
         waitUntilHeld: (timeoutMs?: number) => Promise<void>;
+        /** The held handlings fail when they run, before storing their dispute. */
+        failHandling: () => Promise<void>;
         /** Run the held handlings now, if no log query released them yet. */
         release: () => Promise<void>;
     }> {
@@ -1044,6 +1078,9 @@ export class RpcStubActions<
                             .request()) > 0,
                     timeoutMs
                 ),
+            failHandling: async () => {
+                await ctl().failHeldDisputeCommittedHandling().request();
+            },
             release: async () => {
                 await ctl().releaseDisputeCommittedHandling().request();
             }
@@ -1082,8 +1119,8 @@ export class RpcStubActions<
 
     /**
      * Hold only the inbound storage write of a peer's InboundMessagesProcessed
-     * handler: its local diamond still applies the event, while inbound
-     * storage lags it.
+     * handler: the rest of the handler still runs, while inbound storage
+     * lags it.
      */
     async holdInboundMessageStorage(peerIndex: number): Promise<{
         /** Restore the storage write; held writes replay unless `replay: false`. */

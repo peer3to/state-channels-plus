@@ -7,13 +7,14 @@
 - [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
 - [`REQ-BLOCK-PIPE-3-WW2SB7` (Strategy-complete deviations)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-3-ww2sb7)
 - [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
+- [`REQ-TIME-4-83V27Z` (Timeouts/fraud proofs/slashing use only objectively validated timestamps)](../../../../../specification/protocol-model/time.md#req-time-4-83v27z)
 - [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
 - [`INV-MIRROR-1-VAF778` (Single implementation)](../../../../../specification/enforcement/local-mirror.md#inv-mirror-1-vaf778)
 - [`REQ-SM-5-3GS7A7` (getNextToWrite authorizes the next block author)](../../../../../specification/protocol-model/state-machines.md#req-sm-5-3gs7a7)
 - [`REQ-SM-6-BJZVQ5` (Turn authorization enforced generically at the protocol layer)](../../../../../specification/protocol-model/state-machines.md#req-sm-6-bjzvq5)
   Partial: On-chain invalid-state-transition replay does not perform the generic leader check, so wrong-turn slashing still depends on an in-contract guard ([`OQ-26-XH59SP` (On-chain wrong-turn enforceability)](../../../../../specification/open-questions.md#oq-26-xh59sp)).
 - [`REQ-MIRROR-1-XCY9CB` (Constrained equivalence)](../../../../../specification/enforcement/local-mirror.md#req-mirror-1-xcy9cb)
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 
 ## UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV
 
@@ -57,6 +58,13 @@ Predicate chain
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P35` — Compact sync installs above an already queued gossip block while omitting its history; release drops that block without closing the spectator or blacklisting honest sources, and the spectator then follows a new live head
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P36` — forged-inbound detector: a carried genuine inbound block that is the snapshot's inbound head, absent from local storage, is not flagged
 - [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P37` — forged-inbound detector: a fabricated inbound block one above the snapshot's inbound head, absent locally and on chain, is flagged and returned
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38` — `isDisputedFork` with no dispute record of its own asks the chain whether the fork is disputed, not the local diamond
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39` — on-chain post timing: a block received within `agreementTime` with no stored on-chain timestamp reads nothing from the chain and is accepted
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P40` — on-chain post timing: a block received outside `agreementTime` with no stored on-chain timestamp is recovered from the chain, and an on-time posting is accepted and persisted
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P41` — the objective timestamp check of a first block is asked of the chain: a timestamp before genesis is disputed with an invalid-timestamp proof
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P42` — the previous block's calldata commitment is on the chain but its on-chain timestamp unknown: the calldata is recovered first and then the chain is asked; a block valid under the recovered posting time is accepted after one recovery and the timestamp is stored
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P43` — the objective timestamp check of a later block whose previous block has no calldata on the chain is asked of the chain: a timestamp before its parent's is disputed with an invalid-timestamp proof
+- [x] `UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P44` — the previous block's calldata is recovered and the block is still invalid under the recovered posting time: the chain's check disputes it
 
 ## UNIT-TEST-SM-VALIDATION-1-1GFNNY
 

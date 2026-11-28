@@ -22,6 +22,28 @@ explicit black-box plan and permutation set; the newly added clock-boundary, sep
 and opened-non-participant permutations are planned but not yet covered by executable evidence;
 engineer disposition remains pending.
 
+## 2026-11-25 — Watched keys
+
+[`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../specification/runtime/light-client.md#req-lc-12-vpaap0) is new, on the engineer's decisions of 2026-11-24 and 2026-11-25 (W-1 to W-4, D-W3-1 to
+D-W3-3): the chain access follows its state channel manager for itself from the participant's start,
+the proof a read needs from the endpoint is a watch on that contract's subscription where the endpoint
+lists it and the subscription has had its first message, and every new subscription of the contract is
+asked to watch the kept keys again. [`REQ-LC-5-MM0BM9` (A followed channel is subscribed on every connection)](../specification/runtime/light-client.md#req-lc-5-mm0bm9) keeps a
+contract followed for itself subscribed without channels, [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../specification/runtime/light-client.md#req-lc-8-bbyc51)
+adds the follow at start, [`REQ-LC-9-KWXV43` (A read takes from the pushed partitions what they prove at its block)](../specification/runtime/light-client.md#req-lc-9-kwxv43) names the watch
+as its request, and [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) checks a
+watch's proof as a read proof. The watch goes beyond the card:
+[`OQ-SPEC-LC-2-XQ3PR7` (Where the light client departs from card 399)](../specification/open-questions.md#oq-spec-lc-2-xq3pr7) item 9. No requirement was deleted.
+
+## 2026-11-22 — Departures from the light client card
+
+[`OQ-SPEC-LC-2-XQ3PR7` (Where the light client departs from card 399)](../specification/open-questions.md#oq-spec-lc-2-xq3pr7) lists where the light client departs from the card it was built to: six departures
+the engineer decided, which the card's owner has not accepted, and two that stay open until the
+benchmark and channel-flow runs. Item 6, strategy 3 without a second node, was decided later the same
+day: the dev node takes no peers, and the per-path runs measure the remote simulation apart. It also records that the earlier slot-collection departures no longer
+apply. [`OQ-SPEC-LC-1-VKHDPN` (Light client choices the engineer has not confirmed)](../specification/open-questions.md#oq-spec-lc-1-vkhdpn) gains one choice: the node proves every subscribed key at each
+block and keeps no branch between blocks. No requirement changed.
+
 ## 2026-11-18 — Contract storage proven against a state root
 
 New subject [storage-proofs.md](../specification/runtime/storage-proofs.md), the first part of the light
@@ -93,7 +115,7 @@ confirmed are [`OQ-SPEC-LC-1-VKHDPN` (Light client choices the engineer has not 
 
 Two requirements, on the engineer's decisions of 2026-11-21. [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9) adds a compare mode for tests: each
 answer the light client gives is asked of the endpoint at the same block and the two are compared.
-[`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) says that while the chain access answers contract reads from proven state, the chain answers
+The requirement of that day (retired 2026-11-27, see the revision below) said that while the chain access answers contract reads from proven state, the chain answers
 local-first predicates alone, the mirror's state-proof tier is skipped and reads of replicated chain
 state go to the chain. The decisions: replace only the reads of replicated state; the mirror keeps
 replicating; one owner decides whether reads are proven, at each read, and an endpoint that has not
@@ -106,11 +128,17 @@ countersigner's threshold-membership check keeps the local-view-first rule of
 (liveness while chain reads are held, and the bound on what a peer's probe costs), and the per-block
 ingest gate "is this fork disputed" keeps reading the node's own dispute record or the mirror (it runs
 for every block inside the state mutex, and a chain read there could wait a block time or fail and
-lose the block). [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej) and
+lose the block). Revised 2026-11-22: the engineer removed both exceptions, so while proven the
+threshold-membership check and the ingest gate (after the node's own dispute record) read the chain
+alone, at the availability cost the local-mirror specification states. [`REQ-SP-8-9ZCCEJ` (Construct proofs from the chain's anchor, read on the chain, never from the…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej) and
 [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56) now state the chain
 anchor and the skipped mirror tier for proven reads. After the second review of the same day,
 [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) raises the serving endpoint's block floor from the logs it delivers
 and its log-search and block answers, and excepts a pending block, which is not mined.
+
+Revised 2026-11-27, on the engineer's decision to replace the event-built mirror with chain reads: the proven-reads requirement, and the local-first requirement it modified, are retired. [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v) now says that the reads of replicated channel state (the dispute window's creation time, the block calldata commitment, the slashed participants, the proof anchor, the spectator snapshot, the pending and threshold sets, the disputed flag and the dispute-audit predicates) are made on the chain whether or not the light client serves, proven when it does. The state-proof tiers lose the mirror tier whether reads are proven or not ([`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56)), and a join countersigner reads its threshold membership on the chain ([`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)). The local-evaluation rules that stay, the loud failure and the bounded gas, remain in [`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys). Reads that stay on the mirror (the event-order checks, slash recovery, the leave probe, the local pending lookup, the window commitments and timestamp check of the event hooks, and local reduction) wait for later steps; their specification is unchanged.
+
+Revised 2026-11-27, step 3: the reads left on the mirror in that note now go to the chain. [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v) adds the walk of a proof from a given start, reduction, the window commitments, the objective timestamp check and the leave probe; [`REQ-TIME-4-83V27Z` (Timeouts/fraud proofs/slashing use only objectively validated timestamps)](../specification/protocol-model/time.md#req-time-4-83v27z) states that the calldata recovery runs before the chain is asked; [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) (snapshot publication compares with the chain at its head, closing snapshots excepted), [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv) (slash recovery against the handled slashes) and [`INV-MEMBERSHIP-PENDING-1-2H1T75` (Submitted joins are locally pending before acknowledgement)](../specification/peer-communication/join-authorization.md#inv-membership-pending-1-2h1t75) (the pending set pinned at the last handled pending-set event) state the three behaviour changes the engineer approved. Only the mirror writes and the spectator's local reduce-and-finalize remain.
 
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
@@ -239,7 +267,7 @@ and the review establishes no correctness bug. Ownership is specified under
 [`REQ-SDK-ARCH-1-7H14H6` (Explicit ownership)](../specification/runtime/sdk.md#req-sdk-arch-1-7h14h6).
 No new cache, outage fallback, or API shape is authorized by this decision.
 
-The consolidation is implemented: `MembershipService` owns the three reads as `isSignerPendingInMirror` (local-only), `isSignerPendingOnChain` (local-first, chain confirms absence) and `isSignerOnChain` (chain seated plus pending), and `ChannelJoinService` and `EventHandler` call them. [`FIND-MEMBERSHIP-READ-OWNER-1-8826AS`](open-findings.md#find-membership-read-owner-1-8826as) is resolved for implementation. The callers' existing cases passed in the recorded full SDK gate. The caller-boundary cases `.P70`–`.P77` had no assigned evidence there; their mappings to existing tests and new cases for the rest are being added in this pass. No engineer fingerprint approval is recorded.
+The consolidation is implemented: `MembershipService` owns the three reads as `isSignerPendingAtLastPendingSetChange` (the chain's pending set pinned at the last handled pending-set event; it was the mirror-only `isSignerPendingInMirror` until 2026-11-27), `isSignerPendingOnChain` (local-first, chain confirms absence) and `isSignerOnChain` (chain seated plus pending), and `ChannelJoinService` and `EventHandler` call them. [`FIND-MEMBERSHIP-READ-OWNER-1-8826AS`](open-findings.md#find-membership-read-owner-1-8826as) is resolved for implementation. The callers' existing cases passed in the recorded full SDK gate. The caller-boundary cases `.P70`–`.P77` had no assigned evidence there; their mappings to existing tests and new cases for the rest are being added in this pass. No engineer fingerprint approval is recorded.
 
 ## 2026-10-11 — FY2 optional calldata disposition
 
@@ -376,9 +404,9 @@ Engineer decision (Luka): applying an inbound message block to the local mirror 
 source, the mirror's inbound head only moves forward, the membership refresh applies the whole pending run at
 the chain position of its pinned read, and the refresh's apply step makes no chain read its pinned read already
 answers ("query the RPC node the fewest times possible").
-[`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm) and
+The mirror's replication requirement (retired 2026-11-27, see below) and
 [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df) state it, with
-new permutations [`REQ-MIRROR-2-E9F3TM.T1.P4`](../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm.t1.p4)–`.P6` and [`REQ-GOSSIP-4-J5Z4DF.T1.P41`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p41)–`.P44`; each has a test that
+new permutations (the replication ones and GOSSIP-4 P41 and P42 retired 2026-11-27) and [`REQ-GOSSIP-4-J5Z4DF.T1.P43`](../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df.t1.p43)–`.P44`; each has a test that
 fails on the old code. The local diamond's inbound family no longer has an event-coordinate gate (a recovered
 older log must still be stored); the chain contract's duplicate revert is unchanged. A pending joiner's refresh now makes one multicall and no separate pending-set read: the pending check reads the local diamond, which the refresh filled with its pinned inbound run before it applies the snapshot; the same local-first check spares the chain read on a live snapshot log when the local diamond lists the signer. Residuals: when the local diamond's pending set does not list the signer, the apply step still reads the chain, because a JOIN that landed after the local diamond's inbound head may already be observed; a snapshot the mirror drops as older no longer reaches membership (the
 handler compares the mirrored snapshot after applying, a local read, no chain call); Luka decided the spectate
@@ -386,6 +414,7 @@ path's apply of a current on-chain read at the trusted coordinate stays, because
 state when it is made; a late or recovered log for
 a block the chain already pruned is stored again below the snapshot head; and an equal-height block with another
 hash does not move the mirror head, where the TypeScript store accepts it. Engineer review remains pending.
+Revised 2026-11-27, on the engineer's decision to remove the mirror ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)): the replication and cache requirements and the mirror-only permutations are retired.
 
 ## 2026-10-10 — Countersigners do not check the join pins; membership refresh applies each inbound block once
 

@@ -1,5 +1,5 @@
 import type StateManager from "../StateManager";
-import { isChainProven } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
+import type { BlockNumber } from "@/eventHandlers/EventHandler";
 import { Block } from "@/models";
 import { Status } from "@/types";
 import { isCommittedParticipantStatus } from "@/types/flags";
@@ -12,7 +12,6 @@ import {
     Codec,
     Type
 } from "@/utils";
-import { preferLocal } from "@/utils/localDiamond";
 import type {
     MessageBlockStruct,
     StateSnapshotStruct
@@ -35,6 +34,12 @@ export default class MembershipService {
     private onChainEligibility: Set<ChecksumAddress> = new Set();
     private offChainEligibility: Set<ChecksumAddress> = new Set();
     private readonly knownSlashes: Set<ChecksumAddress> = new Set();
+    /**
+     * The latest block of an event this peer handled that changes the pending
+     * set: InboundMessagesProcessed (adds JOINs), StateSnapshotUpdated
+     * (consumes them).
+     */
+    private lastPendingSetChangeBlock?: BlockNumber;
 
     constructor(
         private readonly stateManager: StateManager,
@@ -110,6 +115,14 @@ export default class MembershipService {
         }
     }
 
+    /** The handler ran for an event of `blockNumber` that changes the pending set. */
+    public observePendingSetChangedAt(blockNumber: BlockNumber): void {
+        this.lastPendingSetChangeBlock = Math.max(
+            this.lastPendingSetChangeBlock ?? blockNumber,
+            blockNumber
+        );
+    }
+
     public publishOffChainEligibility(participants: readonly Address[]): void {
         this.offChainEligibility = new Set(
             participants.map(getChecksumAddress)
@@ -175,40 +188,40 @@ export default class MembershipService {
     }
 
     /**
-     * Whether the local chain mirror lists this signer as pending. It reads
-     * the mirror only: the join service starts its force-join bounds from
-     * this observation, and a direct chain answer must not start them early.
+     * Whether the chain's pending set lists this signer as of the block of
+     * the last event this peer handled that changes it (an inbound batch or a
+     * snapshot update). The join service starts its force-join bounds from
+     * this observation: a read at the head could list a JOIN whose inbound
+     * messages this peer has not handled, and must not start them early.
+     * False before any such event was handled.
      */
-    public async isSignerPendingInMirror(
+    public async isSignerPendingAtLastPendingSetChange(
         channelId: ChannelId = this.stateManager.channelId
     ): Promise<boolean> {
-        return this.includesSigner(
-            (await this.stateManager.diamondStateMachine.localDiamondContract.getPendingParticipants(
-                channelId
-            )) as Address[]
+        const blockNumber = this.lastPendingSetChangeBlock;
+        if (blockNumber === undefined) return false;
+        const pending = await this.stateManager.eventHandler.readAtBlock(
+            blockNumber,
+            (blockTag) =>
+                this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                    channelId,
+                    { blockTag }
+                )
         );
+        return !!pending && this.includesSigner(pending as Address[]);
     }
 
     /**
      * Whether the chain's pending set (unconsumed JOINs) lists this signer.
-     * The local mirror holds only JOINs the chain processed, so a mirror that
-     * lists the signer answers without a chain read; otherwise the chain
-     * confirms the absence, since the JOIN can land after the mirror's
-     * inbound head. While chain reads are proven the chain answers alone. A
-     * failed read rejects the caller.
+     * A failed read rejects the caller.
      */
     public async isSignerPendingOnChain(
         channelId: ChannelId = this.stateManager.channelId
     ): Promise<boolean> {
-        const chain = this.stateManager.stateChannelManagerContract;
-        return await preferLocal(
-            () => this.isSignerPendingInMirror(channelId),
-            async () =>
-                this.includesSigner(
-                    (await chain.getPendingParticipants(channelId)) as Address[]
-                ),
-            (isListed) => isListed,
-            () => isChainProven(chain)
+        return this.includesSigner(
+            (await this.stateManager.stateChannelManagerContract.getPendingParticipants(
+                channelId
+            )) as Address[]
         );
     }
 
@@ -234,27 +247,10 @@ export default class MembershipService {
     }
 
     /**
-     * Whether the chain's threshold set lists this signer. A mirror that
-     * lists the signer answers without a chain read; otherwise the chain
-     * answers, since the mirror can lag it.
+     * Whether the chain's threshold set lists this signer.
      */
     public async isSignerInThresholdSet(): Promise<boolean> {
-        const sm = this.stateManager;
-        return await preferLocal(
-            async () =>
-                this.includesSigner(
-                    (await sm.diamondStateMachine.localDiamondContract.getOnChainThresholdSet(
-                        sm.channelId
-                    )) as Address[]
-                ),
-            async () =>
-                this.includesSigner(await this.getOnChainThresholdSet()),
-            (isListed) => isListed,
-            // REQ-JOINSIG-1: a countersigner answers from its local view
-            // even while chain reads are proven, so it still countersigns
-            // while its chain reads are held
-            async () => false
-        );
+        return this.includesSigner(await this.getOnChainThresholdSet());
     }
 
     /**

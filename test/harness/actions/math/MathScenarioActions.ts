@@ -349,11 +349,10 @@ export class MathScenarioActions extends ScenarioActions {
                 const disputes = await sm.agreementManager.getForkDisputes(
                     commitments!
                 );
-                const computation =
-                    await sm.reductionManager.computeReductionLocally(
-                        forkId,
-                        disputes
-                    );
+                const computation = await sm.reductionManager.computeReduction(
+                    forkId,
+                    disputes
+                );
                 if (!computation)
                     throw new Error("Missing real reduction data");
                 const { reduceData, reducedForkId } = computation;

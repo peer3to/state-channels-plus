@@ -21,6 +21,26 @@ const IDLE_CHANNEL_FALLBACK_TIME = 60;
  * second chain and without touching the node itself.
  */
 describe("E2E: Multiple RPC nodes", function () {
+    it("asks its RPC node at startup for the chain id once and for the latest block only to sync the clock", async function () {
+        const h = TestSession.getHarness();
+        const proxied = 2;
+        await h.lifecycle.start(3, 0, {
+            rpcNodeProxiesByPeer: { [proxied]: 1 }
+        });
+        const [proxy] = h.getRpcNodeProxies(proxied);
+        const blockTags = proxy.forwardedRequests
+            .filter(({ method }) => method === "eth_getBlockByNumber")
+            .map(({ params }) => (params as unknown[])[0]);
+        const latestReads = blockTags.filter((tag) => tag === "latest");
+
+        // each clock sync pass reads the latest block and one earlier block by number
+        expect(latestReads).to.have.length.greaterThan(0);
+        expect(latestReads.length).to.equal(
+            blockTags.length - latestReads.length
+        );
+        expect(proxy.forwardedCount("eth_chainId")).to.equal(1);
+    });
+
     it("delivers an event emitted while the peer's only RPC node was cut through the reconnect catch-up", async function () {
         const h = TestSession.getHarness();
         const proxied = 2;
@@ -281,8 +301,16 @@ describe("E2E: Multiple RPC nodes", function () {
         expect(
             await validation().getChannelSubscriptionCounts().request()
         ).to.deep.equal([0, 0]);
-        // a reopened socket is not subscribed to the cleared channel
-        const subscribesBefore = first.forwardedCount("eth_subscribe");
+        // a reopened socket is not subscribed to the cleared channel; with the
+        // light client on it renews its newHeads subscription, which is no
+        // channel subscription
+        const logSubscribes = () =>
+            first.forwardedRequests.filter(
+                ({ method, params }) =>
+                    method === "eth_subscribe" &&
+                    (params as unknown[])[0] === "logs"
+            ).length;
+        const subscribesBefore = logSubscribes();
         first.cut();
         first.restore();
         await waitFor(
@@ -293,9 +321,7 @@ describe("E2E: Multiple RPC nodes", function () {
         );
         // time is the input: long enough for a renewed subscription to be sent
         await sleep(LIVE_LOG_SETTLE_MS);
-        expect(first.forwardedCount("eth_subscribe")).to.equal(
-            subscribesBefore
-        );
+        expect(logSubscribes()).to.equal(subscribesBefore);
         await validation().restoreChannelListener().request();
         expect(
             await validation().getChannelSubscriptionCounts().request()

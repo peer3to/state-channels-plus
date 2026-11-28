@@ -3,10 +3,6 @@ import AgreementManager from "../agreementManager";
 import type { BuiltStateProof } from "../agreementManager/AgreementManager";
 import { StateSnapshot } from "../models";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
-import {
-    isChainProven,
-    replicatedStateSource
-} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage from "@/storage";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
@@ -22,7 +18,6 @@ import {
     tryDecodeCustomError
 } from "@/utils";
 import { errorMessage } from "@/utils/errorMessage";
-import { preferLocal } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import { StateChannelManagerInterface } from "@typechain-types";
 import {
@@ -248,13 +243,14 @@ export default class DisputeBuilder {
         try {
             // Compare reduced disputes to see if we have more evidence
             const singleDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [dispute]
-                );
+                await this.stateChannelManagerContract.reduce.staticCall([
+                    dispute
+                ]);
             const combinedDisputeReduction =
-                await this.diamondStateMachine.localDiamondContract.reduce.staticCall(
-                    [ourDispute, dispute]
-                );
+                await this.stateChannelManagerContract.reduce.staticCall([
+                    ourDispute,
+                    dispute
+                ]);
             isEvidenceAdded = !isEqual(
                 singleDisputeReduction,
                 combinedDisputeReduction
@@ -284,11 +280,8 @@ export default class DisputeBuilder {
                     forkId,
                     height: latestBlockHeight
                 }),
-                replicatedStateSource(
-                    this.diamondStateMachine.localDiamondContract,
-                    this.stateChannelManagerContract
-                ).then((source) =>
-                    source.getOnChainSlashedParticipants(this.channelId)
+                this.stateChannelManagerContract.getOnChainSlashedParticipants(
+                    this.channelId
                 ),
                 this.storage.getParticipantsUnion({
                     forkId,
@@ -522,22 +515,10 @@ export default class DisputeBuilder {
             postedAuditingData: false
         };
 
-        // Posting the auditing data is never wrong, only costlier, so a local
-        // "must post" posts it without asking the chain. A local "may omit"
-        // leaves it out, which is slashable if the lagging mirror was wrong, so
-        // the chain confirms that answer.
-        const isOmissionAllowed = await preferLocal(
-            () =>
-                this.diamondStateMachine.localDiamondContract.isAuditingDataOmissionAllowed.staticCall(
-                    draftDispute
-                ),
-            () =>
-                this.stateChannelManagerContract.isAuditingDataOmissionAllowed.staticCall(
-                    draftDispute
-                ),
-            (isAllowed) => !isAllowed,
-            () => isChainProven(this.stateChannelManagerContract)
-        );
+        const isOmissionAllowed =
+            await this.stateChannelManagerContract.isAuditingDataOmissionAllowed.staticCall(
+                draftDispute
+            );
         const postedAuditingData = !isOmissionAllowed;
 
         const dispute: DisputeStruct = {

@@ -6,12 +6,11 @@ Test file: [test/e2e/disputeValidation/E2E-AnchorCountersAndChallengeBoundary.te
 
 Exercises below-anchor counters and block challenge boundaries with real disputes. Cases check exact eligible targets, rejected challenger controls and resulting slashes.
 
-Anchored-tail staging waits for block 2 finality, then overlaps snapshot publication with peer isolation followed by authoring blocks 3 and 4. The absent peer prevents tail finality, so publication still pins block 2. The transaction receipt and all mirror observations settle before proof construction and auditing; exact heights, proof positions and protocol timing are unchanged.
+Anchored-tail staging waits for block 2 finality, then overlaps snapshot publication with peer isolation followed by authoring blocks 3 and 4. The absent peer prevents tail finality, so publication still pins block 2. The transaction receipt and all event observations settle before proof construction and auditing; exact heights, proof positions and protocol timing are unchanged.
 
 ## Tests
 
 - `E02: block zero final, its snapshot posted, then a stale empty-proof genesis dispute uploaded → DisputeStateProofBelowOnChainAnchor kills it and only its submitter is slashed`: REQ-FP-7-4DD0D7.T5.P1, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P176
-- `E02 ext: an auditor whose local mirror never applied the block-zero snapshot post kills the stale empty-proof genesis dispute from the chain's anchor`: REQ-FP-7-4DD0D7.T5.P2, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P177
 - `E16: a pending joiner whose join landed after the anchor was posted uploads a proof ending below that anchor → the anchor alone kills it (DisputeStateProofBelowOnChainAnchor), only the joiner is slashed`: REQ-FP-7-4DD0D7.T5.P3, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P178
 - `E17: correct blocks before, at and after the anchor → no block-specific counter, no kill, the submitter is not slashed`: REQ-FP-7-4DD0D7.T5.P4, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P179
 - `E17: forged history before the anchor (a forged block 0, so a broken link at index 1) → no auditor challenges it, and the structure, invalid-transition and author challenges naming those positions are all rejected on chain: no kill, the challenger is slashed, the submitter is not`: REQ-FP-7-4DD0D7.T5.P5, UNIT-TEST-DISPUTE-FRAUD-PROOF-FACET-1-QK8HQ7.P180

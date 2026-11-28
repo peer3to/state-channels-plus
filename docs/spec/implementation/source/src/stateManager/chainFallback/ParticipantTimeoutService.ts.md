@@ -7,7 +7,7 @@
 - [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
 - [`REQ-DISPUTE-PIPE-12-F85KF2` (Force a timeout only over a rejected posted block)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-12-f85kf2)
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 
 ## UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5
 
@@ -50,8 +50,7 @@
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P38` — a predecessor posted only in the local view yields a claim with the chain's posting state that commits
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P39` — the writer signed a predecessor whose post the stored block has not applied yet → no wait for the post and no raised minimum; the timeout is submitted against the block's own deadline
 - [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P40` — the writer never signed a predecessor whose post the stored block has not applied yet → the check itself waits for the post time plus the wait, and the claim it then submits takes that as its minimum
-- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41` — chain reads proven: a dispute window on the chain that the local diamond has not applied, opened before the deadline, stops a plain timeout
-- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42` — chain reads proven: a failed chain read of the window's creation time re-arms the check, and the timeout commits once reads pass
-- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43` — chain reads proven: a failed chain read of the height's calldata commitment re-arms the check, and the timeout commits once reads pass
-- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44` — chain reads proven: a commitment on the chain whose calldata-posted event is not applied makes a plain check recover the calldata and re-arm; the block is stored, no timeout
-- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P45` — chain reads proven: a commitment on the chain whose calldata log no search finds ends a plain check with a warning, no timeout and no re-arm
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42` — a failed chain read of the window's creation time re-arms the check, and the timeout commits once reads pass
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43` — a failed chain read of the height's calldata commitment re-arms the check, and the timeout commits once reads pass
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44` — a commitment on the chain whose calldata-posted event is not applied makes a plain check recover the calldata and re-arm; the block is stored, no timeout
+- [x] `UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P45` — a commitment on the chain whose calldata log no search finds ends a plain check with a warning, no timeout and no re-arm

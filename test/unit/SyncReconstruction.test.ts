@@ -276,7 +276,7 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
             }
         });
 
-        it("U59: a second proof verified from the receiver's local finalized state, ahead of the chain anchor → the rebuilt proof still starts at the local diamond anchor and verifies on chain", async function () {
+        it("U59: a second proof verified from the receiver's local finalized state, ahead of the chain anchor → the rebuilt proof still starts at the chain anchor and verifies on chain", async function () {
             const h = TestSession.getHarness();
             const staged = await stageAnchoredHistory(h, { blocksAfter: 2 });
             await h.transition.advanceState({
@@ -296,11 +296,11 @@ describe("Unit: SpectateService sync persistence and reconstruction", function (
                 { accepted: true, threw: "", head: staged.latestHeight },
                 { accepted: true, threw: "", head: tip }
             ]);
-            // the first proof meets no local final point (the local diamond
-            // decides); the second is accepted from the local finalized state
-            expect(outcome.walks!.storage.local.answers).to.deep.equal([true]);
-            expect(outcome.walks!.storage.chain.reads).to.equal(0);
-            expect(outcome.walks!.trustedStart.local.answers).to.include(true);
+            // the first proof meets no local final point (the chain decides);
+            // the second is accepted from the local finalized state
+            expect(outcome.walks!.storage.local.reads).to.equal(0);
+            expect(outcome.walks!.storage.chain.answers).to.deep.equal([true]);
+            expect(outcome.walks!.trustedStart.chain.answers).to.include(true);
             expect(outcome.rebuilt).to.deep.include({
                 chainValid: true,
                 startHeight: staged.anchor.blockHeight,

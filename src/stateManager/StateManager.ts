@@ -30,13 +30,9 @@ import CalldataCommittedStrategy from "./validationStrategy/CalldataCommittedStr
 import SpectatingValidationStrategy from "./validationStrategy/SpectatingValidationStrategy";
 import ADiamondStateMachine from "@/ADiamondStateMachine";
 import DisputeManager from "@/disputeManager";
-import {
-    END_OF_BLOCK_LOG_INDEX,
-    EventHandler
-} from "@/eventHandlers/EventHandler";
+import { EventHandler } from "@/eventHandlers/EventHandler";
 import { createBusPublishingHooks, EventBus } from "@/events/EventBus";
 import type HostNonceManager from "@/evm/signer/HostNonceManager";
-import { StateSnapshot } from "@/models";
 import P2pEventHooks from "@/P2pEventHooks";
 import P2PManager from "@/P2PManager";
 import MainRpcService from "@/rpc/network/MainRpcService";
@@ -187,8 +183,7 @@ class StateManager<
             this.eventHandler,
             this.storage,
             this.timeConfig,
-            logger,
-            this.diamondStateMachine.localDiamondContract
+            logger
         );
         this.stateChannelEventListener = new StateChannelEventListener(
             this.stateChannelManagerContract,
@@ -200,7 +195,6 @@ class StateManager<
             this.eventSyncService,
             this.logger,
             () => this.channelId,
-            this.diamondStateMachine.localDiamondContract,
             this.stateChannelManagerContract
         );
         this.disputeManager = new DisputeManager(
@@ -377,36 +371,10 @@ class StateManager<
         }
 
         try {
-            // Cached as its block's last log: an older answer loses the ordering.
-            const {
-                blockNumber,
-                value: [isOpen, snapshotStruct]
-            } = await this.eventSyncService.readAtHead((blockTag) =>
-                this.stateChannelManagerContract.isChannelOpen(this.channelId, {
-                    blockTag
-                })
-            );
-
-            if (isOpen) {
-                // Best-effort cache: store the latest on-chain snapshot in LocalDiamond
-                try {
-                    await this.diamondStateMachine.localDiamondContract.onStateSnapshotUpdated(
-                        this.channelId,
-                        snapshotStruct,
-                        blockNumber,
-                        END_OF_BLOCK_LOG_INDEX
-                    );
-                    const snapshotMeta = LoggerUtils.getSnapshotMetadata(
-                        StateSnapshot.from(snapshotStruct)
-                    );
-                    this.logger.debug(
-                        "Cached on-chain snapshot in LocalDiamond",
-                        snapshotMeta
-                    );
-                } catch {
-                    // ignore caching errors
-                }
-            }
+            const [isOpen] =
+                await this.stateChannelManagerContract.isChannelOpen(
+                    this.channelId
+                );
 
             if (!isOpen) {
                 this.setStatus(Status.NOT_OPENED);

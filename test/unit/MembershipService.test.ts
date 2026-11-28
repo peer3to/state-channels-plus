@@ -9,17 +9,14 @@ import {
     waitForJoinChecks
 } from "@test/fixtures/ForceJoinCountingStaging";
 import {
-    applyJoinBlockFromLiveAndRefresh,
     readSignerMembershipLookups,
     recordPendingJoinerChainCalls,
-    refreshAfterEligibilityReset,
     refreshAppliedAfterLiveSnapshot,
-    refreshFillsMirrorBelowHead,
     refreshWithFailedRecoveredInboundBlock,
     relayAfterEligibilityReset,
-    stageMirroredPendingJoin,
-    stagePendingJoinMirroredByJoiner,
-    stagePendingJoinMissedByJoinerMirror
+    stageObservedPendingJoin,
+    stagePendingJoinHandledByJoiner,
+    stagePendingJoinMissedByJoinerHandler
 } from "@test/fixtures/PendingJoinEligibilityStaging";
 import {
     assertSlashAdmission,
@@ -216,56 +213,7 @@ describe("Unit: MembershipService", function () {
         expect(observed.reads.chainReads).to.equal(1);
     });
 
-    it("a refresh while the local diamond holds a pending JOIN applies its inbound block again as a no-op and applies the snapshot", async () => {
-        const h = TestSession.getHarness();
-        const joiner = await stageMirroredPendingJoin(h);
-        const observed = await refreshAfterEligibilityReset(h, [
-            h.getPeer(1).address,
-            h.getPeer(2).address,
-            joiner.address
-        ]);
-        expect(observed.refreshed).to.equal(true);
-        expect(observed.eligibility).to.deep.equal([
-            SourceEligibility.ELIGIBLE,
-            SourceEligibility.ELIGIBLE,
-            SourceEligibility.ELIGIBLE
-        ]);
-        expect(observed.isMirrorAtChainInboundHead).to.equal(true);
-    });
-
-    it("the live log's application of an inbound block, then the refresh's, stores it once without a revert", async () => {
-        const h = TestSession.getHarness();
-        const observed = await applyJoinBlockFromLiveAndRefresh(h, "recorded");
-        expect(observed.refreshed).to.equal(true);
-        expect(observed.heldCount).to.equal(2);
-        expect(observed.mirror.heldBlocks).to.deep.equal([true]);
-        expect(observed.mirror.isHeadAtChain).to.equal(true);
-        expect(observed.mirror.isTotalDepositsAtChain).to.equal(true);
-    });
-
-    it("the refresh's application of an inbound block, then the live log's, stores it once without a revert", async () => {
-        const h = TestSession.getHarness();
-        const observed = await applyJoinBlockFromLiveAndRefresh(h, "reverse");
-        expect(observed.refreshed).to.equal(true);
-        expect(observed.heldCount).to.equal(2);
-        expect(observed.mirror.heldBlocks).to.deep.equal([true]);
-        expect(observed.mirror.isHeadAtChain).to.equal(true);
-        expect(observed.mirror.isTotalDepositsAtChain).to.equal(true);
-    });
-
-    it("a refresh fills an inbound block the local diamond misses below its head without moving the head back", async () => {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0);
-        const observed = await refreshFillsMirrorBelowHead(h);
-        expect(observed.before.heldBlocks).to.deep.equal([false, true]);
-        expect(observed.before.isHeadAtChain).to.equal(true);
-        expect(observed.refreshed).to.equal(true);
-        expect(observed.after.heldBlocks).to.deep.equal([true, true]);
-        expect(observed.after.isHeadAtChain).to.equal(true);
-        expect(observed.after.isTotalDepositsAtChain).to.equal(true);
-    });
-
-    it("a refresh read before a live snapshot update does not overwrite that newer snapshot in the local diamond or in membership", async () => {
+    it("a refresh read before a live snapshot update does not overwrite that newer snapshot in membership", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
         await h.transition.advanceState({
@@ -274,13 +222,12 @@ describe("Unit: MembershipService", function () {
         });
         const observed = await refreshAppliedAfterLiveSnapshot(h);
         expect(observed.refreshed).to.equal(true);
-        expect(observed.mirror.isSnapshotAtChain).to.equal(true);
         expect(observed.membership.isMirroredSnapshotPublished).to.equal(true);
     });
 
-    it("a pending joiner's refresh makes only its pinned multicall chain call", async () => {
+    it("a pending joiner's refresh makes its pinned multicall chain call and one pending-set chain read", async () => {
         const h = TestSession.getHarness();
-        const joiner = h.getPeer((await stageMirroredPendingJoin(h)).index);
+        const joiner = h.getPeer((await stageObservedPendingJoin(h)).index);
         const observed = await recordPendingJoinerChainCalls(
             h,
             joiner,
@@ -288,22 +235,26 @@ describe("Unit: MembershipService", function () {
         );
         expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
         expect(observed.result).to.equal(true);
-        expect(observed.calls).to.deep.equal([
+        // a join check can still add its own pinned pending lookup in front
+        expect(observed.calls.slice(-6)).to.deep.equal([
             "multicall",
             "multicall:getOnChainSlashedParticipants",
             "multicall:getStateSnapshot",
-            "multicall:getChannelBalance"
+            "multicall:getChannelBalance",
+            // the refresh's snapshot event confirms the snapshot at its block
+            "getStateSnapshot",
+            "getPendingParticipants"
         ]);
     });
 
-    it("a pending joiner whose local diamond holds its JOIN applies a snapshot without a pending-set chain read", async () => {
+    it("a pending joiner that handled its JOIN's inbound event reads the pending set from the chain when it applies a snapshot", async () => {
         const h = TestSession.getHarness();
-        const joiner = await stagePendingJoinMirroredByJoiner(h);
+        const joiner = await stagePendingJoinHandledByJoiner(h);
         // the departure check reaches its pending lookup: the joiner is in
         // neither the snapshot nor its local state
         expect(await readSignerMembershipLookups(h, joiner)).to.deep.include({
             isInLocalState: false,
-            isPendingInMirror: true
+            isPendingAtLastInbound: true
         });
         const observed = await recordPendingJoinerChainCalls(
             h,
@@ -311,15 +262,20 @@ describe("Unit: MembershipService", function () {
             "onChainSnapshot"
         );
         expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
-        expect(observed.calls).to.deep.equal(["getStateSnapshot"]);
+        expect(observed.calls).to.deep.equal([
+            "getStateSnapshot",
+            // the snapshot event's confirmation at its block
+            "getStateSnapshot",
+            "getPendingParticipants"
+        ]);
     });
 
-    it("a pending joiner with chain reads proven reads the pending set from the chain even while its local diamond holds its JOIN", async () => {
+    it("a pending joiner with chain reads proven reads the pending set from the chain after it handled its JOIN's inbound event", async () => {
         const h = TestSession.getHarness();
-        const joiner = await stagePendingJoinMirroredByJoiner(h);
+        const joiner = await stagePendingJoinHandledByJoiner(h);
         expect(await readSignerMembershipLookups(h, joiner)).to.deep.include({
             isInLocalState: false,
-            isPendingInMirror: true
+            isPendingAtLastInbound: true
         });
         const peer = h.control(joiner);
         await peer.stub.stubProvenChainReads().request();
@@ -332,6 +288,7 @@ describe("Unit: MembershipService", function () {
             expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
             expect(observed.calls).to.deep.equal([
                 "getStateSnapshot",
+                "getStateSnapshot",
                 "getPendingParticipants"
             ]);
         } finally {
@@ -339,10 +296,10 @@ describe("Unit: MembershipService", function () {
         }
     });
 
-    it("a pending joiner whose local diamond misses its JOIN reads the pending set from the chain once", async () => {
+    it("a pending joiner that has not handled its JOIN's inbound event reads the pending set from the chain once", async () => {
         const h = TestSession.getHarness();
-        const staged = await stagePendingJoinMissedByJoinerMirror(h);
-        expect(staged.isOwnJoinMirrored).to.equal(false);
+        const staged = await stagePendingJoinMissedByJoinerHandler(h);
+        expect(staged.isOwnJoinObserved).to.equal(false);
         expect(
             await readSignerMembershipLookups(h, staged.joiner)
         ).to.deep.include({
@@ -357,19 +314,82 @@ describe("Unit: MembershipService", function () {
         expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
         expect(observed.calls).to.deep.equal([
             "getStateSnapshot",
+            // the snapshot event's confirmation at its block
+            "getStateSnapshot",
             "getPendingParticipants"
         ]);
     });
 
-    it("a pending JOIN the chain lists but the joiner's local mirror misses is not observed locally and starts no force-join counters", async () => {
+    it("the pending lookup follows the last handled inbound block: before the JOIN's block it lists nothing, at it the JOIN, and an older event handled later does not move it back", async () => {
         const h = TestSession.getHarness();
-        const { joiner } = await stagePendingJoinMissedByJoinerMirror(h);
+        const { joiner } = await stagePendingJoinMissedByJoinerHandler(h);
+        const [joinLog] = (
+            await h.channelManager.queryFilter(
+                h.channelManager.filters.InboundMessagesProcessed(h.channelId)
+            )
+        ).slice(-1);
+        const lookups = await h.execOnHost(
+            joiner,
+            async (sm, args) => {
+                const membership = sm.membershipService;
+                membership.observePendingSetChangedAt(args.joinBlock - 1);
+                const beforeJoin =
+                    await membership.isSignerPendingAtLastPendingSetChange();
+                membership.observePendingSetChangedAt(args.joinBlock);
+                const atJoin =
+                    await membership.isSignerPendingAtLastPendingSetChange();
+                membership.observePendingSetChangedAt(args.joinBlock - 1);
+                const afterOlderEvent =
+                    await membership.isSignerPendingAtLastPendingSetChange();
+                return { beforeJoin, atJoin, afterOlderEvent };
+            },
+            { joinBlock: joinLog.blockNumber }
+        );
+        expect(lookups).to.deep.equal({
+            beforeJoin: false,
+            atJoin: true,
+            afterOlderEvent: true
+        });
+    });
+
+    it("a JOIN that a later handled snapshot consumed is no longer pending at the pin", async () => {
+        const h = TestSession.getHarness();
+        const joiner = await stagePendingJoinHandledByJoiner(h);
+        const isListed = async () =>
+            (await h.channelManager.getPendingParticipants(h.channelId)).some(
+                (participant) =>
+                    participant.toLowerCase() === joiner.address.toLowerCase()
+            );
+        expect(await isListed(), "premise: the JOIN is pending").to.equal(true);
+        await h.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        expect(
+            await h.transition.postSnapshotWait(),
+            "the snapshot post must land"
+        ).to.not.equal(undefined);
+        expect(await isListed(), "premise: the snapshot consumed it").to.equal(
+            false
+        );
+        // the joiner's handler moves its pin to the snapshot's block
+        await waitFor(
+            async () =>
+                !(await h.execOnHost(joiner, (sm) =>
+                    sm.membershipService.isSignerPendingAtLastPendingSetChange()
+                ))
+        );
+    });
+
+    it("a pending JOIN the chain lists but the joiner has not handled is not observed and starts no force-join counters", async () => {
+        const h = TestSession.getHarness();
+        const { joiner } = await stagePendingJoinMissedByJoinerHandler(h);
         // the snapshot application runs the joiner's join check
         await recordPendingJoinerChainCalls(h, joiner, "onChainSnapshot");
         await waitForJoinChecks(h, joiner);
         expect(await readSignerMembershipLookups(h, joiner)).to.deep.include({
             isListedPendingOnChain: true,
-            isPendingInMirror: false,
+            isPendingAtLastInbound: false,
             isPendingOnChain: true
         });
         const join = await readTrackedJoin(h, joiner);
@@ -380,21 +400,21 @@ describe("Unit: MembershipService", function () {
         );
     });
 
-    it("a seated participant absent from the mirror's and the chain's pending sets is not pending on chain", async () => {
+    it("a seated participant absent from the pinned and the head pending sets is not pending on chain", async () => {
         const h = TestSession.getHarness();
-        await stageMirroredPendingJoin(h);
+        await stageObservedPendingJoin(h);
         expect(
             await readSignerMembershipLookups(h, h.getPeer(0))
         ).to.deep.include({
             isListedPendingOnChain: false,
-            isPendingInMirror: false,
+            isPendingAtLastInbound: false,
             isPendingOnChain: false
         });
     });
 
     it("a participant seated on chain with no pending entry is on chain", async () => {
         const h = TestSession.getHarness();
-        await stageMirroredPendingJoin(h);
+        await stageObservedPendingJoin(h);
         expect(
             await readSignerMembershipLookups(h, h.getPeer(0))
         ).to.deep.include({
@@ -404,20 +424,20 @@ describe("Unit: MembershipService", function () {
         });
     });
 
-    it("a joiner pending on chain and missed by its local mirror is on chain", async () => {
+    it("a joiner pending on chain whose inbound event it has not handled is on chain", async () => {
         const h = TestSession.getHarness();
-        const { joiner } = await stagePendingJoinMissedByJoinerMirror(h);
+        const { joiner } = await stagePendingJoinMissedByJoinerHandler(h);
         expect(await readSignerMembershipLookups(h, joiner)).to.deep.include({
             isSeatedOnChain: false,
             isListedPendingOnChain: true,
-            isPendingInMirror: false,
+            isPendingAtLastInbound: false,
             isOnChain: true
         });
     });
 
     it("a snapshot participant unknown to the cache while a JOIN is pending is admitted, not blacklisted", async () => {
         const h = TestSession.getHarness();
-        await stageMirroredPendingJoin(h, 1);
+        await stageObservedPendingJoin(h, 1);
         expect(await relayAfterEligibilityReset(h)).to.equal(0);
         const receiver = h.control(h.getPeer(0));
         expect(
@@ -428,44 +448,19 @@ describe("Unit: MembershipService", function () {
         ).to.equal(true);
     });
 
-    it("a local diamond failure during a refresh throws instead of reporting the refresh unavailable", async () => {
-        const h = TestSession.getHarness();
-        await h.lifecycle.start(2, 0);
-        await h.mirror.failNextUpdate(0, "onStateSnapshotUpdated");
-        const outcome = await h.execOnHost(h.getPeer(0), async (sm) => {
-            try {
-                return {
-                    refreshed:
-                        await sm.membershipService.refreshOnChainEligibility(),
-                    error: null
-                };
-            } catch (error) {
-                return {
-                    refreshed: null,
-                    error:
-                        error instanceof Error ? error.message : String(error)
-                };
-            }
-        });
-        expect(outcome.refreshed).to.equal(null);
-        expect(outcome.error).to.be.a("string");
-    });
-
-    it("a local diamond failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable", async () => {
+    it("a handler failure applying a recovered slash log during a refresh throws instead of reporting the refresh unavailable", async () => {
         const outcome = await refreshWithFailedRecoveredSlash();
         expect(outcome.refreshed).to.equal(null);
-        expect(outcome.error).to.match(
-            /^Local contract call failed: Error: Local EVM execution failed: revert/
-        );
+        expect(outcome.error).to.contain("stubbed slash handler failure");
     });
 
-    it("a local diamond failure applying a recovered inbound log during a refresh throws instead of reporting the refresh unavailable", async () => {
+    it("a handler failure applying a recovered inbound log during a refresh throws instead of reporting the refresh unavailable", async () => {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);
         const outcome = await refreshWithFailedRecoveredInboundBlock(h);
         expect(outcome.refreshed).to.equal(null);
-        expect(outcome.error).to.match(
-            /^Local contract call failed: Error: Local EVM execution failed: revert/
+        expect(outcome.error).to.contain(
+            "stubbed onInboundMessagesProcessed failure"
         );
     });
 

@@ -121,6 +121,19 @@ describe("Clock", () => {
         young.destroy();
     });
 
+    it("keeps the latest block its synchronization read", async () => {
+        const young = await createZeroGenesisChain([2, 2, 2]);
+
+        await Clock.init(young);
+
+        const latest = await young.getBlock("latest");
+        expect(Clock.getSyncedBlockchainTime()).to.deep.equal({
+            timestamp: latest!.timestamp,
+            blockNumber: latest!.number
+        });
+        young.destroy();
+    });
+
     it("spans blocks at one second each before a block time is measured", async () => {
         const fresh = await createZeroGenesisChain([]);
 

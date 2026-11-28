@@ -301,8 +301,8 @@ export class ValidationProbeService extends ANetworkRpcService<
     }
 
     /**
-     * Run `isDisputedFork` while counting the local-diamond queries, so a test
-     * can prove which of the two sources decided. `markLocallyDisputed`
+     * Run `isDisputedFork` while counting the chain contract's queries, so a
+     * test can prove whether the chain decided. `markLocallyDisputed`
      * records the local marker first, as disputing the fork would.
      */
     public async probeIsDisputedFork(
@@ -312,15 +312,13 @@ export class ValidationProbeService extends ANetworkRpcService<
         if (markLocallyDisputed) {
             this.sm.storage.disputes.storeDisputedFork(forkId, true);
         }
-        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
-        const original = localDiamond.isForkDisputed;
+        const chain = this.sm.stateChannelManagerContract;
+        const original = chain.isForkDisputed;
         let onChainQueries = 0;
-        localDiamond.isForkDisputed = ((
-            ...args: Parameters<typeof original>
-        ) => {
+        chain.isForkDisputed = ((...args: Parameters<typeof original>) => {
             onChainQueries += 1;
             return original(...args);
-        }) as typeof localDiamond.isForkDisputed;
+        }) as typeof chain.isForkDisputed;
         try {
             const disputed = await this.sm.validationService.isDisputedFork(
                 forkId,
@@ -328,7 +326,7 @@ export class ValidationProbeService extends ANetworkRpcService<
             );
             return { disputed, onChainQueries };
         } finally {
-            localDiamond.isForkDisputed = original;
+            chain.isForkDisputed = original;
         }
     }
 

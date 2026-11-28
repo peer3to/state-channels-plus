@@ -1,8 +1,8 @@
 import type { Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
+import { stageForcedJoinBeforeHeadFinal } from "@test/fixtures/ConsumedInboundStaging";
 import { stageMissingParticipantSignature } from "@test/fixtures/LateSignatureStaging";
-import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -31,6 +31,35 @@ describe("Unit: DisputeBuilder", function () {
             );
 
             expect(r.isSameResult).to.equal(true);
+        });
+
+        it("the comparison of a dispute with the evidence already built reduces on the chain, never the mirror", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2);
+            const forkId = h.activeForkId!;
+            const reads = await h.mirror.observe(0, "reduce");
+            try {
+                await h.execOnHost(
+                    h.getPeer(0),
+                    async (sm, args) => {
+                        const builder = sm.disputeManager["disputeBuilder"];
+                        const result =
+                            (await sm.disputeManager.constructDispute(
+                                args.forkId
+                            ))!;
+                        await builder["hasMoreEvidence"](
+                            args.forkId,
+                            result.dispute
+                        );
+                    },
+                    { forkId }
+                );
+                const { local, chain } = await reads.observation();
+                expect(local.reads).to.equal(0);
+                expect(chain.reads).to.equal(2);
+            } finally {
+                await reads.restore();
+            }
         });
 
         it("a valid signature merged into the unchanged latest block after a cached construction → the cached result is returned and adds no evidence", async function () {
@@ -228,7 +257,7 @@ describe("Unit: DisputeBuilder", function () {
                 );
                 await control.stub.releaseTimeoutBuild().request();
                 await h.assert.dispute.initiatedWait({ peersIndices: [0] });
-                // the auditor audits once its mirror holds the dispute window
+                // the auditor audits once its handler has committed the dispute window
                 await h.assert.dispute.committedWait({
                     peersIndices: [1],
                     expectedCount: 1
@@ -299,9 +328,8 @@ describe("Unit: DisputeBuilder", function () {
         });
         it("a cached dispute that omits its auditing data, then the chain no longer allows the omission → the next construction builds again and posts the data", async function () {
             const h = TestSession.getHarness();
-            // the chain has a join the head milestone waits on; peer 0's
-            // mirror missed it, so locally the omission stays allowed
-            await stageMirrorMissingJoin(h, 0);
+            // the chain has a join the head milestone waits on
+            await stageForcedJoinBeforeHeadFinal(h);
             const peer = h.getPeer(0);
             const forkId = h.activeForkId!;
             const read = "isAuditingDataOmissionAllowed";
@@ -361,7 +389,7 @@ describe("Unit: DisputeBuilder", function () {
             // posted dispute is reused with no read
             const { local, chain } = await after.observation();
             expect(chain.answers).to.deep.equal([false, false]);
-            expect(local.answers).to.deep.equal([true]);
+            expect(local.reads).to.equal(0);
         });
 
         it("the fork's reduced result committed after a cached construction → the built dispute is dropped", async function () {

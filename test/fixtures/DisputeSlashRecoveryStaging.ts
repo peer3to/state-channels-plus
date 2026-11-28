@@ -78,25 +78,15 @@ export async function assertKilledOpenerSubmissionRace(
         expect(
             await h.query.onChainSlashedParticipants(killer.index)
         ).to.include(spammer.address);
-        if (options.observeSlashBeforeRefusal) {
-            await waitFor(async () =>
-                (
-                    await h.execOnHost(target, (sm) =>
-                        sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                            sm.channelId
-                        )
-                    )
-                ).includes(spammer.address)
-            );
-        } else {
-            expect(
-                await h.execOnHost(target, (sm) =>
-                    sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                        sm.channelId
-                    )
-                )
-            ).to.not.include(spammer.address);
-        }
+        // the target's event handlers saw the slash and the kill
+        const handledSlashEvents = () =>
+            h.event.getEventCallCounts(target.index, [
+                "onChainSlashed",
+                "onDisputeKilled"
+            ]);
+        if (options.observeSlashBeforeRefusal)
+            await waitFor(async () => handledSlashEvents() > 0);
+        else expect(handledSlashEvents()).to.equal(0);
         const [killedLog] = await h.channelManager.queryFilter(
             h.channelManager.filters.DisputeKilled(h.channelId)
         );
@@ -148,11 +138,11 @@ export async function assertKilledOpenerSubmissionRace(
             const recovered = await h.execOnHost(
                 target,
                 async (sm, args) => ({
-                    before: await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
+                    before: await sm.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
                         sm.channelId,
                         args.timestamp - 1
                     ),
-                    at: await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
+                    at: await sm.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
                         sm.channelId,
                         args.timestamp
                     ),
@@ -277,10 +267,12 @@ export async function assertDirectSlashRecovery(
     else expect(result).to.deep.equal({ changed: false, error: null });
 }
 
-export async function assertRecoveredSlashTimestampAndDedup(
-    h: MathPeerTestHarness,
-    failQueries = false
-): Promise<void> {
+/**
+ * An unkilled spam dispute whose opener peer 2 kills while peer 0 (the
+ * target) loses the slash and kill logs, so the target has not handled the
+ * slash.
+ */
+async function killSpammerWhileTargetLosesSlashLogs(h: MathPeerTestHarness) {
     const { forkId, spammer, killer } =
         await h.scenario.stageUnkilledSpamDispute({
             killerIndex: 2,
@@ -314,25 +306,51 @@ export async function assertRecoveredSlashTimestampAndDedup(
             { spammer: spammer.address, forkId }
         );
         await dropped.waitUntilDropped();
-        if (failQueries) {
-            await h.control(target).stub.stubHideChainLogs().request();
-            try {
-                await expect(
-                    h.execOnHost(target, (sm) =>
-                        sm.eventSyncService.recoverOnChainSlashes(sm.channelId)
-                    )
-                ).to.be.rejectedWith("did not recover the authoritative set");
-                expect(
-                    await h
-                        .control(target)
-                        .stub.getChainLogQueryCount()
-                        .request()
-                ).to.equal(3);
-            } finally {
-                await h.control(target).stub.restoreChainLogQueries().request();
-            }
-            return;
+    } catch (error) {
+        await dropped.release();
+        for (const peer of h.getActiveHonestPeers())
+            await h.control(peer).stub.restoreReductionTasks(true).request();
+        throw error;
+    }
+    return { forkId, spammer, target, dropped };
+}
+
+export async function assertRecoveredSlashQueriesExhausted(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { target, dropped } = await killSpammerWhileTargetLosesSlashLogs(h);
+    try {
+        await h.control(target).stub.stubHideChainLogs().request();
+        try {
+            await expect(
+                h.execOnHost(target, (sm) =>
+                    sm.eventSyncService.recoverOnChainSlashes(sm.channelId)
+                )
+            ).to.be.rejectedWith("did not recover the authoritative set");
+            expect(
+                await h.control(target).stub.getChainLogQueryCount().request()
+            ).to.equal(3);
+        } finally {
+            await h.control(target).stub.restoreChainLogQueries().request();
         }
+    } finally {
+        await dropped.release();
+        for (const peer of h.getActiveHonestPeers())
+            await h.control(peer).stub.restoreReductionTasks(true).request();
+    }
+}
+
+/**
+ * The target recovers the lost slash: the recovery dispatches it once (the
+ * node's handled slashes then hold it), keeps the kill timestamp, and a
+ * repeated recovery finds it handled and reports no change.
+ */
+export async function assertRecoveredSlashTimestampAndDedup(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { spammer, target, dropped } =
+        await killSpammerWhileTargetLosesSlashLogs(h);
+    try {
         const [log] = await h.channelManager.queryFilter(
             h.channelManager.filters.DisputeKilled(h.channelId)
         );
@@ -340,13 +358,15 @@ export async function assertRecoveredSlashTimestampAndDedup(
         const result = await h.execOnHost(
             target,
             async (sm, args) => {
-                const before =
-                    await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                        sm.channelId
-                    );
+                // private: the slashes this node's event pipeline handled
+                const handled = () => [
+                    ...sm.eventSyncService["getHandledSlashes"](sm.channelId)
+                ];
+                const before = handled();
                 const changed = await sm.eventSyncService.recoverOnChainSlashes(
                     sm.channelId
                 );
+                const after = handled();
                 const repeated =
                     await sm.eventSyncService.recoverOnChainSlashes(
                         sm.channelId
@@ -354,13 +374,14 @@ export async function assertRecoveredSlashTimestampAndDedup(
                 return {
                     before,
                     changed,
+                    after,
                     repeated,
                     earlier:
-                        await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
+                        await sm.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
                             sm.channelId,
                             args.timestamp - 1
                         ),
-                    at: await sm.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipantsUpToTimestamp(
+                    at: await sm.stateChannelManagerContract.getOnChainSlashedParticipantsUpToTimestamp(
                         sm.channelId,
                         args.timestamp
                     )
@@ -370,6 +391,7 @@ export async function assertRecoveredSlashTimestampAndDedup(
         );
         expect(result.before).to.not.include(spammer.address);
         expect(result.changed).to.equal(true);
+        expect(result.after).to.include(spammer.address);
         expect(result.repeated).to.equal(false);
         expect(result.earlier).to.not.include(spammer.address);
         expect(
@@ -379,5 +401,60 @@ export async function assertRecoveredSlashTimestampAndDedup(
         await dropped.release();
         for (const peer of h.getActiveHonestPeers())
             await h.control(peer).stub.restoreReductionTasks(true).request();
+    }
+}
+
+/**
+ * The target recovers the lost slash, so its handled slashes hold it. The
+ * peers then reduce the spam fork away and post a same-fork snapshot on the
+ * undisputed successor: the chain clears the channel's storage
+ * (`ChannelStorageCleared`), and the target's handled slashes are emptied.
+ */
+export async function assertHandledSlashesClearedWithStorage(
+    h: MathPeerTestHarness
+): Promise<void> {
+    const { forkId, spammer, target, dropped } =
+        await killSpammerWhileTargetLosesSlashLogs(h);
+    try {
+        // private: the slashes this node's event pipeline handled
+        const handledSlashes = () =>
+            h.execOnHost(target, (sm) => [
+                ...sm.eventSyncService["getHandledSlashes"](sm.channelId)
+            ]);
+        expect(await handledSlashes()).to.not.include(spammer.address);
+        await h.execOnHost(target, (sm) =>
+            sm.eventSyncService.recoverOnChainSlashes(sm.channelId)
+        );
+        expect(await handledSlashes()).to.include(spammer.address);
+
+        // an honest peer adds its dispute to the window, so the fork is reduced
+        const honest = h.getActiveHonestPeers();
+        await h.dispute.restoreDisputeInitiation(
+            honest.map((peer) => peer.index)
+        );
+        await h.execOnHost(honest[honest.length - 1]!, (sm) =>
+            sm.disputeManager.dispute(sm.forkId)
+        );
+        for (const peer of honest)
+            await h.control(peer).stub.restoreReductionTasks(true).request();
+        await h.dispute.resolveDisputeWait({ forkId });
+        // the peers' adoption post moves the chain to the reduced fork
+        await h.assert.sync.onChainSnapshotAndPeersSameForkWait();
+        await h.transition.advanceState({
+            count: 2,
+            waitForFinalization: true
+        });
+        const posted = await h.transition.postSnapshotWait();
+        expect(posted, "the same-fork snapshot post must land").to.not.equal(
+            undefined
+        );
+
+        const cleared = await h.channelManager.queryFilter(
+            h.channelManager.filters.ChannelStorageCleared(h.channelId)
+        );
+        expect(cleared.length).to.be.greaterThan(0);
+        await waitFor(async () => (await handledSlashes()).length === 0);
+    } finally {
+        await dropped.release();
     }
 }

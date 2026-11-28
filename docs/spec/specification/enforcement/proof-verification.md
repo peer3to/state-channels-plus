@@ -67,7 +67,7 @@ can cite the exact violation rather than re-deriving it.
 
 - Verification cost is gas-bounded on-chain; no proof admission cap has yet been selected in the owning document ([state-proofs.md](../disputes/state-proofs.md)).
 - Predicates evaluate committed state as-is; whether that state is fresh is the caller's problem
-  (on-chain it always is; locally see [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](local-mirror.md#req-mirror-3-thd7k8)).
+  (on-chain it always is; locally the caller supplies it, and replicated channel state is read from the chain, [`REQ-MIRROR-6-0WSB4V`](local-mirror.md#req-mirror-6-0wsb4v)).
 - Empty proofs represent genesis; an anchor claim requires its block.
 
 ## Security considerations

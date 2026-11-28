@@ -1,10 +1,13 @@
 // @spec-test-coverage-ignore: test-owned peer3 node with light client endpoints; executable evidence belongs to its calling test declarations
-import { JsonRpcSocket } from "./JsonRpcSocket";
+import { JsonRpcSocket } from "./node/JsonRpcSocket";
 import {
     LIGHT_CLIENT_METHODS,
     type LightClientStorageBlock,
     type LightClientSubscription
 } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
+import type { ProvenBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/AProvenStateReader";
+import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
+import FrontierProvenStateReader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader";
 import { RpcNodeProxy } from "@test/fixtures/node/RpcNodeProxy";
 import {
     type NodeHandle,
@@ -23,6 +26,14 @@ import {
     type TransactionReceipt,
     type TransactionResponse
 } from "ethers";
+
+/** A proven state reader over the node's light client `socket`. */
+export function readerOver(socket: JsonRpcSocket): FrontierProvenStateReader {
+    return new FrontierProvenStateReader(
+        (method, params) => socket.request(method, params),
+        PEER3_CHAIN_CONSTANTS
+    );
+}
 
 /** What a light client test fails with on a node without the endpoints. */
 export const LIGHT_CLIENT_UNSUPPORTED = "RPC node doesn't support LC endpoints";
@@ -91,6 +102,24 @@ export const PARTITION_CONTRACT =
     "6001" +
     "60006000a2" +
     "00";
+
+/**
+ * The calldata with which {@link PARTITION_CONTRACT} stores `sload(read) + add`
+ * at slot `write`, logged with `topic`.
+ */
+export function partitionWrite(
+    topic: string,
+    read: number,
+    write: number,
+    add: number
+): string {
+    return concat([
+        topic,
+        toBeHex(read, 32),
+        toBeHex(write, 32),
+        toBeHex(add, 32)
+    ]);
+}
 
 /** Creation code of a contract whose code is the invalid opcode `0xfe`. */
 export const INVALID_OPCODE_CONTRACT = "0x600180600b6000396000f3" + "fe";
@@ -193,16 +222,20 @@ export class LightClientConnection {
 export class LightClientNodeFixture {
     /** Reads straight from the node. */
     readonly provider: JsonRpcProvider;
-    private readonly node: NodeHandle;
+    /** The node this fixture started; undefined when it attached to one already running. */
+    private readonly node: NodeHandle | undefined;
+    /** Where the node serves its RPC. */
+    readonly url: string;
     private readonly wallet: HDNodeWallet;
     private readonly sockets: JsonRpcSocket[] = [];
     private readonly proxies: RpcNodeProxy[] = [];
     /** The funded account's next nonce; several transactions can share a block. */
     private nextNonce = 0;
 
-    private constructor(node: NodeHandle) {
+    private constructor(node: NodeHandle | undefined, url: string) {
         this.node = node;
-        this.provider = new JsonRpcProvider(node.url, undefined, {
+        this.url = url;
+        this.provider = new JsonRpcProvider(url, undefined, {
             staticNetwork: true,
             // a receipt is asked for well inside the node's block time
             pollingInterval: 250
@@ -217,12 +250,17 @@ export class LightClientNodeFixture {
      * Starts the node. Throws {@link LIGHT_CLIENT_UNSUPPORTED} at once when the
      * peer3 node binary (`PEER3_NODE_BIN`, else `zero-fee-node` on PATH) cannot
      * be found, because the Hardhat test node has no light client endpoints.
+     * With `lightClient: false` the node runs without them, a benchmark's
+     * baseline. `lightClientArgs` follow `--light-client`.
      */
-    static async start(): Promise<LightClientNodeFixture> {
+    static async start({
+        lightClient = true,
+        lightClientArgs = [] as string[]
+    } = {}): Promise<LightClientNodeFixture> {
         const node = await startPeer3Node({
             extraArgs: [
                 // the light client endpoints
-                "--light-client",
+                ...(lightClient ? ["--light-client", ...lightClientArgs] : []),
                 // the wildcard storage subscription is an unsafe method
                 "--rpc-methods",
                 "unsafe"
@@ -234,34 +272,50 @@ export class LightClientNodeFixture {
                 );
             throw error;
         });
-        return new LightClientNodeFixture(node);
+        return new LightClientNodeFixture(node, node.url);
+    }
+
+    /**
+     * Uses a peer3 dev node already running at `url`, which serves the light
+     * client endpoints and funds the test chain's account; stop leaves it
+     * running. For a benchmark whose node runs on another host.
+     */
+    static async attach(url: string): Promise<LightClientNodeFixture> {
+        const fixture = new LightClientNodeFixture(undefined, url);
+        // earlier runs sent from the same account
+        fixture.nextNonce = await fixture.provider.getTransactionCount(
+            fixture.senderAddress,
+            "pending"
+        );
+        return fixture;
     }
 
     async stop(): Promise<void> {
         for (const socket of this.sockets) socket.close();
         for (const proxy of this.proxies) await proxy.close();
         this.provider.destroy();
+        if (!this.node) return;
         this.node.stop();
         await this.node.exited;
     }
 
     /** A connection to the light client endpoints, after checking the node lists them. */
     async connect(): Promise<LightClientConnection> {
-        const socket = await this.open(this.node.url);
+        const socket = await this.open(this.url);
         await assertLightClientEndpoints(socket);
         return new LightClientConnection(socket);
     }
 
     /** A proxy in front of the node, which the test makes answer in the node's place. */
     async proxyToNode(): Promise<RpcNodeProxy> {
-        const proxy = await RpcNodeProxy.start(this.node.url);
+        const proxy = await RpcNodeProxy.start(this.url);
         this.proxies.push(proxy);
         return proxy;
     }
 
     /** A socket to the node itself, which the fixture closes on stop. */
     connectToNode(): Promise<JsonRpcSocket> {
-        return this.open(this.node.url);
+        return this.open(this.url);
     }
 
     /**
@@ -280,8 +334,25 @@ export class LightClientNodeFixture {
      * Resolves once the node sealed its first block: the genesis header names
      * no Ethereum block, so no proven read can start from it.
      */
+    /** The reader's best block, once the node's Ethereum RPC serves that block too. */
+    async servedHead(reader: FrontierProvenStateReader): Promise<ProvenBlock> {
+        const head = await reader.head();
+        await waitFor(
+            async () => (await this.provider.getBlock(head.number)) !== null
+        );
+        return head;
+    }
+
     async firstBlockSealed(): Promise<void> {
         await waitFor(async () => (await this.provider.getBlockNumber()) > 0);
+    }
+
+    /** The node's process id, for reading its CPU and memory use. */
+    get pid(): number {
+        const pid = this.node?.proc.pid;
+        if (pid === undefined)
+            throw new Error("The node runs in no process of this fixture");
+        return pid;
     }
 
     /** The account that sends this fixture's transactions. */
@@ -313,15 +384,7 @@ export class LightClientNodeFixture {
         write: number,
         add: number
     ): Promise<TransactionReceipt> {
-        return this.transact(
-            contract,
-            concat([
-                topic,
-                toBeHex(read, 32),
-                toBeHex(write, 32),
-                toBeHex(add, 32)
-            ])
-        );
+        return this.transact(contract, partitionWrite(topic, read, write, add));
     }
 
     /**

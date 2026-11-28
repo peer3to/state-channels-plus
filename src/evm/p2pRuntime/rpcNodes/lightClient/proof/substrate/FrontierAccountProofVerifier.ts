@@ -35,10 +35,10 @@ export default class FrontierAccountProofVerifier extends AAccountProofVerifier 
     provenAccount(
         stateRoot: Hash,
         address: ChecksumAddress,
-        proofNodes: Bytes[]
+        proofNodes: Bytes[] | SubstrateTrieProof
     ): ProvenAccount {
         return this.accountIn(
-            new SubstrateTrieProof(proofNodes),
+            SubstrateTrieProof.of(proofNodes),
             stateRoot,
             address
         );
@@ -79,10 +79,10 @@ export default class FrontierAccountProofVerifier extends AAccountProofVerifier 
     provenCode(
         stateRoot: Hash,
         address: ChecksumAddress,
-        proofNodes: Bytes[]
+        proofNodes: Bytes[] | SubstrateTrieProof
     ): string {
         return this.codeIn(
-            new SubstrateTrieProof(proofNodes),
+            SubstrateTrieProof.of(proofNodes),
             stateRoot,
             address
         );

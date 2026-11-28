@@ -1,3 +1,7 @@
+import {
+    BELOW_ANCHOR_AUDITOR,
+    stageAuditorBelowChainAnchor
+} from "@test/fixtures/ChallengeBoundaryStaging";
 import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
 import {
     chainSnapshot,
@@ -25,7 +29,7 @@ import {
     stageFinalityFromNextBlock,
     stageJoinThenLeave,
     stageJoinHopWithLaterFinalPoint,
-    stageMirrorMissingTopUp,
+    stageConsumedTopUp,
     stageTwoJoins,
     stageSuccessorBlockZero,
     stageUnpostedSuccessorFork,
@@ -344,9 +348,10 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(view.chainWalk.finalized.hash).to.equal(view.finalized.hash);
         });
 
-        it("D6: a hop whose JOIN is consumed and whose joiner exits within it, to the block after the exit → without the joiner's signature neither the SDK nor the walk proves it final; with it both do, and the SDK's set keeps that signature", async function () {
+        it("D6: a hop whose JOIN is consumed after the chain anchor and whose joiner exits within it, to the block after the exit → without the joiner's signature neither the SDK nor the chain walk proves it final; with it both do, and the SDK's set keeps that signature", async function () {
             const h = TestSession.getHarness();
             const {
+                anchor,
                 joinHeight: j,
                 leaveHeight: k,
                 joinerIndex,
@@ -361,8 +366,8 @@ describe("Unit: AgreementManager proof construction", function () {
                 .stub.stripStoredBlockSignature(h.activeForkId!, j, joiner)
                 .request();
             await dropStoredBlock(h, 0, j + 1);
-            // the local diamond's walk of peer 0's stored run k + 1.. as one hop
-            const localDiamondWalk = async () => {
+            // the chain's walk of peer 0's stored run k + 1.. as one hop
+            const chainWalk = async () => {
                 const blockConfirmations = await storedConfirmations(
                     h,
                     0,
@@ -371,20 +376,21 @@ describe("Unit: AgreementManager proof construction", function () {
                 const tiers = await walkAllTiersView(h, 0, {
                     milestones: [{ blockConfirmations }]
                 });
-                return tiers.find((walk) => walk.tier === "localDiamond")!;
+                return tiers.find((walk) => walk.tier === "chain")!;
             };
 
             const without = await buildProofView(h, 0, { finalizedOnly: true });
-            const walkWithout = await localDiamondWalk();
+            const walkWithout = await chainWalk();
             await addStoredSignature(h, 0, k + 1, joinerIndex);
             const withJoiner = await buildProofView(h, 0, {
                 finalizedOnly: true
             });
-            const walkWith = await localDiamondWalk();
+            const walkWith = await chainWalk();
 
-            // the hop starts at the genesis; the joiner is in neither snapshot
-            expect(without.start.hash).to.equal(without.genesisHash);
-            expect(walkWithout.start).to.equal(null);
+            // the hop starts at the chain anchor below the join; the joiner
+            // is in neither snapshot
+            expect(without.start.hash).to.equal(anchor.hash);
+            expect(walkWithout.start!.hash).to.equal(anchor.hash);
             expect(without.startParticipants).to.not.include(joiner);
             expect(withJoiner.milestoneParticipants[0]).to.not.include(joiner);
             // without its signature: no final point above the exit, and the
@@ -505,45 +511,41 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
         });
 
-        it("U24: a local diamond lagging a newer chain anchor → construction starts at the fork genesis, the chain walk still accepts the proof", async function () {
+        it("U24: a builder whose own finalized state is below a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
             const h = TestSession.getHarness();
-            const lagging = 1;
-            const { anchor } = await stageFinalBlocks(h, {
-                postAnchor: true,
-                finalBlocks: 2,
-                laggingIndices: [lagging]
+            const builder = BELOW_ANCHOR_AUDITOR.belowAnchorIndex;
+            const { anchor } = await stageAuditorBelowChainAnchor(h, {
+                tailBlocks: 0
             });
             expect(
-                (await h.query.getLocalStateSnapshot(h.getPeer(lagging))).hash,
-                "the lagging mirror keeps the older snapshot"
-            ).to.not.equal(anchor!.hash);
+                (await localFinalizedView(h, builder))?.height ?? -1,
+                "the builder's own finalized state is below the chain anchor"
+            ).to.be.lessThan(anchor.blockHeight);
 
-            const view = await buildProofView(h, lagging);
+            const view = await buildProofView(h, builder);
 
-            expect(view.start.hash).to.equal(view.genesisHash);
-            expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
+            expect(view.start.hash).to.equal(anchor.hash);
+            expect(view.chainWalk.start!.hash).to.equal(anchor.hash);
             expect(view.chainWalk.valid).to.equal(true);
         });
 
-        it("U24: chain reads proven and the local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
+        it("U24: chain reads proven (light client) and the builder's own finalized state below a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
             const h = TestSession.getHarness();
-            const lagging = 1;
-            const { anchor } = await stageFinalBlocks(h, {
-                postAnchor: true,
-                finalBlocks: 2,
-                laggingIndices: [lagging]
+            const builder = BELOW_ANCHOR_AUDITOR.belowAnchorIndex;
+            const { anchor } = await stageAuditorBelowChainAnchor(h, {
+                tailBlocks: 0
             });
             expect(
-                (await h.query.getLocalStateSnapshot(h.getPeer(lagging))).hash,
-                "the lagging mirror keeps the older snapshot"
-            ).to.not.equal(anchor!.hash);
-            const peer = h.control(h.getPeer(lagging));
+                (await localFinalizedView(h, builder))?.height ?? -1,
+                "the builder's own finalized state is below the chain anchor"
+            ).to.be.lessThan(anchor.blockHeight);
+            const peer = h.control(h.getPeer(builder));
             await peer.stub.stubProvenChainReads().request();
             try {
-                const view = await buildProofView(h, lagging);
+                const view = await buildProofView(h, builder);
 
-                expect(view.start.hash).to.equal(anchor!.hash);
-                expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
+                expect(view.start.hash).to.equal(anchor.hash);
+                expect(view.chainWalk.start!.hash).to.equal(anchor.hash);
                 expect(view.chainWalk.valid).to.equal(true);
             } finally {
                 await peer.stub.restoreProvenChainReads().request();
@@ -569,13 +571,12 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(verified.walk!.valid).to.equal(true);
         });
 
-        it("U93: verifying from local finalized height 3 while the mirror and chain hold anchor 1 → neither moves; construction still starts at anchor 1 and the chain accepts it", async function () {
+        it("U93: verifying from local finalized height 3 while the chain holds anchor 1 → neither moves; construction still starts at anchor 1 and the chain accepts it", async function () {
             const h = TestSession.getHarness();
             const { anchor, latestHeight } = await stageFinalBlocks(h, {
                 postAnchor: true,
                 finalBlocks: 2
             });
-            const observer = h.getPeer(0);
 
             const localFinalized = await localFinalizedView(h, 0);
             const before = await buildProofView(h, 0);
@@ -586,10 +587,7 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(verified.walk!.tier).to.equal("localFinalized");
             expect(verified.walk!.start!.height).to.equal(latestHeight);
             expect(verified.walk!.valid).to.equal(true);
-            // the mirror and the chain keep the anchor
-            expect(
-                (await h.query.getLocalStateSnapshot(observer)).hash
-            ).to.equal(anchor!.hash);
+            // the chain keeps the anchor
             expect((await chainSnapshot(h)).hash).to.equal(anchor!.hash);
             // construction is unchanged by the verification
             expect(after.start.hash).to.equal(anchor!.hash);
@@ -602,7 +600,7 @@ describe("Unit: AgreementManager proof construction", function () {
     });
 
     describe("successor fork", function () {
-        it("U101: successor fork while the chain anchor is on its ancestor → the empty proof starts at the successor genesis; every tier walks from that genesis", async function () {
+        it("U101: successor fork while the chain anchor is on its ancestor → the empty proof starts at the successor genesis; the chain tier walks from that genesis", async function () {
             const h = TestSession.getHarness();
             const { successorForkId, ancestorAnchor, release } =
                 await stageUnpostedSuccessorFork(h);
@@ -622,12 +620,9 @@ describe("Unit: AgreementManager proof construction", function () {
                 expect(view.start.hash).to.equal(view.genesisHash);
                 expect(view.start.forkId).to.equal(successorForkId);
                 expect(view.finalized.hash).to.equal(view.genesisHash);
-                // no local final state on a fork without blocks; the mirror
-                // and the chain both walk from the successor genesis
-                expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-                    "localDiamond",
-                    "chain"
-                ]);
+                // no local final state on a fork without blocks; the chain
+                // walks from the successor genesis
+                expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
                 for (const walk of tiers) {
                     expect(walk.start, walk.tier).to.equal(null);
                     expect(walk.valid, walk.tier).to.equal(true);
@@ -646,7 +641,7 @@ describe("Unit: AgreementManager proof construction", function () {
             }
         });
 
-        it("U101: successor fork while the chain anchor is on its ancestor → a genesis-linked unfinalized block 0 proof starts at the successor genesis; every tier walks from that genesis", async function () {
+        it("U101: successor fork while the chain anchor is on its ancestor → a genesis-linked unfinalized block 0 proof starts at the successor genesis; the chain tier walks from that genesis", async function () {
             const h = TestSession.getHarness();
             const { successorForkId, ancestorAnchor, writerIndex, release } =
                 await stageSuccessorBlockZero(h);
@@ -670,12 +665,9 @@ describe("Unit: AgreementManager proof construction", function () {
                 expect(view.chainWalk.valid).to.equal(true);
                 expect(view.chainWalk.start).to.equal(null);
                 expect(view.chainWalk.replayBlockIndex).to.equal(0);
-                // nothing is final on the successor; the mirror and the chain
-                // both walk from the successor genesis
-                expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-                    "localDiamond",
-                    "chain"
-                ]);
+                // nothing is final on the successor; the chain walks from the
+                // successor genesis
+                expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
                 for (const walk of tiers) {
                     expect(walk.start, walk.tier).to.equal(null);
                     expect(walk.valid, walk.tier).to.equal(true);
@@ -705,10 +697,7 @@ describe("Unit: AgreementManager proof construction", function () {
                     genesisForkId: sourceForkId
                 });
 
-                expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-                    "localDiamond",
-                    "chain"
-                ]);
+                expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
                 expect(tiers.every((walk) => !walk.valid)).to.equal(true);
             } finally {
                 await release();
@@ -732,10 +721,7 @@ describe("Unit: AgreementManager proof construction", function () {
 
                 // control: the genuine successor genesis verifies
                 expect(control.every((walk) => walk.valid)).to.equal(true);
-                expect(tiers.map((walk) => walk.tier)).to.deep.equal([
-                    "localDiamond",
-                    "chain"
-                ]);
+                expect(tiers.map((walk) => walk.tier)).to.deep.equal(["chain"]);
                 expect(tiers.every((walk) => !walk.valid)).to.equal(true);
             } finally {
                 await release();
@@ -1179,17 +1165,16 @@ describe("Unit: AgreementManager proof construction", function () {
         it("U98: snapshot posting whose proof construction fails on its chain walk → the post rejects and the chain snapshot stays", async function () {
             const h = TestSession.getHarness();
             const lagging = 2;
-            const { anchor } = await stageMirrorMissingTopUp(h, {
-                laggingIndex: lagging,
+            const { anchor } = await stageConsumedTopUp(h, {
                 anchorBeforeTopUp: true
             });
             const observed = await h.mirror.observe(
                 lagging,
-                "verifyMilestones"
+                "verifyMilestonesFromTrustedStart"
             );
             await h.mirror.failNextChainRead(
                 lagging,
-                "verifyMilestones",
+                "verifyMilestonesFromTrustedStart",
                 "transport"
             );
 
@@ -1209,8 +1194,7 @@ describe("Unit: AgreementManager proof construction", function () {
             await observed.restore();
 
             expect(r.thrown).to.not.equal("");
-            // the lagging mirror cannot prove the hop, so the chain walk ran
-            // and failed
+            // the build's one chain walk ran and failed
             expect(observation.chain.failures).to.have.length(1);
             expect((await chainSnapshot(h)).hash).to.equal(anchor!.hash);
         });

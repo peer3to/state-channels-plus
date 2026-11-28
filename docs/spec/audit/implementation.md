@@ -3,6 +3,69 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Watched keys — 2026-11-25
+
+For [`REQ-LC-12-VPAAP0` (Keys a read had proven are kept current on the subscription of the contract…)](../specification/runtime/light-client.md#req-lc-12-vpaap0).
+[LightClientSubscriptions.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/LightClientSubscriptions.ts.md)
+gains `followContract` (the contract stays followed with no topics until `close`) and `watchKeys`,
+which sends `lightClient_watchStorage` on that contract's subscription of the serving node's socket
+once the subscription had its first message, refuses an answer of another block or of keys not asked
+with a `StorageProofError`, and keeps the keys the node took; on the first message of every new
+subscription of the contract it sends the kept keys again, 1,024 per call, and warns on failure.
+[LightClientRpcProvider.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/LightClientRpcProvider.ts.md)
+keeps which light client methods each node lists, watches only where the watch is listed, and hands
+the reader the watch.
+[FrontierProvenStateReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierProvenStateReader.ts.md)
+proves a read's keys through the watch when it is given one and falls back to `state_getReadProof`
+otherwise; both proofs go through the same check. `MultiRpcProvider.followContract` does nothing, and
+[P2pRuntimeHostRoot.ts](../implementation/source/src/rpc/internal/roots/P2pRuntimeHostRoot.ts.md)
+calls it with the state channel manager's address before the start-up reads. A read of more than
+1,024 missing keys uses a read proof. The node side is peer3-parachain PR #3 at `6bf84b6`.
+
+## Event coverage of the state channel manager — 2026-11-21
+
+The light client assumes that the channel's contract logs the channel's id in every transaction
+whose reads and writes the channel's own reads use
+([light-client.md](../specification/runtime/light-client.md#assumptions-and-constraints)). The
+node forms a partition from any indexed topic of a log, so the id may sit in any indexed position.
+This audit read the contracts at 761be8b11 against that assumption (Trello 399, "Confirm the event
+coverage"). Nothing was changed.
+
+Scope: the 23 functions of the compiled
+[`StateChannelManagerInterface`](../implementation/source/contracts/V1/StateChannelManagerInterface.sol.md)
+that are neither `view` nor `pure`, followed through every facet and internal function they reach.
+Each path that writes channel-keyed storage (`channelBalances`, `inboundMessageBlockMap`,
+`stateSnapshots`, `blockCalldataCommitments`, `disputeData`, `disputerThrottle`, the open-channel
+set) emits an event with the channel's id as its first indexed argument, in `topics[1]`:
+`ChannelOpened`, `InboundMessagesProcessed`, `BlockCalldataPosted`, `StateSnapshotUpdated`,
+`WithdrawalsUpdated`, `ChannelStorageCleared`, `DisputeCommitted`,
+`DisputeCommittedWithAuditingData`, `DisputeReducedResultCommitted`, `ChainSlashed` and
+`DisputeKilled`. The paths that emit nothing write nothing: the early returns of
+`updateStateSnapshotFork` and `reduceAndFinalize`, fraud-proof batches that slash nobody, and a
+reverted last call of `multicallBestEffortLast`, whose `MulticallLastCallFailed` has no indexed
+argument. The timing and size settings are written only by the constructor. What
+`executeStateTransition`, `reduceOutputToSnapshotData` and `verifyBalanceInvariantCheckSnapshot`
+write is the state machine's scratch storage, not channel state.
+
+A missing event would cost reads, not correctness: the node re-reads every key a partition holds
+when any block writes it, whichever transaction did. A key no logged transaction touched is proven
+at each read instead.
+
+Notes, none needing a change:
+
+- Closing a channel moves the last open channel's entry into its place in `openChannelIds` and
+  `openChannelIndexPlusOne` and logs only the closed channel's id. Only `getOpenChannelIds` and
+  `getOpenChannelCount` read those slots, and held keys are re-read after any write.
+- `BlockCalldataPosted` also indexes `commitmentHash`, so each post forms one more partition on the
+  node that nobody subscribes to, dropped after the node's idle limit. The topic stays indexed:
+  `EventSyncService` filters calldata logs by it.
+- Coverage is of keys transactions touch. Slots only a call reads, such as an empty calldata
+  commitment a timeout check looks up, are proven at each read. The light client benchmark's
+  per-slot hit rate measures this.
+- A multicall over several channels adds everything it touched to each channel's partition.
+
+Found on the way: [`FIND-CONSUMER-1-WP31N1`](open-findings.md#find-consumer-1-wp31n1).
+
 ## Storage proof verifier for Frontier chains — 2026-11-18
 
 What changed (light client card, Trello 399):
@@ -105,9 +168,9 @@ the endpoints, the question is kept once answered or refused as not served (-326
 counts are logged once at destroy. The sidecar, `proveFrontierStorageBlock.ts`, the re-proof interval and
 the `LIGHT_CLIENT` and `LIGHT_CLIENT_REPROOF_BLOCKS` keys are removed.
 
-S4 on 2026-11-21, for [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) and [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9). `isChainProven` and `replicatedStateSource` in
-[provenChainReads.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/provenChainReads.ts.md)
-are the one owner of the switch: the first asks the chain access's `answersFromProvenState` at each
+S4 on 2026-11-21, for the proven-reads requirement of that day (retired 2026-11-27, see the revision at the end of this entry) and [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9). `isChainProven` and `replicatedStateSource` in
+`provenChainReads.ts` (deleted 2026-11-27)
+were the one owner of the switch: the first asks the chain access's `answersFromProvenState` at each
 read (an endpoint that has not answered whether it serves the light client counts as not proven), the
 second returns the chain contract while proven and the local one otherwise.
 `MultiRpcProvider.answersFromProvenState` is false by default and its
@@ -127,7 +190,16 @@ reads, re-arming the check after a failed chain read), `DisputeValidationService
 starts from) and `MembershipService.isSignerPendingOnChain` (pending set, a local-first check).
 `ValidationService.isForkDisputedOnChain` is the one owner of the disputed flag outside ingest.
 Local while proven, by the engineer's two exceptions: the join countersigner's membership check and
-the ingest gate `ValidationService.isDisputedFork`.
+the ingest gate `ValidationService.isDisputedFork`. Revised 2026-11-22, when the engineer removed
+the exceptions: `MembershipService.isSignerInThresholdSet` asks the chain alone while proven, and
+`ValidationService.isDisputedFork` reads the chain through `replicatedStateSource` once the node's
+own dispute record does not answer. A failed read of that gate no longer loses queued blocks:
+`BlockQueueManager.tryExecuteFromQueue` puts the dequeued entries back through `restoreQueuedEntry`,
+and `queueTimeout` puts its entry back and runs again after `TIMEOUT_RECHECK_DELAY_MS`.
+
+Revised 2026-11-27, step 2 of replacing the event-built mirror with chain reads ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)). `provenChainReads.ts`, `preferLocal`, `DisputeValidationService.localFirst` and `ProofTier.LocalDiamond` are deleted, and the sites above read the chain directly whether or not it is proven: `DisputeBuilder` (slashes, the auditing-data omission), `AgreementManager` (the construction start and the chain anchor share `readAnchor`), `ValidationService` (`isDisputedFork`, `isForkDisputedOnChain`), `DisputeValidationService` (header mismatch, slashes, the calldata-posted proof, the omission, the latest state, the balance invariant, the inbound hash, the window time), `ChannelJoinService` (window time), `SpectateService` (the snapshot), `MembershipService` (`isSignerPendingOnChain`, `isSignerInThresholdSet`) and `ParticipantTimeoutService` (`readReplicated` is now `readChain`, its failure path unchanged). `MultiRpcProvider.answersFromProvenState` and its light client override have no caller in `src` any more; only the provider tests read them. Still on the mirror, for later steps: the event ordering check in `EventHandler`, slash recovery in `EventSyncService`, the `LeaveChannelService` probe, `isSignerPendingInMirror`, the window commitments of the event hooks, local reduction, `hasInvalidTimestamp`, the trusted-start walks of `AgreementManager` on the local diamond, and every mirror write.
+
+Revised 2026-11-27, step 3 of the same replacement ([`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)). The reads that always stayed on the mirror now go to the chain. `AgreementManager` walks every proof from a given start with the chain's `verifyMilestonesFromTrustedStart` and no longer takes a local diamond: the build preflight is one walk, and the fallback to a second walk from the stored anchor is gone (both start at the chain's anchor, so the second cannot differ). `DisputeBuilder` and the spectator's sync reduce on the chain (`ReductionComputationService.computeLocally` and `ReductionManager.computeReductionLocally` are deleted). `ValidationService` asks the chain's `hasInvalidTimestamp`; when the previous block's on-chain timestamp is unknown and the chain holds its calldata commitment, `recoverPreviousOnChainTimestamp` runs first, because the chain answers "cannot prove" for a zero timestamp and an invalid block would otherwise pass undisputed. `P2pEventHooksUtils` reads the window commitments on the chain, and `LeaveChannelService` drops its mirror probe. The three behaviour changes the engineer approved: `EventHandler.onStateSnapshotUpdated` publishes membership only when the chain's snapshot at the head (read once the head reaches the event's block) is the event's, and a closing snapshot skips that comparison; `EventSyncService` keeps a per-channel in-memory set of handled slashes (filled from handled `ChainSlashed` and `DisputeKilled` events, replayed ones included, emptied on `ChannelStorageCleared`) that `recoverOnChainSlashes` diffs the chain's set against; `isSignerPendingInMirror` became `isSignerPendingAtLastPendingSetChange`, which reads the chain's pending set pinned at the latest block of any `InboundMessagesProcessed` or `StateSnapshotUpdated` event handled through the event pipeline (recorded in `EventSyncService.dispatchLog` before the handler runs; a direct handler call does not move it; false before any). What stays on the mirror: every mirror write and the spectator's `reduceAndFinalize`. The window-commitments read of the event hooks has no test that observes it.
 
 ## Discovery joins after the dispose cut — 2026-11-02
 
@@ -1513,7 +1585,7 @@ rethrows it (`isInvalidStateTransitionError` in
 [evmErrorHandler.ts](../implementation/source/src/utils/evmErrorHandler.ts.md)) and
 [BlockIngestService.ts](../implementation/source/src/stateManager/ingest/BlockIngestService.ts.md)
 restores the state with no fraud proof and no dispute. The accepted residual (the 16.7M
-floor) is recorded under [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+floor) is recorded under [`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 and in [security-assessment.md](security-assessment.md#local-evm-call-gas--2026-09-26).
 
 **Evidence memo.** [DisputeManager.ts](../implementation/source/src/disputeManager/DisputeManager.ts.md) owns it
@@ -1641,7 +1713,7 @@ state; the existing forge reduction and fraud-proof suites passed on the new cod
 the gas it was forwarded and returned no data, and re-throws every other failure unchanged
 ([LocalDiamond.sol.md](../implementation/source/contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol.md)).
 The error stays an error, never an answer
-([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)). The
+([`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)). The
 detection counts the 1/64 that the facet keeps when a nested call runs out of gas
 ([LocalDiamond.sol](../../../contracts/V1/StateChannelDiamondProxy/LocalDiamond.sol#L414):
 `returnData.length == 0 && gasUsed + forwarded / 64 + 5_000 >= forwarded`), so an exhausted budget

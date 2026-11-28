@@ -176,6 +176,10 @@ async function start(config) {
     // every test process and its SDK threads preload the fee quote
     if (config.baseEnv.PARACHAIN) {
         process.env.PARACHAIN = config.baseEnv.PARACHAIN;
+        // the slot nodes serve the light client endpoints when the run forwards it
+        if (config.baseEnv.PEER3_NODE_LIGHT_CLIENT)
+            process.env.PEER3_NODE_LIGHT_CLIENT =
+                config.baseEnv.PEER3_NODE_LIGHT_CLIENT;
         config.baseEnv.NODE_OPTIONS += ` -r ${path.join(config.projectRoot, "test/utils/peer3FeeData.js")}`;
     }
     const provisioned = await provisionSlots(

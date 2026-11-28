@@ -25,10 +25,15 @@ top-up. Its `add(1)` rejects with the refusal; after the real processing is rest
 writer's `add(1)` succeeds. Every peer then reaches sync, stores the same block hash at the new
 height, and no peer saw an on-chain dispute start (`onDisputeStarted`) or initiated one.
 
+The 12-round test is the 3-round one run four times as long, with the same oracles. The light
+client flow benchmark runs both: their difference is what a channel asks the chain per round once
+startup is over (`scripts/bench/lightClientFlows.ts`, flows `transitions` and `steadyState`).
+
 ## Tests
 
 - `should handle consecutive blocks between participants`: none
 - `should handle full round rotation`: REQ-FIN-6-YZWJX2.T1.P1
 - `should handle multiple rotation rounds`: none
+- `keeps peers in sync over 12 rotation rounds`: none
 - `should handle honest peer transitions after fork resolution`: REQ-FIN-6-YZWJX2.T1.P7
 - `the writer's state machine refuses a pending top-up → its candidate fails, it recovers and authors, every peer stores the same block and no dispute starts`: REQ-SM-12-J6QD9B.T2.P1

@@ -8,6 +8,7 @@
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-DISPUTE-PIPE-7-76N72X` (Combined membership intent)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-7-76n72x)
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 - [`REQ-RMSTORE-2-Y2T1PG` (Explicit intent lifecycle)](../../../../../specification/storage/progress-markers.md#req-rmstore-2-y2t1pg)
 
 ## UNIT-TEST-LEAVE-CHANNEL-SERVICE-1-CX6QH9

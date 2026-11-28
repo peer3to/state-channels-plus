@@ -5,7 +5,6 @@ import type { Address } from "@/types/types";
 import { addressesEqual } from "@/utils";
 import type { HarnessControlRpc } from "@test/fixtures/customRpc/harnessControl/HarnessControlRpc";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
-import type { MirrorUpdateHold } from "@test/harness/actions/MirrorActions";
 import type { TestPeer } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
@@ -17,14 +16,16 @@ type MathPeer = TestPeer<
 
 /**
  * Three participants and a joiner whose JOIN is pending on chain. Peer 0 has
- * applied the JOIN event to its storage and its local diamond. `beforeJoin`
- * runs once the channel is open, before the JOIN is submitted. Returns the
- * joiner.
+ * applied the JOIN event to its storage. `beforeJoin`
+ * runs once the channel is open, before the JOIN is submitted. With
+ * `isJoinerUnobserved` the wait for the inbound message skips the joiner
+ * (its handler is held). Returns the joiner.
  */
-export async function stageMirroredPendingJoin(
+export async function stageObservedPendingJoin(
     h: MathPeerTestHarness,
     initialTransitions = 0,
-    beforeJoin?: (joiner: MathPeer) => Promise<unknown>
+    beforeJoin?: (joiner: MathPeer) => Promise<unknown>,
+    isJoinerUnobserved = false
 ) {
     const prepared =
         await h.scenario.syncSpectatorAndPrepareJoin(initialTransitions);
@@ -34,9 +35,16 @@ export async function stageMirroredPendingJoin(
         prepared.expectedSnapshotHash,
         prepared.expectedForkId
     );
-    await h.assert.storage.honestPeersObserveInboundMessageWait();
-    // the event handler marks the joiner eligible after its local diamond
-    // applied the JOIN
+    await h.assert.storage.honestPeersObserveInboundMessageWait(
+        isJoinerUnobserved
+            ? {
+                  peerIndices: h.peers
+                      .map((peer) => peer.index)
+                      .filter((index) => index !== prepared.joiner.index)
+              }
+            : undefined
+    );
+    // the event handler marks the joiner eligible once it handled the JOIN
     await waitFor(
         async () =>
             (await h
@@ -45,41 +53,6 @@ export async function stageMirroredPendingJoin(
                 .request()) === SourceEligibility.ELIGIBLE
     );
     return prepared.joiner;
-}
-
-/**
- * Peer 0 forgets every cached eligibility and refreshes it from the chain.
- * Returns the refresh result, each source's eligibility after it, and
- * whether the local diamond's inbound head equals the chain's.
- */
-export async function refreshAfterEligibilityReset(
-    h: MathPeerTestHarness,
-    sources: string[]
-) {
-    return h.execOnHost(
-        h.getPeer(0),
-        async (sm, args) => {
-            sm.membershipService.resetEligibility();
-            const refreshed =
-                await sm.membershipService.refreshOnChainEligibility();
-            const [mirrored, chain] = await Promise.all([
-                sm.diamondStateMachine.localDiamondContract.getChannelBalance(
-                    sm.channelId
-                ),
-                sm.stateChannelManagerContract.getChannelBalance(sm.channelId)
-            ]);
-            return {
-                refreshed,
-                eligibility: args.sources.map((source) =>
-                    sm.membershipService.getCachedSourceEligibility(source)
-                ),
-                isMirrorAtChainInboundHead:
-                    String(mirrored.latestInboundMessageBlockHash) ===
-                    String(chain.latestInboundMessageBlockHash)
-            };
-        },
-        { sources }
-    );
 }
 
 /**
@@ -124,50 +97,6 @@ export async function relayAfterEligibilityReset(h: MathPeerTestHarness) {
     }
 }
 
-/**
- * Peer 0's local diamond against the chain: whether its inbound head and
- * deposit total equal the chain's, whether it holds each of `blockHashes`,
- * and whether its snapshot is the chain's.
- */
-async function readPeerZeroMirror(
-    h: MathPeerTestHarness,
-    blockHashes: string[]
-) {
-    const mirrored = await h.execOnHost(
-        h.getPeer(0),
-        async (sm, args) => {
-            const local = sm.diamondStateMachine.localDiamondContract;
-            const [balance, chainBalance] = await Promise.all([
-                local.getChannelBalance(sm.channelId),
-                sm.stateChannelManagerContract.getChannelBalance(sm.channelId)
-            ]);
-            return {
-                isHeadAtChain:
-                    String(balance.latestInboundMessageBlockHash) ===
-                        String(chainBalance.latestInboundMessageBlockHash) &&
-                    Number(balance.latestInboundMessageBlockHeight) ===
-                        Number(chainBalance.latestInboundMessageBlockHeight),
-                isTotalDepositsAtChain:
-                    String(balance.totalDeposits.amount) ===
-                    String(chainBalance.totalDeposits.amount),
-                heldBlocks: await Promise.all(
-                    args.blockHashes.map((blockHash) =>
-                        local.hasInboundMessageBlock(sm.channelId, blockHash)
-                    )
-                )
-            };
-        },
-        { blockHashes }
-    );
-    const snapshotHash = (await h.query.getLocalStateSnapshot(h.getPeer(0)))
-        .hash;
-    return {
-        ...mirrored,
-        isSnapshotAtChain:
-            snapshotHash === (await h.query.getOnChainSnapshotHash())
-    };
-}
-
 /** Peer 0 forgets every cached eligibility and refreshes it from the chain. */
 function refreshPeerZero(h: MathPeerTestHarness) {
     return h.execOnHost(h.getPeer(0), async (sm) => {
@@ -176,76 +105,11 @@ function refreshPeerZero(h: MathPeerTestHarness) {
     });
 }
 
-/** The newest inbound block in peer 0's storage. */
-async function latestInboundHash(h: MathPeerTestHarness): Promise<string> {
-    const latest = await h
-        .control(h.getPeer(0))
-        .query.getLatestInboundMessageHash()
-        .request();
-    if (!latest) throw new Error("Expected a stored inbound block");
-    return latest;
-}
-
-/**
- * Peer 0's local diamond holds its inbound applications while a joiner's
- * JOIN lands (the live log's application) and peer 0 refreshes from the
- * chain (the refresh's application of the same block). The held
- * applications then run in `order`: "recorded" applies the live one first,
- * "reverse" the refresh's first. Returns the refresh result, the held
- * count and peer 0's mirror against the chain.
- */
-export async function applyJoinBlockFromLiveAndRefresh(
-    h: MathPeerTestHarness,
-    order: "recorded" | "reverse"
-) {
-    let held: MirrorUpdateHold | undefined;
-    await stageMirroredPendingJoin(h, 0, async () => {
-        held = await h.mirror.holdUpdates(0, "onInboundMessagesProcessed");
-    });
-    if (!held) throw new Error("Expected the mirror hold");
-    const joinBlockHash = await latestInboundHash(h);
-    const refreshed = await refreshPeerZero(h);
-    const heldCount = await held.heldCount();
-    await held.release(order);
-    return {
-        refreshed,
-        heldCount,
-        mirror: await readPeerZeroMirror(h, [joinBlockHash])
-    };
-}
-
-/**
- * Two top-ups by peer 1. Peer 0's local diamond misses the first one's log
- * for good and applies the second, so it lacks a block below its head.
- * Then peer 0 refreshes from the chain. Returns the mirror before and after
- * the refresh for [first, second] and the refresh result.
- */
-export async function refreshFillsMirrorBelowHead(h: MathPeerTestHarness) {
-    const topUp = { participant: h.getPeer(1).address };
-    const held = await h.mirror.holdUpdates(0, "onInboundMessagesProcessed");
-    await h.join.forceInboundJoinWait(topUp);
-    const missed = await latestInboundHash(h);
-    await waitFor(async () => (await held.heldCount()) === 1);
-    await held.discard();
-    await h.join.forceInboundJoinWait(topUp);
-    const head = await latestInboundHash(h);
-    await waitFor(
-        async () => (await readPeerZeroMirror(h, [head])).heldBlocks[0]
-    );
-    const before = await readPeerZeroMirror(h, [missed, head]);
-    const refreshed = await refreshPeerZero(h);
-    return {
-        before,
-        refreshed,
-        after: await readPeerZeroMirror(h, [missed, head])
-    };
-}
-
 /**
  * Peer 0's refresh reads the chain, then waits while peer 0 posts a newer
- * snapshot and its local diamond applies the live StateSnapshotUpdated
- * log. Then the refresh applies its older read. Returns the refresh result
- * and peer 0's mirror against the chain.
+ * snapshot and handles the live StateSnapshotUpdated log. Then the refresh
+ * applies its older read. Returns the refresh result and whether membership
+ * published the chain's snapshot.
  */
 export async function refreshAppliedAfterLiveSnapshot(h: MathPeerTestHarness) {
     const peer = h.getPeer(0);
@@ -259,7 +123,7 @@ export async function refreshAppliedAfterLiveSnapshot(h: MathPeerTestHarness) {
                 (await stub.getAdmissionObservation().request()).chainReads ===
                 1
         );
-        // the barrier waits until every honest local diamond has the snapshot
+        // the barrier waits until every honest peer has handled the snapshot
         const posted = await h.transition.postSnapshotWait();
         if (!posted) throw new Error("Expected a posted snapshot");
         await stub.releaseAdmissionMembership().request();
@@ -267,11 +131,9 @@ export async function refreshAppliedAfterLiveSnapshot(h: MathPeerTestHarness) {
         const published = await stub.getLastPublishedSnapshotHash().request();
         return {
             refreshed,
-            mirror: await readPeerZeroMirror(h, []),
             membership: {
                 isMirroredSnapshotPublished:
-                    published ===
-                    (await h.query.getLocalStateSnapshot(peer)).hash
+                    published === (await h.query.getOnChainSnapshotHash())
             }
         };
     } finally {
@@ -282,48 +144,50 @@ export async function refreshAppliedAfterLiveSnapshot(h: MathPeerTestHarness) {
     }
 }
 
-/** The joiner's local diamond lists the joiner's own pending JOIN. */
-async function isOwnJoinMirrored(h: MathPeerTestHarness, joiner: MathPeer) {
-    return h.execOnHost(joiner, async (sm) =>
-        sm.membershipService.includesSigner(
-            await sm.diamondStateMachine.localDiamondContract.getPendingParticipants(
-                sm.channelId
-            )
-        )
+/**
+ * Whether the joiner's pending lookup (pinned at the block of the last
+ * InboundMessagesProcessed it handled) lists the joiner's own pending JOIN.
+ */
+async function isOwnJoinObserved(h: MathPeerTestHarness, joiner: MathPeer) {
+    return h.execOnHost(joiner, (sm) =>
+        sm.membershipService.isSignerPendingAtLastPendingSetChange()
     );
 }
 
 /**
- * A pending JOIN (see {@link stageMirroredPendingJoin}) that the joiner's own
- * local diamond applied too. Returns the joiner.
+ * A pending JOIN (see {@link stageObservedPendingJoin}) that the joiner's own
+ * event handler handled too. Returns the joiner.
  */
-export async function stagePendingJoinMirroredByJoiner(h: MathPeerTestHarness) {
-    const joiner = h.getPeer((await stageMirroredPendingJoin(h)).index);
-    await waitFor(() => isOwnJoinMirrored(h, joiner));
+export async function stagePendingJoinHandledByJoiner(h: MathPeerTestHarness) {
+    const joiner = h.getPeer((await stageObservedPendingJoin(h)).index);
+    await waitFor(() => isOwnJoinObserved(h, joiner));
     return joiner;
 }
 
 /**
- * A pending JOIN (see {@link stageMirroredPendingJoin}) whose log the
- * joiner's own local diamond misses for good. Returns the joiner and
- * whether its local diamond lists the JOIN.
+ * A pending JOIN (see {@link stageObservedPendingJoin}) whose
+ * InboundMessagesProcessed log never reaches the joiner's event pipeline
+ * (the chain lists the JOIN, the joiner has not seen its block). Returns the
+ * joiner and whether its pending lookup lists the JOIN.
  */
-export async function stagePendingJoinMissedByJoinerMirror(
+export async function stagePendingJoinMissedByJoinerHandler(
     h: MathPeerTestHarness
 ) {
-    let held: MirrorUpdateHold | undefined;
-    const staged = await stageMirroredPendingJoin(h, 0, async (joiner) => {
-        held = await h.mirror.holdUpdates(
-            joiner.index,
-            "onInboundMessagesProcessed"
-        );
-    });
-    if (!held) throw new Error("Expected the mirror hold");
-    const hold = held;
-    await waitFor(async () => (await hold.heldCount()) === 1);
-    await hold.discard();
+    let dropped:
+        | Awaited<ReturnType<typeof h.rpcStub.dropInboundMessageLogs>>
+        | undefined;
+    const staged = await stageObservedPendingJoin(
+        h,
+        0,
+        async (joiner) => {
+            dropped = await h.rpcStub.dropInboundMessageLogs(joiner.index);
+        },
+        true
+    );
+    if (!dropped) throw new Error("Expected the inbound log drop");
+    await dropped.waitUntilDropped();
     const joiner = h.getPeer(staged.index);
-    return { joiner, isOwnJoinMirrored: await isOwnJoinMirrored(h, joiner) };
+    return { joiner, isOwnJoinObserved: await isOwnJoinObserved(h, joiner) };
 }
 
 /**
@@ -346,7 +210,8 @@ export async function readSignerMembershipLookups(
         const membership = sm.membershipService;
         return {
             isInLocalState: await membership.isSignerInLocalState(),
-            isPendingInMirror: await membership.isSignerPendingInMirror(),
+            isPendingAtLastInbound:
+                await membership.isSignerPendingAtLastPendingSetChange(),
             isPendingOnChain: await membership.isSignerPendingOnChain(),
             isOnChain: await membership.isSignerOnChain()
         };
@@ -420,8 +285,8 @@ export async function refreshOutcome(
 
 /**
  * Peer 0 misses the InboundMessagesProcessed log of peer 1's top-up, so
- * its refresh recovers that log from the chain, while the local diamond's
- * next inbound application fails. Returns the refresh outcome.
+ * its refresh recovers that log from the chain, while the handler of the
+ * next inbound log fails. Returns the refresh outcome.
  */
 export async function refreshWithFailedRecoveredInboundBlock(
     h: MathPeerTestHarness
@@ -433,8 +298,12 @@ export async function refreshWithFailedRecoveredInboundBlock(
             observePeerIndices: [1]
         });
         await dropped.waitUntilDropped();
-        await h.mirror.failNextUpdate(0, "onInboundMessagesProcessed");
-        return await refreshOutcome(h, 0);
+        const failing = await h.rpcStub.failInboundMessagesProcessedHandler(0);
+        try {
+            return await refreshOutcome(h, 0);
+        } finally {
+            await failing.restore();
+        }
     } finally {
         await dropped.release();
     }

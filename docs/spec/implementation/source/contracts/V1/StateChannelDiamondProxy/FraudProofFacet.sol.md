@@ -37,7 +37,7 @@ Proof application
 - [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P2` — BlockDoubleSign invalid→self-slash
 - [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P3` — offender mismatch
 - [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P4` — skip-if-slashed
-- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P5` — replay parity with mirror
+- [ ] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P5` — replay parity with the local deployment
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P6` — BlockInvalidStateTransition valid
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P7` — WrongGenesis valid
 - [x] `UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P8` — InvalidTimestamp valid

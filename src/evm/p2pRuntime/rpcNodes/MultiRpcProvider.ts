@@ -19,6 +19,7 @@ import {
     Log,
     isError,
     makeError,
+    type Network,
     type PerformActionRequest,
     type ProviderEvent,
     type Subscriber,
@@ -268,6 +269,15 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     }
 
     /**
+     * Tells the provider that the runtime reads the contract at `contract`
+     * from now on, whichever channel it follows. Plain chain access has no
+     * use for it; a subclass may.
+     */
+    followContract(_contract: string): void {
+        // nothing to do
+    }
+
+    /**
      * Whether a contract read sent now is answered from state the serving
      * node proved: the node's answer is then not trusted, and a second copy of
      * the chain's state adds nothing. Plain chain access trusts the node.
@@ -292,6 +302,15 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         const requests = Array.isArray(payload) ? payload : [payload];
         this.sentRequestCount += requests.length;
         return Promise.all(requests.map((request) => this.answer(request)));
+    }
+
+    // Overrides JsonRpcApiProvider._detectNetwork: the serving node already
+    // knows the chain its socket served, so its network is taken instead of
+    // sending eth_chainId through it again. With no node connected the
+    // default asks the first node that connects.
+    override async _detectNetwork(): Promise<Network> {
+        const node = this.servingNode();
+        return node ? await node.getNetwork() : await super._detectNetwork();
     }
 
     // Overrides AbstractProvider.estimateGas: a revert at the pending block is

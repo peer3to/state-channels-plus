@@ -312,17 +312,18 @@ export async function assertSlashRefreshFailure() {
 
 /**
  * The observer misses a real slash's logs, so its refresh recovers them from
- * the chain, while its local diamond's next slash write fails. Returns the
+ * the chain, while its handlers of the slash and kill logs fail. Returns the
  * refresh outcome.
  */
 export async function refreshWithFailedRecoveredSlash() {
     const f = await stageQueueSlash(true);
     try {
-        await f.h.mirror.failNextUpdate(
-            f.observer.index,
-            "onOnChainSlashAdded"
-        );
-        return await refreshOutcome(f.h, f.observer.index);
+        const failing = await f.h.rpcStub.failSlashHandlers(f.observer.index);
+        try {
+            return await refreshOutcome(f.h, f.observer.index);
+        } finally {
+            await failing.restore();
+        }
     } finally {
         await f.dropped?.release();
     }

@@ -4,7 +4,6 @@ import type { BuiltStateProof } from "@/agreementManager/AgreementManager";
 import Block from "@/models/Block";
 import type StateSnapshot from "@/models/StateSnapshot";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import { Status } from "@/types";
 import type { BlockHeight, ForkId } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import * as factory from "@test/factory";
@@ -389,44 +388,19 @@ export async function postSnapshotFrom(
 }
 
 /**
- * Peer 0 posts the latest final point as the chain anchor; every peer not in
- * `laggingIndices` waits until its local diamond mirrors it. A lagging peer
- * holds the StateSnapshotUpdated event (its mirror keeps the older snapshot).
+ * Peer 0 posts the latest final point as the chain anchor; every peer waits
+ * until its event pipeline has processed the post.
  */
 export async function postAnchor(
-    h: MathPeerTestHarness,
-    options: { laggingIndices?: number[] } = {}
+    h: MathPeerTestHarness
 ): Promise<{ hash: string; height: number }> {
-    const lagging = options.laggingIndices ?? [];
-    for (const index of lagging)
-        await h
-            .control(h.getPeer(index))
-            .stub.stubHoldSnapshotUpdatedEvents()
-            .request();
     const before = await chainSnapshot(h);
     expect(await postSnapshotFrom(h, 0), "the anchor post").to.equal("posted");
     const anchor = await chainSnapshot(h);
     expect(anchor.hash, "the post moved the chain anchor").to.not.equal(
         before.hash
     );
-    const current = h.peers.filter((peer) => !lagging.includes(peer.index));
-    await waitFor(async () => {
-        for (const peer of current)
-            if (
-                (await h.query.getLocalStateSnapshot(peer)).hash !== anchor.hash
-            )
-                return false;
-        return true;
-    }, h.event.protocolEventTimeoutMs());
-    for (const index of lagging)
-        await waitFor(
-            async () =>
-                (await h
-                    .control(h.getPeer(index))
-                    .stub.getHeldSnapshotUpdatedCount()
-                    .request()) > 0,
-            h.event.protocolEventTimeoutMs()
-        );
+    await h.event.waitForSnapshotLogHandled(h.peers.map((peer) => peer.index));
     return { hash: String(anchor.hash), height: anchor.blockHeight };
 }
 
@@ -516,8 +490,7 @@ export async function stageFinalThenUnfinalizedTail(
 
 /**
  * Three peers, blocks 0..1 final, every timeout check suppressed. With
- * `postAnchor` peer 0 posts block 1's snapshot as the chain anchor (a peer in
- * `laggingIndices` holds the snapshot event, so its mirror lags). Then
+ * `postAnchor` peer 0 posts block 1's snapshot as the chain anchor. Then
  * `finalBlocks` more fully signed blocks.
  */
 export async function stageFinalBlocks(
@@ -525,7 +498,6 @@ export async function stageFinalBlocks(
     options: {
         postAnchor: boolean;
         finalBlocks: number;
-        laggingIndices?: number[];
     }
 ): Promise<{
     forkId: ForkId;
@@ -534,9 +506,7 @@ export async function stageFinalBlocks(
 }> {
     await h.lifecycle.start(3, 2);
     await suppressTimeoutChecks(h, [0, 1, 2]);
-    const anchor = options.postAnchor
-        ? await postAnchor(h, { laggingIndices: options.laggingIndices })
-        : null;
+    const anchor = options.postAnchor ? await postAnchor(h) : null;
     if (options.finalBlocks > 0)
         await h.transition.advanceState({
             count: options.finalBlocks,
@@ -551,20 +521,13 @@ export async function stageFinalBlocks(
 }
 
 /**
- * Three peers; `laggingIndex`'s local diamond misses the
- * InboundMessagesProcessed log of peer 0's top-up while its storage keeps up;
- * two fully signed blocks consume the top-up. With `anchorBeforeTopUp` peer 0
- * posts block 1's snapshot as the chain anchor before the top-up (every
- * mirror has it); with `anchorAfterTopUp` peer 0 posts the final point that
- * consumed the top-up while the lagging peer also holds that snapshot event.
+ * Three peers; peer 0's top-up is force-joined and two fully signed blocks
+ * consume it. With `anchorBeforeTopUp` peer 0 posts block 1's snapshot as the
+ * chain anchor before the top-up.
  */
-export async function stageMirrorMissingTopUp(
+export async function stageConsumedTopUp(
     h: MathPeerTestHarness,
-    options: {
-        laggingIndex: number;
-        anchorBeforeTopUp?: boolean;
-        anchorAfterTopUp?: boolean;
-    }
+    options: { anchorBeforeTopUp?: boolean } = {}
 ): Promise<{
     forkId: ForkId;
     anchor: { hash: string; height: number } | null;
@@ -572,22 +535,10 @@ export async function stageMirrorMissingTopUp(
 }> {
     await h.lifecycle.start(3, 2);
     await suppressTimeoutChecks(h, [0, 1, 2]);
-    let anchor = options.anchorBeforeTopUp ? await postAnchor(h) : null;
-    const held = await h.mirror.holdUpdates(
-        options.laggingIndex,
-        "onInboundMessagesProcessed"
-    );
+    const anchor = options.anchorBeforeTopUp ? await postAnchor(h) : null;
     await h.join.forceInboundJoinWait({ participant: h.getPeer(0).address });
     await h.transition.advanceState({ count: 2, waitForFinalization: true });
     await h.assert.sync.peersInSyncWait();
-    expect(
-        await held.heldCount(),
-        "the lagging mirror must have missed the top-up"
-    ).to.be.greaterThan(0);
-    if (options.anchorAfterTopUp)
-        anchor = await postAnchor(h, {
-            laggingIndices: [options.laggingIndex]
-        });
     const latestHeight = Number(
         await h
             .control(h.getPeer(0))
@@ -969,18 +920,17 @@ export async function stageFinalJoinThenUnfinalizedTail(
 }
 
 /**
- * Two peers; a spectator syncs and joins (peer 2) at `j`, three fully signed
- * blocks follow, and on its next turn the joiner leaves at `k` (its own,
- * fully signed leave block). Two more fully signed blocks by the remaining
- * participants follow; the leaver settles. The joiner is in neither the
- * snapshot before `j` nor the snapshot of `k`, and its JOIN lies between
- * their inbound heads. The leave posts the exit snapshot, whose update prunes
- * the consumed inbound blocks: peer 0's mirror holds that snapshot update
- * and the pruning (a mirror behind the chain), so it keeps no anchor and the
- * JOIN's inbound block.
+ * Two peers; a spectator syncs, peer 0 posts a snapshot as the chain anchor,
+ * and the spectator joins (peer 2) at `j`. Three fully signed blocks follow,
+ * and on its next turn the joiner leaves at `k` (its own, fully signed leave
+ * block). Two more fully signed blocks by the remaining participants follow.
+ * The joiner's exit snapshot post is recorded and never run, so the chain
+ * anchor stays below `j`: the joiner is in neither the anchor snapshot nor
+ * the snapshot of `k`, and its JOIN is consumed after the anchor.
  */
 export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
     forkId: ForkId;
+    anchor: { hash: string; height: number };
     joinHeight: number;
     leaveHeight: number;
     joinerIndex: number;
@@ -995,6 +945,7 @@ export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
     });
     await suppressTimeoutChecks(h, [joiner.index]);
     await h.assert.sync.peersInSyncWait({ peerIndices: [0, 1, 2] });
+    const anchor = await postAnchor(h);
     await h.join.joinChannelWait({ joiner });
     await h.assert.storage.honestPeersObserveInboundMessageWait();
     const forkId = h.activeForkId!;
@@ -1028,14 +979,11 @@ export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
     const leaveHeight = Number(
         await query.getNextBlockHeight(forkId).request()
     );
-    await h
-        .control(h.getPeer(0))
-        .stub.stubHoldSnapshotUpdatedEvents()
-        .request();
-    const pruning = await h.mirror.holdUpdates(0, "onChannelStorageCleared");
-    await h.transition.participantLeaveDetached({
-        leaverIndex: joiner.index,
-        waitForPeers: [0, 1, 2]
+    await h.rpcStub.recordScheduledTasks(joiner.index, {
+        suppressPrefix: "exit snapshot post"
+    });
+    await h.transition.participantLeaveStateTransition({
+        leaverIndex: joiner.index
     });
     expect(
         await authorIndexAt(h, 0, leaveHeight),
@@ -1046,13 +994,13 @@ export async function stageJoinThenLeave(h: MathPeerTestHarness): Promise<{
         waitForPeers: [0, 1],
         waitForFinalization: true
     });
-    await h.event.waitUntilPeerStatus(joiner.index, Status.SYNCED);
     expect(
-        await pruning.heldCount(),
-        "peer 0's mirror held the exit snapshot's inbound pruning"
-    ).to.be.greaterThan(0);
+        (await chainSnapshot(h)).hash,
+        "the exit snapshot is unposted: the chain anchor stays"
+    ).to.equal(anchor.hash);
     return {
         forkId,
+        anchor,
         joinHeight,
         leaveHeight,
         joinerIndex: joiner.index,
@@ -1414,99 +1362,66 @@ export function hopUnion(view: BuiltProofView, i: number): string[] {
 }
 
 /** Advance the real anchor after a walk starts, before the verifier reads its state. */
-export async function walkAcrossAnchorAdvance(
-    h: MathPeerTestHarness,
-    tier: "chain" | "localDiamond"
-) {
+export async function walkAcrossAnchorAdvance(h: MathPeerTestHarness) {
     await stageFinalBlocks(h, { postAnchor: true, finalBlocks: 2 });
-    return h.execOnHost(
-        h.getPeer(0),
-        async (sm, args) => {
-            const am = sm.agreementManager;
-            const forkId = sm.forkId;
-            const contract =
-                args.tier === "chain"
-                    ? sm.stateChannelManagerContract
-                    : sm.diamondStateMachine.localDiamondContract;
-            const proof = {
-                milestones: [
-                    {
-                        blockConfirmations: [
-                            {
-                                signedBlock: {
-                                    encodedBlock: "0x",
-                                    signature: "0x"
-                                },
-                                signatures: []
-                            },
-                            sm.storage.blocks.getBlock(forkId, 2)!
-                                .blockConfirmationStruct
-                        ]
-                    },
-                    {
-                        blockConfirmations: [
-                            sm.storage.blocks.getBlock(forkId, 3)!
-                                .blockConfirmationStruct
-                        ]
-                    }
-                ]
-            };
-            const evidence = am.getStoredEvidence(forkId, proof);
-            const method = contract.getFunction("verifyMilestones");
-            const original = method.staticCall;
-            const held = async (...callArgs: Parameters<typeof original>) => {
-                await sm.snapshotUpdateService.postStateSnapshotWait(forkId);
-                return original(...callArgs);
-            };
-            const replacement = Object.defineProperties(
-                (...callArgs: Parameters<typeof method>) => method(...callArgs),
+    return h.execOnHost(h.getPeer(0), async (sm) => {
+        const am = sm.agreementManager;
+        const forkId = sm.forkId;
+        const contract = sm.stateChannelManagerContract;
+        const proof = {
+            milestones: [
                 {
-                    ...Object.getOwnPropertyDescriptors(method),
-                    staticCall: { value: held, configurable: true }
+                    blockConfirmations: [
+                        {
+                            signedBlock: {
+                                encodedBlock: "0x",
+                                signature: "0x"
+                            },
+                            signatures: []
+                        },
+                        sm.storage.blocks.getBlock(forkId, 2)!
+                            .blockConfirmationStruct
+                    ]
+                },
+                {
+                    blockConfirmations: [
+                        sm.storage.blocks.getBlock(forkId, 3)!
+                            .blockConfirmationStruct
+                    ]
                 }
-            );
-            Object.defineProperty(contract, "verifyMilestones", {
-                value: replacement,
-                configurable: true
-            });
-            try {
-                let walk;
-                if (args.tier === "chain")
-                    walk = await am.walkFromChainAnchor(
-                        forkId,
-                        proof,
-                        evidence
-                    );
-                else
-                    for await (const candidate of am.walkStateProofTiers(
-                        forkId,
-                        proof,
-                        evidence
-                    )) {
-                        if (candidate.tier === "localDiamond") {
-                            walk = candidate;
-                            break;
-                        }
-                    }
-                if (!walk)
-                    throw new Error("The selected walk tier was not reached");
-                const persisted = am.persistVerifiedProof(
-                    proof,
-                    evidence,
-                    walk
-                );
-                return {
-                    valid: walk.valid,
-                    start: walk.start?.blockHeight,
-                    final: walk.finalizedSnapshot.blockHeight,
-                    persisted
-                };
-            } finally {
-                Reflect.deleteProperty(contract, "verifyMilestones");
+            ]
+        };
+        const evidence = am.getStoredEvidence(forkId, proof);
+        const method = contract.getFunction("verifyMilestones");
+        const original = method.staticCall;
+        const held = async (...callArgs: Parameters<typeof original>) => {
+            await sm.snapshotUpdateService.postStateSnapshotWait(forkId);
+            return original(...callArgs);
+        };
+        const replacement = Object.defineProperties(
+            (...callArgs: Parameters<typeof method>) => method(...callArgs),
+            {
+                ...Object.getOwnPropertyDescriptors(method),
+                staticCall: { value: held, configurable: true }
             }
-        },
-        { tier }
-    );
+        );
+        Object.defineProperty(contract, "verifyMilestones", {
+            value: replacement,
+            configurable: true
+        });
+        try {
+            const walk = await am.walkFromChainAnchor(forkId, proof, evidence);
+            const persisted = am.persistVerifiedProof(proof, evidence, walk);
+            return {
+                valid: walk.valid,
+                start: walk.start?.blockHeight,
+                final: walk.finalizedSnapshot.blockHeight,
+                persisted
+            };
+        } finally {
+            Reflect.deleteProperty(contract, "verifyMilestones");
+        }
+    });
 }
 
 /** Exact-point construction and its canonical verdict, projected without moving the view. */

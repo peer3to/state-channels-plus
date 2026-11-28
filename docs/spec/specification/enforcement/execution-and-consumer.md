@@ -87,7 +87,7 @@ the chain admits in one transaction. A runtime whose replay requirement alone ex
 MUST refuse to start, since none of its replays could succeed. Every replay site MUST
 follow this rule, including a dispute fraud proof that replays a block posted as calldata to refute
 a timeout. Local-mirror evaluation MUST be funded past that requirement
-([`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](local-mirror.md#req-mirror-4-h9c4ys)). Only a transition that fails inside the machine within its full
+([`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](local-mirror.md#req-mirror-4-h9c4ys)). Only a transition that fails inside the machine within its full
 limit is an invalid transition, and only an invalid transition may become a fraud proof. A local
 evaluation that is refused because it cannot grant the full limit, that runs out of gas in the
 work around the transition, or that fails outside the machine (executor or transport) is a local

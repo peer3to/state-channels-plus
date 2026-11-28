@@ -1,5 +1,9 @@
 import { Status } from "@/types";
 import {
+    BELOW_ANCHOR_AUDITOR,
+    stageAuditorBelowChainAnchor
+} from "@test/fixtures/ChallengeBoundaryStaging";
+import {
     addSyncOnlyObserverAtGenesis,
     chainSnapshot,
     constructedDisputeOnChain,
@@ -18,7 +22,6 @@ import {
     reconstructionFromChainAnchor,
     restartPeerRuntime,
     servedPayload,
-    stageLaggingConstructionMirror,
     stageOverlappingSupport,
     stageReducedWithoutAdoption,
     stagePromotedChannel,
@@ -368,29 +371,30 @@ describe("E2E: Milestone sync and reconstruction", function () {
         expect(milestoneStarts(rebuilt)).to.not.include(changes[1]);
     });
 
-    it("E06: a builder whose mirror lags a newer chain anchor builds a larger proof from the genesis that the chain and a peer accept, and rebuilds from the anchor once the mirror catches up", async function () {
+    it("E06: a builder whose own finalized state is below a newer chain anchor still builds the same proof as a current builder, starting at the chain anchor, that the chain and a peer accept", async function () {
         const h = TestSession.getHarness();
-        const staged = await stageLaggingConstructionMirror(h);
-        const { forkId, anchor, tip, changeHeight } = staged;
+        const { forkId, anchor } = await stageAuditorBelowChainAnchor(h, {
+            tailBlocks: 0
+        });
+        const builder = BELOW_ANCHOR_AUDITOR.belowAnchorIndex;
+        const tip = anchor.blockHeight;
 
-        const lagging = await reconstructedProof(h, 0, forkId);
+        const below = await reconstructedProof(h, builder, forkId);
         const current = await reconstructedProof(h, 1, forkId);
-        expect(lagging.startSnapshotHash).to.equal(lagging.genesisSnapshotHash);
+        expect(below.startSnapshotHash).to.equal(anchor.hash);
         expect(current.startSnapshotHash).to.equal(anchor.hash);
-        expect(lagging.verified).to.equal(true);
+        expect(below.verified).to.equal(true);
         expect(current.verified).to.equal(true);
-        expect(lagging.latestProofHeight).to.equal(tip);
-        expect(milestoneStarts(lagging)).to.include(changeHeight);
-        expect(lagging.milestoneCount).to.be.greaterThan(
-            current.milestoneCount
-        );
+        expect(below.latestProofHeight).to.equal(tip);
+        expect(below.milestoneCount).to.equal(current.milestoneCount);
+        expect(milestoneStarts(below)).to.deep.equal(milestoneStarts(current));
 
-        // A fresh spectator accepts the larger proof from the newer anchor.
+        // A fresh spectator accepts the proof from the chain anchor.
         const fresh = await freshSpectatorSyncedFrom(
             h,
-            h.getPeer(0),
-            staged.participants,
-            staged.participants,
+            h.getPeer(builder),
+            BELOW_ANCHOR_AUDITOR.currentIndices.slice(),
+            [0, 1, 2, 3],
             forkId
         );
         expect(await latestHeight(h, fresh, forkId)).to.equal(tip);
@@ -401,16 +405,10 @@ describe("E2E: Milestone sync and reconstruction", function () {
                 .request()
         ).to.equal(
             await h
-                .control(h.getPeer(0))
+                .control(h.getPeer(builder))
                 .query.getLatestStateMachineStateHash(forkId)
                 .request()
         );
-
-        expect(await staged.release()).to.be.greaterThan(0);
-        const caughtUp = await reconstructedProof(h, 0, forkId);
-        expect(caughtUp.startSnapshotHash).to.equal(anchor.hash);
-        expect(caughtUp.verified).to.equal(true);
-        expect(caughtUp.latestProofHeight).to.equal(tip);
     });
 
     it("E07: a lagging spectator accepts a proof that starts below its final point, keeps its own state and replays the newer tail without blacklisting", async function () {

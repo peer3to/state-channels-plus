@@ -578,74 +578,6 @@ export async function nextWriters(
 }
 
 /**
- * `poster` posts its snapshot; returns it once the chain holds it and every
- * peer in `observers` mirrors it locally.
- */
-export async function postSnapshotSeenBy(
-    h: MathPeerTestHarness,
-    posterIndex: number,
-    observers: number[],
-    forkId: ForkId
-): Promise<StateSnapshot> {
-    const posted = await h.transition.postSnapshot({
-        peerIndex: posterIndex,
-        forkId: String(forkId)
-    });
-    if (!posted) throw new Error(`Peer ${posterIndex} posted no snapshot`);
-    await waitFor(async () => {
-        if ((await chainSnapshot(h)).hash !== posted.hash) return false;
-        for (const index of observers)
-            if (
-                (await h.query.getLocalStateSnapshot(h.getPeer(index))).hash !==
-                posted.hash
-            )
-                return false;
-        return true;
-    }, h.event.protocolEventTimeoutMs());
-    return posted;
-}
-
-/**
- * `stagePromotedChannel` (two final blocks after the change), then peer 0's
- * local diamond stops applying StateSnapshotUpdated logs, peer 1 posts the
- * snapshot of the head (the anchor, above the change), and two more final
- * blocks follow. Peer 0's mirror still has no anchor; the chain and every
- * other mirror do. `release` applies the held logs to peer 0's mirror.
- */
-export async function stageLaggingConstructionMirror(h: MathPeerTestHarness) {
-    const staged = await stagePromotedChannel(h, { postPromotionBlocks: 2 });
-    const { forkId, participants } = staged;
-    const held = await h.mirror.holdUpdates(0, "onStateSnapshotUpdated");
-    const anchor = await postSnapshotSeenBy(
-        h,
-        1,
-        participants.filter((index) => index !== 0),
-        forkId
-    );
-    expect(anchor.forkID).to.equal(forkId);
-    expect(anchor.blockHeight).to.be.greaterThan(staged.changeHeight);
-    await h.transition.advanceState({
-        count: 2,
-        waitForPeers: participants,
-        waitForFinalization: true
-    });
-    await h.assert.sync.peersInSyncWait({ peerIndices: participants });
-    // the held snapshot log can be delivered more than once (live and
-    // recovered); the mirror itself must not hold the anchor
-    expect(await held.heldCount()).to.be.greaterThan(0);
-    expect(
-        (await h.query.getLocalStateSnapshot(h.getPeer(0))).hash,
-        "peer 0's mirror lags"
-    ).to.not.equal(anchor.hash);
-    return {
-        ...staged,
-        anchor,
-        tip: await latestHeight(h, h.getPeer(0), forkId),
-        release: held.release
-    };
-}
-
-/**
  * Four peers; two final blocks, a fully signed leave, then two final blocks
  * by the remaining participants. The leaver's snapshot posts
  * (`exit snapshot post`) are recorded and never run, so no exit snapshot is
@@ -743,8 +675,8 @@ export async function freshSpectatorSyncedFrom(
 }
 
 /**
- * Waits until the peer's reconstruction starts at the chain's snapshot (its
- * local diamond mirrored the adoption); returns that reconstruction.
+ * Waits until the peer's reconstruction starts at the chain's snapshot;
+ * returns that reconstruction.
  */
 export async function reconstructionFromChainAnchor(
     h: MathPeerTestHarness,
@@ -808,7 +740,7 @@ export async function stageSyncedThroughParticipation(h: MathPeerTestHarness) {
     const progressed = await reconstructedProof(h, member.index, forkId);
 
     // Publishing the anchor must not stop normal authoring while its chain
-    // event reaches every local mirror.
+    // event reaches every peer.
     let published = false;
     const publishing = h.transition
         .postSnapshotWait({ peerIndex: 0, forkId: String(forkId) })
@@ -869,20 +801,16 @@ export async function syncLatestFromUninstalledSuccessor(
 /**
  * A fresh spectator spawns while the honest participants author. Before it
  * connects, it records its syncs (each still runs) and every pair between it
- * and `honest` or `firstIndex` is blacklisted both ways, so it can only cache
- * the chain snapshot, and its mirror applies no on-chain slash (held). Then
- * `firstIndex` handshakes, as the spectator's first
- * peer; its mirror and chain answers are read at that point. With `adopt`,
- * the spectator's mirror stops applying snapshot updates while `adopt` then
- * moves the chain snapshot, and catches up after it. The honest pairs are
+ * and `honest` or `firstIndex` is blacklisted both ways, so it can only read
+ * the chain snapshot. Then `firstIndex` handshakes, as the spectator's first
+ * peer; the chain's answers are read at that point. The honest pairs are
  * lifted last, and the spawn runs to SYNCED. Returns the spectator and the
  * answers at the first handshake.
  */
 export async function spawnSpectatorAfterFirstHandshake(
     h: MathPeerTestHarness,
     firstIndex: number,
-    honest: number[],
-    adopt?: () => Promise<void>
+    honest: number[]
 ) {
     const channelId = h.channelId.toString();
     const first = h.getPeer(firstIndex);
@@ -914,16 +842,7 @@ export async function spawnSpectatorAfterFirstHandshake(
             .request();
         await h.network.joinSelectedKey([spectator.index], channelId);
     };
-    const answers = async (spectator: Peer) => ({
-        mirrorParticipant: await h.execOnHost(
-            spectator,
-            async (sm, a) =>
-                sm.diamondStateMachine.localDiamondContract.canParticipateInDisputes(
-                    sm.channelId,
-                    a.address
-                ),
-            { address: first.address }
-        ),
+    const answers = async () => ({
         chainParticipant: await h.channelManager.canParticipateInDisputes(
             h.channelId,
             first.address
@@ -934,7 +853,6 @@ export async function spawnSpectatorAfterFirstHandshake(
         )
     });
     let created: Peer | undefined;
-    let releaseSlashes: (() => Promise<number>) | undefined;
     const spawn = h.join.addSpectatorAuthoring({
         authoringPeerIndices: honest,
         minimumBlocks: 1,
@@ -946,17 +864,10 @@ export async function spawnSpectatorAfterFirstHandshake(
                 forward: true
             });
             await setPairs(spectator, [...honest, firstIndex], true);
-            // the mirror learns no slash until the first handshake was read
-            releaseSlashes = (
-                await h.mirror.holdUpdates(
-                    spectator.index,
-                    "onOnChainSlashAdded"
-                )
-            ).release;
             created = spectator;
         }
     });
-    // OPENED follows the mirror caching the chain snapshot
+    // OPENED follows the spectator caching the chain snapshot
     await waitFor(
         async () =>
             !!created &&
@@ -965,10 +876,6 @@ export async function spawnSpectatorAfterFirstHandshake(
         h.event.protocolEventTimeoutMs()
     );
     const spectator = created!;
-    const beforeAdoption = await answers(spectator);
-    const held = adopt
-        ? await h.mirror.holdUpdates(spectator.index, "onStateSnapshotUpdated")
-        : undefined;
     await setPairs(spectator, [firstIndex], false);
     await rejoin(spectator);
     await waitFor(
@@ -979,16 +886,11 @@ export async function spawnSpectatorAfterFirstHandshake(
                 .request(),
         h.event.protocolEventTimeoutMs()
     );
-    const atFirstHandshake = await answers(spectator);
-    // after the first handshake: an adoption removes a slashed first peer,
-    // whose own runtime then aborts
-    await adopt?.();
-    await held?.release();
-    await releaseSlashes!();
+    const atFirstHandshake = await answers();
     await setPairs(spectator, honest, false);
     await rejoin(spectator);
     await spawn;
-    return { spectator, beforeAdoption, atFirstHandshake };
+    return { spectator, atFirstHandshake };
 }
 
 /**

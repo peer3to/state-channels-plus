@@ -8,21 +8,19 @@
 - [`REQ-DISPUTE-PIPE-1-HRBFP7` (Bound intake)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-1-hrbfp7)
 - [`REQ-DISPUTE-PIPE-14-5C2SXH` (Act only on a window the chain still holds)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-14-5c2sxh)
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
-- [`REQ-MIRROR-2-E9F3TM` (Unconditional replication)](../../../../specification/enforcement/local-mirror.md#req-mirror-2-e9f3tm)
-- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../../../../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
 - [`REQ-GOSSIP-4-J5Z4DF` (Eligible transport contribution)](../../../../specification/peer-communication/block-gossip.md#req-gossip-4-j5z4df)
 - [`REQ-DISPUTE-PIPE-3-PHE3SQ` (Deterministic reduction)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-3-phe3sq)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 - [`REQ-TJOIN-7-NNGTAY` (Terminal channel leave)](../../../../specification/peer-communication/targeted-channel-join.md#req-tjoin-7-nngtay)
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 
 ## UNIT-TEST-EVENT-HANDLER-1-RZ2C7W
 
 Dispute-event branches
 
 - Setup: Deliver committed/killed/slashed/reduced events across final/expired/auditable, relevant/irrelevant, duplicate, and race cases; a final dispute to a spectator that never received its latest block
-- Oracle: Branches per the pipeline algorithm; replication precedes action; improvement rule uploads only outcome-changers; challenges fire on mismatched reductions; a non-participant that cannot back a final dispute aborts cleanly
+- Oracle: Branches per the pipeline algorithm; improvement rule uploads only outcome-changers; challenges fire on mismatched reductions; a non-participant that cannot back a final dispute aborts cleanly
 
 - [ ] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P1` — final branch
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P2` — dedup
@@ -37,9 +35,9 @@ Dispute-event branches
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P11` — improvement upload skipped as already initiated: reduction still scheduled
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P12` — A disconnected spectator observes a committed dispute and successor fork without invoking the first local or chain audit predicate or storing a dispute counter, while a participant audits the same dispute
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P18` — A pending joiner whose uncertain join can still land handles a snapshot event that does not list it: it stays PENDING_PARTICIPANT and its join stays pending.
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19` — a snapshot applied while the local diamond's pending set lists the signer answers the pending check without a chain read
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P20` — a snapshot applied while the local diamond misses the signer's JOIN reads the chain's pending set once
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P21` — a snapshot the local diamond drops as older than the mirrored one updates no membership
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P19` — a snapshot applied after the signer's JOIN inbound event was handled still reads the chain's pending set once
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P20` — a snapshot applied before the signer's JOIN inbound event was handled reads the chain's pending set once
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P21` — a snapshot the chain no longer holds (a newer one landed) updates no membership
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P22` — a non-disputer auditing an invalid dispute builds its state proof once, during the audit, and its kill-and-dispute reuses it and lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P23` — the state proof built during the audit fails: the kill-and-dispute builds its own and lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P24` — a peer that already disputed audits an invalid dispute: no state proof is built and its kill goes out alone and lands
@@ -47,7 +45,12 @@ Dispute-event branches
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P26` — a cut-off spectator observes a final dispute whose latest block it never received: it aborts cleanly and the participants reach the dispute's output fork
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P27` — a timed-out peer whose chain events were held through the disputes, the reduction and a same-fork snapshot update ignores the disputes whose window that update cleared: no event-pipeline failure, no `onDisputeStarted` or `onDisputeUpdate` for them, and it leaves the channel
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P28` — a double signer whose chain events were held through a threshold-final dispute, its reduction and a same-fork snapshot update ignores the final dispute whose window that update cleared: `completeWithGenesis` is never called, no event-pipeline failure, and it leaves the channel
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29` — a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes whose window that update cleared: no dispute persisted, no reduction scheduled for the old fork, no event-pipeline failure, and its mirror holds the chain's snapshot
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P29` — a synced spectator whose chain events were held through a dispute cycle and a same-fork snapshot update ignores the disputes whose window that update cleared: no dispute persisted, no reduction scheduled for the old fork and no event-pipeline failure
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P30` — a participant whose read node is behind the block of a fork's first dispute waits for that block instead of taking the missing window as cleared: then it requests the acknowledgment, fires `onDisputeStarted` once, audits the invalid dispute and its kill lands
 - [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P31` — a participant disposed while its window read waits for a lagging read node: the runtime release ends the wait well before its deadline, no further read or wait follows, the dispute is not handled (no `onDisputeStarted`, no upload, no kill), and no runtime error is reported
-- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P32` — chain reads proven: a participant observing a kill's slash asks the chain whether the fork is disputed; its mirror is not read
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P32` — a participant observing a kill's slash asks the chain whether the fork is disputed
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P33` — a snapshot event whose snapshot the chain still holds at its head is published to membership
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P34` — a snapshot event announced after a newer snapshot landed is not published to membership
+- [x] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P35` — an older snapshot event handled after a newer one is not published to membership
+- [ ] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P36` — a closing snapshot (no participants) is published without a read of the chain's snapshot
+- [ ] `UNIT-TEST-EVENT-HANDLER-1-RZ2C7W.P37` — a snapshot event of a block the read node has not reached waits for the node, then compares the chain's snapshot at the head

@@ -8,12 +8,11 @@
 - [`REQ-SP-1-9YABY1` (A milestone normally proves its first block final, directly or through…)](../../../../specification/disputes/state-proofs.md#req-sp-1-9yaby1)
 - [`REQ-SP-2-ST4JJ4` (Proofs connect the trusted start through required final membership hops to the…)](../../../../specification/disputes/state-proofs.md#req-sp-2-st4jj4)
 - [`REQ-SP-3-SP1JG4` (A membership hop requires signatures from the union of the previous…)](../../../../specification/disputes/state-proofs.md#req-sp-3-sp1jg4)
-- [`REQ-MIRROR-3-THD7K8` (Cache, never authority)](../../../../specification/enforcement/local-mirror.md#req-mirror-3-thd7k8)
-- [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
+- [`REQ-SP-8-9ZCCEJ` (Construct proofs from the chain's anchor, read on the chain, never from the…)](../../../../specification/disputes/state-proofs.md#req-sp-8-9zccej)
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
 - [`REQ-SP-10-JMVHTB` (After successful synchronization, persist the verified start and retained…)](../../../../specification/disputes/state-proofs.md#req-sp-10-jmvhtb)
   Contradicts: `persistVerifiedProof` can retain unexecuted proof support that contaminates installed history ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 - [`REQ-IX-4-BB35GC`](../../../../specification/disputes/README.md#req-ix-4-bb35gc)
 - [`REQ-FIN-7-RTZWQZ` (The threshold is unanimous over the _relevant participant set_)](../../../../specification/protocol-model/finality.md#req-fin-7-rtzwqz)
 - [`REQ-FIN-4-ZFDDS6` (Consequently, in a channel with N participants, N consecutive blocks authored…)](../../../../specification/protocol-model/finality.md#req-fin-4-zfdds6)
@@ -42,10 +41,10 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P15` — Two membership changes each retain minimum forward signer coverage; the latest fully signed head becomes a separate final milestone found backward
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P16` — When backward search finds no later final start than the preceding join milestone, construction extends that milestone through the latest block without duplicating its start
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P17` — When block n+1 supplies finality evidence for n, both full and finalized-only proofs keep n+1; snapshot preparation targets n and has update calldata
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P18` — Construction with a current mirrored anchor starts at that same anchor, retains only later final hops and verifies from the chain anchor
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P19` — Construction with a mirror lagging the chain starts at the older genesis and still verifies from the newer canonical anchor
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P20` — A private finalized point above genesis supplies the verification start while construction remains rooted at mirrored genesis
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P21` — Verification from a newer private final point changes neither mirror nor chain snapshot, nor subsequent proof construction rooted at their anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P18` — Construction with a current local diamond starts at the chain's anchor, which it holds too, retains only later final hops and verifies from the chain anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P19` — Construction with a local diamond lagging the chain starts at the chain's newer anchor and the chain walk accepts the proof
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P20` — A private finalized point above the anchor supplies the verification start while construction remains rooted at the chain's anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P21` — Verification from a newer private final point changes neither the local diamond nor chain snapshot, nor subsequent proof construction rooted at the chain's anchor
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P22` — Missing required anchor-run blocks make construction throw; restoring the genuine blocks permits an explicit new attempt yielding the expected chain-valid run
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P23` — A missing participant-change block above the anchor makes construction throw instead of skipping its hop
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P24` — Loss of a required join confirmation lowers the proved final point to the preceding block and retains the join in a chain-valid unfinalized tail
@@ -55,24 +54,22 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P28` — Missing required participant-change block makes snapshot posting throw before any recorded multicall; the chain anchor stays unchanged
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P29` — With required proof material present, snapshot posting sends updateStateSnapshotSameFork and the chain adopts the newer last-milestone final point
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P30` — A canonical chain walk connection failure during snapshot posting propagates and leaves the chain snapshot unchanged
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P31` — A hop consuming then removing a joiner, absent from both endpoint participant sets, is not final without that joiner; adding its signature makes SDK construction retain it and the local canonical walk verify
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P31` — A hop consuming then removing a joiner, absent from both endpoint participant sets, is not final without that joiner; adding its signature makes SDK construction retain it and the chain's canonical walk verify
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P32` — An ordinary join hop retains exactly the previous/resulting participant union signatures and produces chain-valid finalized-only and tailed proofs
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P33` — Before successor anchor adoption, an empty successor proof uses its authenticated genesis at both mirror and chain tiers, never the ancestor anchor
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P34` — Before successor anchor adoption, an unfinalized genesis-linked block-zero run uses successor genesis at both tiers and replays from index zero
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P35` — Ancestor genesis evidence supplied for a successor fork fails both mirror and chain verification
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P36` — Genuine successor genesis verifies, but substituting its origin fork causes both mirror and chain verification to fail
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P37` — Shared proof verification accepts its latest private final start without invoking mirror-anchor or chain walks
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P38` — With no private final state above the anchor, shared verification accepts the mirror walk and never invokes the chain walk
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P39` — A proof conflicting at private final height returns false there but is accepted from the mirrored anchor
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P40` — A genesis-only lagging mirror fails to verify while the newer chain anchor establishes the same proof
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P41` — A mirror missing consumed inbound evidence returns false; canonical chain verification accepts
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P42` — An unlinked block causes all three tiers to return false; shared verification returns the chain invalid verdict without throwing
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P33` — Before successor anchor adoption, an empty successor proof uses its authenticated genesis at the chain tier, never the ancestor anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P34` — Before successor anchor adoption, an unfinalized genesis-linked block-zero run uses successor genesis at the chain tier and replays from index zero
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P35` — Ancestor genesis evidence supplied for a successor fork fails chain verification
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P36` — Genuine successor genesis verifies, but substituting its origin fork causes chain verification to fail
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P37` — Shared proof verification accepts its latest private final start without invoking the chain walk
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P38` — With no private final state above the anchor, shared verification accepts the chain walk alone
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P39` — A proof conflicting at private final height returns false there but is accepted from the chain's anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P40` — A requester with no finalized state that accepts the proof walks it from the chain anchor: establishes the same proof
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P42` — An unlinked block causes the private-final and chain tiers to return false; shared verification returns the chain invalid verdict without throwing
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P43` — Missing required participant-change storage while obtaining the local final start throws and no later proof tier runs
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P44` — A local EVM connection failure during mirror walk throws with no chain fallback
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P45` — A node RPC failure after the mirror cannot verify throws without an invalid-proof verdict
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P45` — A node RPC failure during the chain walk throws without an invalid-proof verdict
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P46` — A later joiner synced past a finalized join retains its participant-change hop, rebuilds a genesis-start proof after joining and progress, and constructs a dispute whose proof verifies on chain
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P47` — After a departure and later join, a synced peer retains both change hops, serves a rebuilt proof that synchronizes a fresh spectator to the same state, and posts a chain snapshot with the departed member absent and the joiner present
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P48` — With its mirror held behind the chain anchor, a builder produces a larger genesis-start proof accepted by chain verification and real spectator sync; after mirror release it rebuilds from the current anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P48` — A builder whose own finalized state is below the chain anchor produces the same proof as a current builder, starting at the chain's anchor and accepted by chain verification and real spectator sync
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P49` — A spectator synced across an unposted departure retains the departure hop and verifies reconstructed proofs before and after progress; after adopting the exit snapshot it rebuilds from that anchor without older proof blocks
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P50` — After exit-anchor adoption and explicit deletion of older blocks and snapshots, a synced spectator rebuilds and serves a verified proof, constructs a chain-verified dispute proof, then posts a newer snapshot
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P51` — A sync-only observer persists separated milestone runs supported by several-block virtual voting, leaves every gap block absent, reconstructs the same runs and constructs a chain-verified dispute proof
@@ -80,19 +77,18 @@ Proof construction
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P53` — A peer reconstructs chain-valid proofs while synced, pending, participating and after progress, retains the finalized join hop, then rebuilds from a moved anchor and constructs a chain-verified dispute proof
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P54` — A former spectator now participating deletes older blocks and snapshots after anchor movement yet rebuilds and serves a verified proof, constructs a chain-verified dispute proof and posts a newer snapshot
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P55` — Before successor adoption a participant and a fresh synced spectator build chain-valid proofs from successor genesis while the chain snapshot stays on the source fork; after adoption and progress the spectator rebuilds from the successor anchor
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P56` — A build preflight rejected by the local trusted-start walk because consumed inbound evidence is missing falls through to the canonical walk; when it accepts, construction returns a proof independently accepted by the chain view
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P57` — When both local trusted-start and canonical build preflight walks reject because consumed inbound evidence is missing, construction throws and returns no proof
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P56` — The build preflight is one walk from the build's start on the chain (`verifyMilestonesFromTrustedStart`); with the local diamond lacking consumed inbound evidence it accepts, construction returns a proof independently accepted by the chain view, and no second walk runs
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P57` — When the chain's one preflight walk rejects the built proof (its view precedes the consumed inbound evidence), construction throws and returns no proof, and no second walk runs
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P58` — With block zero and one available but a required signer absent, construction returns one genesis-linked run [0,1]; the canonical walk accepts, replay begins at index zero, and the finalized snapshot remains genesis
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P59` — an exact final proof keeps later virtual votes and rejects the unfinalized support height
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P60` — a chain anchor advance during verification returns the checked start and skips malformed old history in persistence
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P61` — a mirror anchor advance during verification returns the checked start and skips malformed old history in persistence
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P62` — Exact construction at a join height keeps later linked union votes, verifies on chain at exactly that height without moving the view, and returns no proof after the sole required later confirmation is removed
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P63` — Exact construction at an exit height retains the departing and remaining union signatures through a later linked block, verifies on chain at exactly that height without moving the view, and returns no proof after the sole required later confirmation is removed
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P64` — A spectator audits a real join proof above its frozen view, then constructs exactly the join point with later union votes; canonical verification accepts, the join is the only milestone, and the view stays frozen
 - [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P65` — For an exact target after an earlier join, audit-persisted evidence above a frozen view produces both overlapping hops with their full union signatures; canonical verification ends at exactly the target and the view stays frozen
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — `tryBuildStateProof` below the mirrored anchor returns no proof: this view is behind the chain, and no proof is built from history below the anchor
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67` — chain reads proven and the local diamond lagging a newer chain anchor: construction starts at the chain's anchor, which the chain walk accepts
-- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P68` — chain reads proven and no local finalized state above the anchor: the tiers are the chain's walk alone, with no local `verifyMilestones` read
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P66` — `tryBuildStateProof` below the chain's anchor returns no proof: this view is behind the chain, and no proof is built from history below the anchor
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67` — With the light client stubbed in and the local diamond lagging a newer chain anchor: construction starts at the chain's anchor, which the chain walk accepts
+- [x] `UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P68` — With the light client stubbed in and no local finalized state above the anchor: the tiers are the chain's walk alone
 
 ## UNIT-TEST-AGREEMENT-MANAGER-2-FY9GCX
 

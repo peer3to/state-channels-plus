@@ -6,31 +6,22 @@ Exercises: [DisputeManager.ts](../../../../implementation/source/src/disputeMana
 ## Overview
 
 The suite builds peer 0's own dispute with `fetchConstructedDispute` on a Math session and watches
-the `isAuditingDataOmissionAllowed` probe on both sides with a record-only mirror observer: the
-local diamond's answers and failures, and the chain manager's reads, answers, failures and error
-codes. The staged states are a late joiner whose head milestone still waits for its signature
-(local "not final"), a plain three-peer start (both sides "final"), and
-`stageMirrorMissingJoin`, which hides a chain join from the mirror so the mirror says "final" while
-the chain says "not final". Failure injection makes the next local read revert inside the EVM or
-fail as a transport error, or makes the next chain read fail as a transport error.
+the `isAuditingDataOmissionAllowed` probe on both sides with a record-only observer: the
+local diamond's reads and the chain manager's reads, answers, failures and error codes. The staged
+states are a late joiner whose head milestone still waits for its signature (the chain says "not
+final") and a plain three-peer start (the chain says "final"). Failure injection makes the next chain read fail as a
+transport error.
 
 The oracles are `dispute.postedAuditingData`, the auditing-data hash committed in the dispute
 input (it must equal the hash of the auditing data that was built), the observed local and chain
-answers and read counts, and the error thrown by construction.
-
-`REQ-MIRROR-4-H9C4YS.T1.P4` is assigned to the mirror-missing-join test: a local "final" alone
-never leaves the data out; the chain read decides, and when it says "not final" the data is
-posted and committed. The remaining `REQ-MIRROR-4-H9C4YS` permutations these tests touch (safe
-answer without a chain read, executor failure propagates) are left for their
-owning reports. The fatal local-revert construction path has its own mapping below.
+read counts and answers, and the error thrown by construction. In every case the chain is read
+once and the local diamond is not read; the slashed-participants cases check the same for the on-chain
+slashes.
 
 ## Tests
 
-- `local not final -> kept without a chain read, the auditing data is posted`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P10
-- `local final, chain final -> one chain read, the auditing data is left out`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P13
-- `mirror missing the join: local final, chain not final -> one chain read, the auditing data is posted`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P11, REQ-MIRROR-4-H9C4YS.T1.P4
-- `local revert -> construction throws it, no chain read`: REQ-MIRROR-4-H9C4YS.T1.P18, UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P16
-- `local executor failure (not a revert) -> construction throws it, no chain read`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P14
-- `local final, chain RPC refuses the connection -> construction throws it`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15
-- `chain reads proven, mirror missing the join -> the chain answers alone: one chain read, no local read, the auditing data is posted`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P24, REQ-MIRROR-5-N5SZC9.T4.P12
-- `chain reads proven -> the on-chain slashed participants are read from the chain, not the mirror`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P25, REQ-MIRROR-5-N5SZC9.T4.P13
+- `chain not final (a late joiner's signature is missing) -> one chain read, no mirror read, the auditing data is posted`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P10
+- `chain final -> one chain read, no mirror read, the auditing data is left out`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P13
+- `chain RPC refuses the connection -> construction throws it, no mirror read`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15, REQ-MIRROR-6-0WSB4V.T2.P5
+- `chain reads proven -> the on-chain slashed participants are read from the chain, not the mirror`: UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P25, REQ-MIRROR-6-0WSB4V.T3.P7
+- `the on-chain slashed participants are read from the chain, not the mirror`: REQ-MIRROR-6-0WSB4V.T1.P7

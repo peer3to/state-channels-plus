@@ -34,6 +34,14 @@ describe("E2E: State Transitions", function () {
             await h.assert.sync.peersInSyncWait();
             await h.assert.sync.blockHeight({ expectedHeight: 8 });
         });
+
+        it("keeps peers in sync over 12 rotation rounds", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3);
+            await h.transition.advanceState({ rounds: 12 }); // 12 rounds = 36 transitions
+            await h.assert.sync.peersInSyncWait();
+            await h.assert.sync.blockHeight({ expectedHeight: 35 });
+        });
     });
 
     describe("State Modifications", function () {

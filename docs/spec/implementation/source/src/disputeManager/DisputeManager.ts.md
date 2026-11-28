@@ -19,7 +19,6 @@
 - [`REQ-DISPUTE-PIPE-10-BT8YAR` (Recheck an early timeout submission)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-10-bt8yar)
 - [`REQ-DISPUTE-PIPE-11-HRGJ43` (Release a timeout refused for posted calldata)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-11-hrgj43)
 - [`REQ-DISPUTE-PIPE-9-TDWQPV` (Existing-window state contributions)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-9-tdwqpv)
-- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
   Partial: `fraudProofGasLimit` funds one replay per transaction within `MAX_TRANSACTION_GAS`, but `dispute` bundles every fraud proof into one multicall, so a dispute carrying several replays can need more than the cap; it is then sent at the cap and fails on-chain ([`FIND-GASEST-2-94YFZ6`](../../../../audit/open-findings.md#find-gasest-2-94yfz6)).
 - [`REQ-DISPUTE-PIPE-8-BVR8XV` (Dispute admission orders block signatures)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-8-bvr8xv)

@@ -618,12 +618,12 @@ export async function assertPendingJoinAdmission(dropEvent: boolean) {
                 .request();
             await validation.waitUntilEntered();
             // Reaching held validation proves this stored copy passed source admission.
-            const mirrored = await h.execOnHost(observer, (sm) =>
-                sm.diamondStateMachine.localDiamondContract.getOnChainThresholdSet(
+            const thresholdSet = await h.execOnHost(observer, (sm) =>
+                sm.stateChannelManagerContract.getOnChainThresholdSet(
                     sm.channelId
                 )
             );
-            expect(mirrored).to.include(joiner.address);
+            expect(thresholdSet).to.include(joiner.address);
             expect(
                 await h
                     .control(observer)

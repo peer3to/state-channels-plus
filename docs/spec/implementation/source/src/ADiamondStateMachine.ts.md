@@ -14,7 +14,7 @@
 
 Capability completeness
 
-- Setup: Type-check a concrete `ADiamondStateMachine` subclass (`EvmDiamondStateMachine` is the only one) against every abstract member: `stateTransition`, `runView`, `getParticipants`, `getNextToWrite`, `peekNextToWrite`, `setState`/`getState`, the balance methods, `processInboundMessage`, `reduceAndFinalizeLocally`, `getStateMachineAddress` and `dispose`.
+- Setup: Type-check a concrete `ADiamondStateMachine` subclass (`EvmDiamondStateMachine` is the only one) against every abstract member: `stateTransition`, `runView`, `getParticipants`, `getNextToWrite`, `peekNextToWrite`, `setState`/`getState`, the balance methods, `processInboundMessage`, `getStateMachineAddress` and `dispose`.
 - Oracle: The subclass compiles only when it implements all of them, and each implementation is callable through an `ADiamondStateMachine`-typed reference.
 - Specification: [`REQ-SM-9-QK86SJ` (A conforming state machine MUST provide the complete interface above)](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj)
 - Specification tests: [`REQ-SM-9-QK86SJ.T1`](../../../specification/protocol-model/state-machines.md#req-sm-9-qk86sj.t1)

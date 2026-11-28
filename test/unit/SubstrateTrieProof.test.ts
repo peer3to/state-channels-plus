@@ -1,43 +1,30 @@
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import { encodeCompact } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader";
-import SubstrateTrieProof from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
+import SubstrateTrieProof, {
+    trieNodeHash
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
 import {
+    ANY_TRIE_KEY,
     craftedTrieNodes,
     hashedValueBranch,
     oneChildBranch,
-    rootOfSingleNodeTrie,
+    patternedValue,
+    readFromSingleLeaf,
     singleLeafNode,
     readCraftedTrie,
     twoEntryBranch
 } from "@test/fixtures/lightClient/craftedTrieNodes";
 import { moonbeamStorageProof } from "@test/fixtures/lightClient/moonbeamStorageProof";
 import { expect } from "chai";
-import { concat, dataLength, hexlify } from "ethers";
+import { concat, dataLength, getBytes, hexlify, ZeroHash } from "ethers";
 
 const { stateRoot, slots, sharedProofNodes, firstSlotProofNodes, account } =
     moonbeamStorageProof;
 const [firstSlot, , emptySlot] = slots;
-const ANY_KEY = "0x0a";
 /** Longer than 32 bytes, so state version 1 holds it by hash. */
 const LONG_VALUE = hexlify(new Uint8Array(40).fill(0xcd));
 /** Eight key bytes: a partial key of 16 nibbles. */
 const LONG_PARTIAL_KEY = "0x0102030405060708";
-
-/** `length` bytes that differ from their neighbours, so a misread length shows. */
-function patternedValue(length: number): string {
-    return hexlify(Uint8Array.from({ length }, (_, index) => index % 251));
-}
-
-/** What a trie of one leaf that holds `value` under `ANY_KEY` reads for it. */
-function readFromSingleLeaf(value: string) {
-    const node = singleLeafNode(ANY_KEY, value);
-    return hexlify(
-        new SubstrateTrieProof([node]).read(
-            rootOfSingleNodeTrie(node),
-            ANY_KEY
-        )!
-    );
-}
 
 describe("SubstrateTrieProof", function () {
     it("reads a value the trie holds inside its leaf", function () {
@@ -61,9 +48,9 @@ describe("SubstrateTrieProof", function () {
         const value = patternedValue(100);
         // version 0 never hashes a value: the leaf holds all 100 bytes
         expect(encodeCompact(100)).to.have.length(2);
-        expect(dataLength(singleLeafNode(ANY_KEY, value))).to.be.greaterThan(
-            100
-        );
+        expect(
+            dataLength(singleLeafNode(ANY_TRIE_KEY, value))
+        ).to.be.greaterThan(100);
         expect(readFromSingleLeaf(value)).to.equal(value);
     });
 
@@ -105,7 +92,9 @@ describe("SubstrateTrieProof", function () {
     });
 
     it("reads null from the empty trie", function () {
-        expect(readCraftedTrie(craftedTrieNodes.empty, ANY_KEY)).to.equal(null);
+        expect(readCraftedTrie(craftedTrieNodes.empty, ANY_TRIE_KEY)).to.equal(
+            null
+        );
     });
 
     it("reads the value a branch holds where the key ends", function () {
@@ -229,31 +218,77 @@ describe("SubstrateTrieProof", function () {
 
     it("throws on a node with an unknown header", function () {
         expect(() =>
-            readCraftedTrie(craftedTrieNodes.unknownHeader, ANY_KEY)
+            readCraftedTrie(craftedTrieNodes.unknownHeader, ANY_TRIE_KEY)
         ).to.throw(StorageProofError, /unknown header/);
     });
 
     it("throws on a node that ends before its announced content", function () {
         expect(() =>
-            readCraftedTrie(craftedTrieNodes.truncatedLeaf, ANY_KEY)
+            readCraftedTrie(craftedTrieNodes.truncatedLeaf, ANY_TRIE_KEY)
         ).to.throw(StorageProofError, /ends early/);
     });
 
     it("throws on an odd partial key whose padding is not zero", function () {
         expect(() =>
-            readCraftedTrie(craftedTrieNodes.paddedPartial, ANY_KEY)
+            readCraftedTrie(craftedTrieNodes.paddedPartial, ANY_TRIE_KEY)
         ).to.throw(StorageProofError, /padded partial key/);
     });
 
     it("throws on a branch that has no child", function () {
         expect(() =>
-            readCraftedTrie(craftedTrieNodes.childlessBranch, ANY_KEY)
+            readCraftedTrie(craftedTrieNodes.childlessBranch, ANY_TRIE_KEY)
         ).to.throw(StorageProofError, /no child/);
     });
 
     it("throws on a value length nothing can hold", function () {
         expect(() =>
-            readCraftedTrie(craftedTrieNodes.bigIntegerLength, ANY_KEY)
+            readCraftedTrie(craftedTrieNodes.bigIntegerLength, ANY_TRIE_KEY)
         ).to.throw(StorageProofError, /length nothing can hold/);
+    });
+
+    it("reads from nodes already keyed by their hash what a proof of the same nodes reads", function () {
+        const nodes = new Map(
+            account.proofNodes.map((node) => [
+                trieNodeHash(getBytes(node)),
+                node
+            ])
+        );
+
+        const value = SubstrateTrieProof.ofHashedNodes(nodes).read(
+            stateRoot,
+            account.trieKey
+        );
+
+        expect(hexlify(value!)).to.equal(account.value);
+    });
+
+    it("finds a node only under the hash its caller keyed it by: it does not hash nodes already keyed", function () {
+        // every node of a one-key read proof is on the key's path
+        const [misKeyed, ...rest] = account.proofNodes;
+        const nodes = new Map([
+            [ZeroHash, misKeyed],
+            ...rest.map((node) => [trieNodeHash(getBytes(node)), node] as const)
+        ]);
+
+        expect(() =>
+            SubstrateTrieProof.ofHashedNodes(nodes).read(
+                stateRoot,
+                account.trieKey
+            )
+        ).to.throw(StorageProofError, /holds no node with hash/);
+    });
+
+    it("reuses a proof it is given and builds one from the nodes it is given", function () {
+        const proof = new SubstrateTrieProof(account.proofNodes);
+
+        expect(SubstrateTrieProof.of(proof)).to.equal(proof);
+        expect(
+            hexlify(
+                SubstrateTrieProof.of(account.proofNodes).read(
+                    stateRoot,
+                    account.trieKey
+                )!
+            )
+        ).to.equal(account.value);
     });
 });

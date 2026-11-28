@@ -104,6 +104,8 @@ export function provisionSlots(
     slotCount: number,
     logDir: string
 ): Promise<{ slots: Slot[]; infra: Infra }>;
+/** The slot a `--use-slot` JSON file names; its cache dir is kept. */
+export function readGivenSlot(file: string): Slot;
 export function startGasMonitor(
     slots: Slot[],
     onNewPeak: (slotId: number, peak: GasPeak) => void,

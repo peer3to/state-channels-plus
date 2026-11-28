@@ -1904,7 +1904,7 @@ describe("E2E: Spectate Service", function () {
             ]);
         });
 
-        it("a fresh joiner whose served window the chain has not reduced waits for the chain's reduction, then syncs without aborting or blacklisting its responder", async function () {
+        it("a fresh joiner whose served window is past its kill period but unreduced on chain recomputes it through the chain's reduction call and syncs without waiting: one request, no abort, no blacklist", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(4, 0);
             await h.transition.advanceState({ count: 2 });
@@ -1913,20 +1913,21 @@ describe("E2E: Spectate Service", function () {
                 connectAfterKillPeriod: true
             });
             // premise: the kill period was over and the chain had not reduced
-            // the window, so only a local reduction could have proved it
-            expect(staged.whileUnreduced).to.deep.equal({
-                status: Status.OPENED,
-                reducedForkId: ethers.ZeroHash,
-                aborts: 0
-            });
-            await staged.reduce();
+            // the window when the joiner's sync applied its answer
+            expect(staged.whileUnreduced.reducedForkId).to.equal(
+                ethers.ZeroHash
+            );
             await h.event.waitUntilPeerStatus(
                 staged.joiner.index,
                 Status.SYNCED
             );
+            // still unreduced: the joiner did not wait for the reduction
+            expect(await h.query.reducedForkOnChain(h.activeForkId!)).to.equal(
+                ethers.ZeroHash
+            );
             expect(
                 (await staged.requestCounts()).filter((count) => count > 0)
-            ).to.deep.equal([2]);
+            ).to.deep.equal([1]);
             expect(staged.aborts()).to.equal(0);
             expect(await staged.blacklistedByJoiner()).to.deep.equal([
                 false,
@@ -1942,7 +1943,7 @@ describe("E2E: Spectate Service", function () {
             await h.transition.advanceState({ count: 2 });
             await h.assert.sync.peersInSyncWait();
             const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
-                connectAfterKillPeriod: true
+                connectAfterKillPeriod: false
             });
             const hostErrors: Error[] = [];
             const unsubscribe = staged.joiner.p2pInstance.onHostError((error) =>
@@ -1978,7 +1979,7 @@ describe("E2E: Spectate Service", function () {
             await h.transition.advanceState({ count: 2 });
             await h.assert.sync.peersInSyncWait();
             const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
-                connectAfterKillPeriod: true
+                connectAfterKillPeriod: false
             });
             await staged.joiner.p2pInstance.dispose();
             await staged.reduce();
@@ -1994,7 +1995,7 @@ describe("E2E: Spectate Service", function () {
             await h.transition.advanceState({ count: 2 });
             await h.assert.sync.peersInSyncWait();
             const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
-                connectAfterKillPeriod: true
+                connectAfterKillPeriod: false
             });
             await h
                 .control(staged.joiner)
@@ -2018,7 +2019,7 @@ describe("E2E: Spectate Service", function () {
             // the throw must come before the initial-sync deadline, whose
             // abort is the sibling case above
             const staged = await stageJoinerWaitingOnUnreducedWindow(h, {
-                connectAfterKillPeriod: true,
+                connectAfterKillPeriod: false,
                 holdInitialSyncDeadline: true
             });
             const hostErrors: Error[] = [];
@@ -2027,9 +2028,9 @@ describe("E2E: Spectate Service", function () {
             );
             try {
                 // the first pass stopped before the milestone walk; the
-                // repeated one reaches it and the local executor fails
+                // repeated one reaches it and the chain read fails
                 await h.mirror.observe(staged.joiner.index, "verifyMilestones");
-                await h.mirror.failNextLocalRead(
+                await h.mirror.failNextChainRead(
                     staged.joiner.index,
                     "verifyMilestones",
                     "transport"
@@ -2192,7 +2193,7 @@ describe("E2E: Spectate Service", function () {
                 responder,
                 async (sm, args) => {
                     const isDisputed =
-                        await sm.diamondStateMachine.localDiamondContract.isForkDisputed(
+                        await sm.stateChannelManagerContract.isForkDisputed(
                             sm.channelId,
                             args.forkId
                         );

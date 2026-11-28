@@ -12,8 +12,9 @@
 - [`REQ-ID-3-KR0BE3` (Confined signing authority)](../../../../../../specification/protocol-model/identity.md#req-id-3-kr0be3)
 - [`REQ-QSTORE-2-VYWJAQ` (Independent source allowances)](../../../../../../specification/storage/queue.md#req-qstore-2-vywjaq)
 - [`REQ-SDK-ARCH-6-8DE4ER` (Chain spending is observable)](../../../../../../specification/runtime/sdk.md#req-sdk-arch-6-8de4er)
-- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+- [`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
+- [`REQ-LC-8-BBYC51` (A participant follows the channel it has selected)](../../../../../../specification/runtime/light-client.md#req-lc-8-bbyc51)
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-1-TJYWGM
 
@@ -94,6 +95,16 @@ Replay requirement within the per-transaction gas cap
 
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P1` — a replay requirement one gas above `MAX_TRANSACTION_GAS` fails host startup naming both figures and closes every runtime root it started
 - [x] `UNIT-TEST-P2P-RUNTIME-HOST-35-YY8P9R.P2` — a replay requirement equal to `MAX_TRANSACTION_GAS` starts the host
+
+## UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG
+
+Startup chain requests
+
+- Setup: Start a three-peer session with one peer behind a recording WebSocket proxy
+- Oracle: The proxy saw one `eth_chainId`, and one latest-block read per clock synchronization pass, each of which also reads one earlier block by number
+
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG.P1` — the startup clock log uses the block the clock synchronization read and reads no latest block of its own
+- [x] `UNIT-TEST-P2P-RUNTIME-HOST-36-Z741VG.P2` — the chain id is asked once, by the node socket's own detection
 
 ## UNIT-TEST-P2P-RUNTIME-HOST-34-517JAX
 

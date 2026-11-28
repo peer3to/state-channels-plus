@@ -37,6 +37,8 @@ Options:
       --source-tests             Run the TypeScript sources under ts-node instead of the compiled dist tree
       --skip-build               Reuse existing contracts and dist tree without rebuilding
       --slots <count>            Local warm E2E infrastructure slots (0 disables)
+      --use-slot <file>          Run on the slot this JSON file names ({nodeUrl, discoveryUrl, cacheDir}),
+                                  started and kept by the caller, instead of starting one
   -w, --workers <count>          Concurrent tests per local or remote worker
       --target-load <number>     Local maximum average load per CPU core
   -i, --interval <ms>            Local scheduler admission interval
@@ -110,6 +112,8 @@ function parseCliArgs(argv) {
         dryRun: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
         slots: undefined,
+        // A slot the caller started and keeps (JSON file path); undefined → start slots.
+        useSlot: undefined,
         // Optional hard cap on concurrent running tests (on top of the
         // load/memory gate); undefined → gate-only.
         workers: undefined,
@@ -166,6 +170,20 @@ function parseCliArgs(argv) {
             )
                 throw new Error("--cost-cache requires a nonempty path");
             options.costCachePath = value;
+            continue;
+        }
+        if (arg === "--use-slot" || arg.startsWith("--use-slot=")) {
+            const value =
+                arg === "--use-slot"
+                    ? argv[++i]
+                    : arg.slice("--use-slot=".length);
+            if (
+                !value?.trim() ||
+                value.startsWith("-") ||
+                value.includes("\u0000")
+            )
+                throw new Error("--use-slot requires a nonempty path");
+            options.useSlot = value;
             continue;
         }
         if (arg === "--cost-cache-read-only") {
@@ -573,6 +591,14 @@ function parseCliArgs(argv) {
     }
     if (options.browserOnly && options.forgeOnly) {
         throw new Error("--browser-only conflicts with --forge-only");
+    }
+    if (options.useSlot !== undefined && options.distributed) {
+        throw new Error(
+            "--use-slot is local only; it conflicts with --distributed"
+        );
+    }
+    if (options.useSlot !== undefined && options.slots !== undefined) {
+        throw new Error("--use-slot conflicts with --slots");
     }
     if (!options.distributed && options.distributedOptionsProvided) {
         throw new Error("Distributed-only options require --distributed");

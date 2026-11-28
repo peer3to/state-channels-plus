@@ -299,7 +299,7 @@ simulate snapshot adoption.
 
 [The synchronization owner](../peer-communication/synchronization.md) defines the ordered checks,
 trusted starts, replay-state selection and failure consequences. Proof verification uses the
-local-final, local-mirror and chain tiers. Lineage and channel balances remain anchored to chain
+local-final and chain tiers. Lineage and channel balances remain anchored to chain
 facts; successful sync creates no on-chain obligation for the requester.
 
 Verified material is persisted before the unfinalized tail is replayed in order. If a later replay

@@ -2,6 +2,7 @@ import type StateManager from "../StateManager";
 import type AValidationStrategy from "../validationStrategy/AValidationStrategy";
 import Clock from "@/Clock";
 import { Block } from "@/models";
+import { TIMEOUT_RECHECK_DELAY_MS } from "@/stateManager/chainFallback/ParticipantTimeoutService";
 import { SourceEligibility } from "@/stateManager/membership/MembershipService";
 import {
     BlockOrigin,
@@ -252,12 +253,28 @@ export default class BlockQueueManager {
 
         if (entries.length === 0) return;
 
-        if (
-            await this.stateManager.validationService.isDisputedFork(
-                entries[0].block.forkId,
-                entries[0].block.channelId
-            )
-        ) {
+        let isDisputed: boolean;
+        try {
+            isDisputed =
+                await this.stateManager.validationService.isDisputedFork(
+                    entries[0].block.forkId,
+                    entries[0].block.channelId
+                );
+        } catch (error) {
+            // a failed chain read is no verdict: the entries go back to the
+            // queue, each under its own timeout, which runs them again
+            for (const entry of entries) this.restoreQueuedEntry(entry);
+            this.logger.warn(
+                "tryExecuteFromQueue - disputed-fork check failed; queued blocks restored",
+                {
+                    forkId: entries[0].block.forkId,
+                    restoredCount: entries.length,
+                    error: errorMessage(error)
+                }
+            );
+            return;
+        }
+        if (isDisputed) {
             for (const entry of entries) {
                 this.cancelQueueTimeout(entry.block.hash);
             }
@@ -403,7 +420,8 @@ export default class BlockQueueManager {
     /**
      * Consult the kill-period cache BEFORE scheduling (avoid task-queue pressure
      * under a junk flood), then hand off to the coalescing gate. Awaited from
-     * ingest, but only cheap mirror/cache reads - never the reduction itself.
+     * ingest, but only cheap reads (mirror/cache, or the light client's proven
+     * chain state) - never the reduction itself.
      */
     private async maybeScheduleForkRecovery(
         channelId: ChannelId
@@ -487,12 +505,40 @@ export default class BlockQueueManager {
         const entry = this.stateManager.storage.queues.removeBlock(blockHash);
         if (!entry) return;
 
-        if (
-            await this.stateManager.validationService.isDisputedFork(
-                entry.block.forkId,
-                entry.block.channelId
-            )
-        ) {
+        let isDisputed: boolean;
+        try {
+            isDisputed =
+                await this.stateManager.validationService.isDisputedFork(
+                    entry.block.forkId,
+                    entry.block.channelId
+                );
+        } catch (error) {
+            // a failed chain read is no verdict: the entry goes back and its
+            // timeout runs again shortly, as a participant timeout's check does
+            this.stateManager.storage.queues.restoreEntry(entry);
+            // a copy that arrived meanwhile armed its own timeout
+            this.cancelQueueTimeout(blockHash);
+            this.timeoutHandles.set(
+                blockHash,
+                this.timeoutManager.scheduleTask(
+                    () => this.queueTimeout(blockHash),
+                    TIMEOUT_RECHECK_DELAY_MS,
+                    `BlockQueueManager.queueTimeout (recheck after a failed chain read) - ${blockHash}`
+                )
+            );
+            this.logger.warn(
+                "queueTimeout - disputed-fork check failed; rechecking",
+                {
+                    block: LoggerUtils.getBlockMetadata(
+                        entry.block,
+                        this.stateManager.storage
+                    ),
+                    error: errorMessage(error)
+                }
+            );
+            return;
+        }
+        if (isDisputed) {
             this.clearFork(entry.block.forkId);
             return;
         }

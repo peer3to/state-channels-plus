@@ -37,13 +37,12 @@ unchanged, the evidence comparison against the dispute built before the signatur
 evidence before and after, and the chain still accepts the reused dispute's proof.
 
 A cached omission is checked against the chain before reuse. The omission case stages
-`stageMirrorMissingJoin` for peer 0 (the chain holds a join the head milestone waits on; peer 0's
-mirror missed it) and serves peer 0's chain `isAuditingDataOmissionAllowed` reads from the block
-before that join (`serveChainReadsBefore`), so the first construction leaves the data out. It then
+`stageForcedJoinBeforeHeadFinal` (the chain holds a join the head milestone waits on) and serves
+peer 0's chain `isAuditingDataOmissionAllowed` reads from the block before that join (`serveChainReadsBefore`), so the first construction leaves the data out. It then
 restores the chain view, which moves the chain answer to "not allowed" while peer 0's inputs stay
 unchanged, and constructs twice more. The second construction is a new result with the same
 fingerprint that posts its auditing data; the third returns that result. The observed chain answers
-are exactly the re-check and the build's confirmation (`[false, false]`) with one local answer: the
+are exactly the re-check and the build's confirmation (`[false, false]`) with no local read: the
 posted dispute is reused with no chain read.
 
 The reduction case constructs on peer 1, lets peer 0 leave through a self-removal dispute, waits for
@@ -52,6 +51,7 @@ peer 1's `onDisputeReducedResultCommitted`, and asserts peer 1 keeps no built di
 ## Tests
 
 - `unchanged inputs → the second construction returns the cached result`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P3
+- `the comparison of a dispute with the evidence already built reduces on the chain, never the mirror`: REQ-MIRROR-6-0WSB4V.T1.P27
 - `a valid signature merged into the unchanged latest block after a cached construction → the cached result is returned and adds no evidence`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P1, REQ-DISPUTE-PIPE-6-6FZB9M.T1.P14
 - `a newer latest block after a cached construction → the next dispute proves the later block`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P4
 - `an exit started after a cached construction → the next dispute carries the self-removal`: UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P5, UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P3

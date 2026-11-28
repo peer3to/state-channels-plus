@@ -1,11 +1,16 @@
 import { ethers } from "ethers";
 
+/** A block's timestamp, in seconds, and its number. */
+export type BlockchainTime = { timestamp: number; blockNumber: number };
+
 class Clock {
     private static instance: Clock | undefined;
     private static initialization: Promise<void> | undefined;
     private clockAdjustmentSeconds: number;
     private provider: ethers.Provider;
     private averageBlockTime: number | undefined; // in seconds
+    /** The latest block the last synchronization pass read. */
+    private syncedBlock: BlockchainTime | undefined;
     /** Set once no runtime owns `provider`: it is destroyed when replaced. */
     private providerReleased = false;
 
@@ -90,10 +95,17 @@ class Clock {
         return blocks * (averageBlockTime || 1) * 1000;
     }
 
-    public static async getBlockchainTime(): Promise<{
-        timestamp: number;
-        blockNumber: number;
-    }> {
+    /**
+     * The latest block the clock was synchronized to, without reading the
+     * chain again.
+     */
+    public static getSyncedBlockchainTime(): BlockchainTime {
+        const syncedBlock = Clock.getInstance().syncedBlock;
+        if (!syncedBlock) throw new Error("Clock not synchronized");
+        return syncedBlock;
+    }
+
+    public static async getBlockchainTime(): Promise<BlockchainTime> {
         const provider = Clock.getInstance().provider;
         const latestBlock = await provider.getBlock("latest");
         if (!latestBlock) throw new Error("Could not get latest block");
@@ -120,6 +132,10 @@ class Clock {
         const latestBlock = await this.provider.getBlock("latest");
         if (!latestBlock) throw new Error("Could not get latest block");
         const latestTimestamp = latestBlock.timestamp;
+        this.syncedBlock = {
+            timestamp: latestTimestamp,
+            blockNumber: latestBlock.number
+        };
 
         const difference = latestTimestamp - currentTime;
 

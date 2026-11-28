@@ -16,13 +16,13 @@
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 - [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../../../../specification/security/data-availability.md#req-da-1-nvv85z)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 
 ## UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN
 
 Dispute construction reuses a built dispute only while its inputs are unchanged and proves the latest state it read.
 
-- Setup: Use the public construction boundary (`DisputeManager.constructDispute`) and `reconstructAuditingData` on a running peer with a real valid state proof. Construct twice with no change; construct, then change one input through its owner (a newer committed block, a started exit, a real participant timeout past its deadline, fraud evidence stored by the validation pipeline) and construct again; hold construction at its state-proof build while a newer block commits or fraud evidence is stored; name a snapshot absent from storage in a dispute input; supply a state proof built before construction at the latest height, one block below it, or a failed build. Additional valid signatures on the same latest block are not a changed input. With unchanged inputs, let the chain stop allowing a cached dispute's auditing-data omission (a join the head milestone waits on, missed by the mirror), or commit the fork's reduced result.
+- Setup: Use the public construction boundary (`DisputeManager.constructDispute`) and `reconstructAuditingData` on a running peer with a real valid state proof. Construct twice with no change; construct, then change one input through its owner (a newer committed block, a started exit, a real participant timeout past its deadline, fraud evidence stored by the validation pipeline) and construct again; hold construction at its state-proof build while a newer block commits or fraud evidence is stored; name a snapshot absent from storage in a dispute input; supply a state proof built before construction at the latest height, one block below it, or a failed build. Additional valid signatures on the same latest block are not a changed input. With unchanged inputs, let the chain stop allowing a cached dispute's auditing-data omission (a join the head milestone waits on), or commit the fork's reduced result.
 - Oracle: Unchanged inputs return the cached result object. A changed input yields a dispute that differs from the cached one in exactly that input: the later block's state and the chain-accepted proof of it, `selfRemoval` true, the eligible timeout an honest auditor accepts, the applied fraud proof and its slash. A newer block during construction makes the returned dispute prove the later block throughout (inputs, proof and auditing data agree and the chain accepts them), never the first proof with the second inputs. Extra signatures alone cause no evidence improvement or forced recomputation; all authenticity, finality and validity checks remain required. A supplied proof is used only at the latest height; a stale or failed one makes construction build its own, and the chain accepts the dispute either way. A missing stored snapshot rejects with that snapshot's hash and returns no auditing data. A cached dispute that omits its auditing data is reused only after the chain still allows the omission, else rebuilt with the data posted; a cached dispute that posts its data is reused with no chain read; a committed reduced result drops the fork's built dispute. Valid auditing data retained after omission becomes allowed remains acceptable; no calldata-minimization oracle is required for current work. The optional optimization is tracked by [`OQ-IMPL-DISPUTE-CALLDATA-1-S2XEBS` (Optional auditing calldata on a reused dispute)](../../../open-questions.md#oq-impl-dispute-calldata-1-s2xebs).
 
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P1` — additional valid signatures on the unchanged latest block do not force recomputation or change the evidence-comparison result
@@ -34,7 +34,7 @@ Dispute construction reuses a built dispute only while its inputs are unchanged 
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P7` — fraud evidence stored by the validation pipeline after a completed construction: the next construction applies that proof and lists the offender's slash
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P8` — fraud evidence stored while the state proof is being built, with the latest block unchanged: the returned dispute applies that proof and lists the offender's slash
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P9` — `reconstructAuditingData` for a dispute naming a snapshot absent from storage rejects with that snapshot's hash and returns no auditing data
-- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P10` — a cached dispute that omits its auditing data, with inputs unchanged and the chain no longer allowing the omission: the next construction builds again and posts the data (the local mirror alone never confirms the omission); a cached dispute that posts its data is reused with no chain read
+- [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P10` — a cached dispute that omits its auditing data, with inputs unchanged and the chain no longer allowing the omission: the next construction builds again and posts the data (no local copy is read); a cached dispute that posts its data is reused with no chain read
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P11` — the fork's reduced result committed after a cached construction: the fork's built dispute is dropped, so the next construction builds again
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P12` — a state proof built before construction at the latest height is used without building another, and the chain accepts the dispute
 - [x] `UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN.P13` — a state proof built one block below the latest height is not used: construction builds its own, and the chain accepts the dispute
@@ -56,12 +56,9 @@ Construction correctness
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P7` — held timeout struct
 - [ ] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P8` — empty-stream tip defaults
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P9` — finality probe final skips auditing data
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P10` — local probe "not final" posts auditing data with no chain probe
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P11` — local probe "final", chain "not final": auditing data is posted
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P13` — local probe "final", chain "final": exactly one chain read and the auditing data is left out
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P14` — local probe fails outside the EVM (executor transport failure): construction throws it and the chain is never read
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15` — local probe "final", chain read fails with a transport error: construction throws it, no dispute is built
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P16` — the auditing-data omission predicate reverts locally during dispute construction: construction fails without a chain read or a constructed dispute
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P10` — chain probe "not final" (a late joiner's signature is missing): one chain read, no local read, and the auditing data is posted
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P13` — chain probe "final": exactly one chain read, no local read, and the auditing data is left out
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P15` — chain probe fails with a transport error: construction throws it, no local read, no dispute is built
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P17` — a stored forged-inbound proof whose inbound block is the snapshot's inbound head at S is left out of `fraudProofsToApply` and its target is not added to `onChainSlashes`
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P18` — a stored forged-inbound proof over a fabricated inbound block above the snapshot's inbound head is bundled into `fraudProofsToApply` and its target added to `onChainSlashes`
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P19` — a stale forged-inbound proof stored before a valid proof against the same participant: the valid proof is applied and the participant is added to `onChainSlashes`
@@ -69,8 +66,7 @@ Construction correctness
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P21` — a stored WrongGenesis proof while the chain holds its fork past genesis is left out and its target is not added
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P22` — a stored WrongGenesis proof while the chain still holds the fork's genesis is bundled and its target is added
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P23` — a stored WrongGenesis proof that was the dispute's only reason, with the chain past genesis before `dispute()`: the proof is left out, the upload asks for an existing window, the chain refuses it `RaceConditionDisputeWindowNotOpen`, nobody is slashed and the fork is not left disputed
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P24` — chain reads proven, mirror missing the join: the auditing-data omission is answered by one chain read and no local read, and the auditing data is posted
-- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P25` — chain reads proven: the on-chain slashed participants are read from the chain, not the mirror
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P25` — the on-chain slashed participants are read from the chain
 
 ## UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ
 

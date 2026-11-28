@@ -5,6 +5,7 @@ import { ByzantineService } from "./services/byzantine/ByzantineService";
 import { DisputeService } from "./services/dispute/DisputeService";
 import { HandshakeService } from "./services/handshake/HandshakeService";
 import { LifecycleService } from "./services/lifecycle/LifecycleService";
+import { LightClientControlService } from "./services/lightClient/LightClientControlService";
 import { MirrorService } from "./services/mirror/MirrorService";
 import { NetworkService } from "./services/network/NetworkService";
 import { QueryService } from "./services/query/QueryService";
@@ -39,6 +40,7 @@ export interface HarnessControlServices {
     validation: ValidationProbeService;
     runtimeRpc: RuntimeRpcControlService;
     mirror: MirrorService;
+    lightClient: LightClientControlService;
 }
 
 /**
@@ -100,6 +102,7 @@ export function withHarnessControl<
         validation: ValidationProbeService;
         runtimeRpc: RuntimeRpcControlService;
         mirror: MirrorService;
+        lightClient: LightClientControlService;
 
         // TypeScript requires a mixin constructor to take `...args: any[]`. The
         // runtime constructs the custom RPC as `CustomRpcConstructor` does:
@@ -123,6 +126,7 @@ export function withHarnessControl<
             this.validation = new ValidationProbeService(p2pManager);
             this.runtimeRpc = new RuntimeRpcControlService(p2pManager);
             this.mirror = new MirrorService(p2pManager);
+            this.lightClient = new LightClientControlService(p2pManager);
             // Release every paused host call staged by the stub service
             // before the runtime tears down (its first release step), so an
             // abort during a staged hold never leaves a paused drain behind.

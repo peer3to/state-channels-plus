@@ -55,8 +55,7 @@ for the old fork.
 - `a writer that never signed the predecessor waits for its post → the timeout follows the post-based deadline`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P40
 - `runtime disposed before retry → no second submission`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P8, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P5
 - `M4 disposal obsoletes mismatch retry`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P28, REQ-DISPUTE-PIPE-10-BT8YAR.T1.P14
-- `a dispute window on the chain that the local diamond has not applied, opened before the deadline → no plain timeout`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41, REQ-MIRROR-5-N5SZC9.T4.P1
-- `a failed chain read of the dispute window's creation time re-arms the check and the timeout still commits`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42, REQ-MIRROR-5-N5SZC9.T4.P2
-- `a failed chain read of the block's calldata commitment re-arms the check and the timeout still commits`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43, REQ-MIRROR-5-N5SZC9.T4.P3
-- `a commitment the chain shows before its calldata-posted event is applied → the check recovers the calldata and re-arms, and the block is stored once the event arrives`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44, REQ-MIRROR-5-N5SZC9.T4.P4
-- `a commitment the chain shows whose calldata log no search finds → no timeout and no re-arm`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P45, REQ-MIRROR-5-N5SZC9.T4.P9
+- `a failed chain read of the dispute window's creation time re-arms the check and the timeout still commits`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P42, REQ-MIRROR-6-0WSB4V.T2.P6
+- `a failed chain read of the block's calldata commitment re-arms the check and the timeout still commits`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P43, REQ-MIRROR-6-0WSB4V.T2.P7
+- `a commitment the chain shows before its calldata-posted event is applied → the check recovers the calldata and re-arms, and the block is stored once the event arrives`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P44, REQ-MIRROR-6-0WSB4V.T1.P4
+- `a commitment the chain shows whose calldata log no search finds → no timeout and no re-arm`: UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P45, REQ-MIRROR-6-0WSB4V.T1.P5

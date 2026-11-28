@@ -738,7 +738,7 @@ describe("E2E: Participant Lifecycle", function () {
                         (sm, args) =>
                             Promise.all(
                                 args.hashes.map((hash) =>
-                                    sm.diamondStateMachine.localDiamondContract.hasInboundMessageBlock(
+                                    sm.stateChannelManagerContract.hasInboundMessageBlock(
                                         sm.channelId,
                                         hash
                                     )

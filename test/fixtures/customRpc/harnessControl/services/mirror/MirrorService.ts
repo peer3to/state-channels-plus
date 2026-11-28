@@ -7,7 +7,6 @@ import type P2PManager from "@/P2PManager";
 import ANetworkRpcService from "@/rpc/network/ANetworkRpcService";
 import type NetworkTransport from "@/transport/NetworkTransport";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
-import { RuntimeRpcControl } from "@test/fixtures/runtimeRpc/RuntimeRpcControl";
 import type { StateChannelManagerInterface } from "@typechain-types";
 import {
     type BaseContract,
@@ -17,10 +16,10 @@ import {
 } from "ethers";
 
 /**
- * The local-first reads: each runs on the local diamond first and may be
- * confirmed by the same read on the chain (see `preferLocal`), plus the
- * state-proof walk that the tiers run on the local diamond, then on the chain
- * (`AgreementManager.walkStateProofTiers`).
+ * The chain reads the validators make (the mirror is not read for them), plus
+ * the state-proof walk the chain tier runs
+ * (`AgreementManager.walkStateProofTiers`), the walk from a supplied start
+ * included.
  */
 export const MIRROR_READS = [
     "isAuditingDataOmissionAllowed",
@@ -29,7 +28,9 @@ export const MIRROR_READS = [
     "validateTimeoutCalldataPostedProof",
     "isDisputeInboundHashValid",
     "hasStateProofHeaderMismatch",
-    "verifyMilestones"
+    "verifyMilestones",
+    "verifyMilestonesFromTrustedStart",
+    "reduce"
 ] as const satisfies readonly (keyof LocalDiamondContract &
     keyof StateChannelManagerInterface)[];
 export type MirrorRead = (typeof MIRROR_READS)[number];
@@ -53,35 +54,26 @@ export const REPLICATED_READS = [
     "isForkDisputed",
     "getOnChainSlashedParticipants",
     "getStateSnapshot",
-    "getDisputeWindowCreationTimestamp"
+    "getDisputeWindowCreationTimestamp",
+    "getOnChainThresholdSet",
+    "getWindowCommitments"
 ] as const satisfies readonly (keyof LocalDiamondContract &
     keyof StateChannelManagerInterface)[];
 export type ReplicatedRead = (typeof REPLICATED_READS)[number];
 
-/** The local tiers' walk from a supplied start: the chain has no such read. */
-export const LOCAL_WALK =
-    "verifyMilestonesFromTrustedStart" satisfies keyof LocalDiamondContract;
-
 /** Every read the service can observe. */
-export type ObservableRead =
-    | MirrorRead
-    | LocalOnlyRead
-    | ReplicatedRead
-    | typeof LOCAL_WALK;
+export type ObservableRead = MirrorRead | LocalOnlyRead | ReplicatedRead;
 const OBSERVABLE_READS: readonly ObservableRead[] = [
     ...MIRROR_READS,
     ...LOCAL_ONLY_READS,
-    ...REPLICATED_READS,
-    LOCAL_WALK
+    ...REPLICATED_READS
 ];
 
 /**
- * How the next read fails. `revert`: the real contract runs the same function
- * with its ABI arguments cut off, so the EVM reverts in the ABI decoder.
- * `transport`: the call never gets a verdict - on the local side the executor
- * connection delivers it with corrupted params (the executor answers
- * "Malformed RPC request"), on the chain side it goes to an RPC endpoint that
- * refuses the connection.
+ * How the next chain read fails. `revert`: the real contract runs the same
+ * function with its ABI arguments cut off, so the EVM reverts in the ABI
+ * decoder. `transport`: the call never gets a verdict - it goes to an RPC
+ * endpoint that refuses the connection.
  */
 export type MirrorReadFault = "revert" | "transport";
 
@@ -90,24 +82,6 @@ export type MirrorChainEvent =
     | "InboundMessagesProcessed"
     | "BlockCalldataPosted"
     | "StateSnapshotUpdated";
-
-/**
- * The local diamond's event-application entry points a mirror hold can
- * suspend: InboundMessagesProcessed, ChainSlashed (also applied on
- * DisputeKilled), StateSnapshotUpdated, ChannelStorageCleared (a snapshot
- * update's pruning of consumed inbound blocks) and DisputeCommitted logs.
- */
-export const MIRROR_UPDATES = [
-    "onInboundMessagesProcessed",
-    "onOnChainSlashAdded",
-    "onStateSnapshotUpdated",
-    "onChannelStorageCleared",
-    "onDisputeCommitted"
-] as const satisfies readonly (keyof LocalDiamondContract)[];
-export type MirrorUpdate = (typeof MIRROR_UPDATES)[number];
-
-/** The order held mirror updates are applied in on release. */
-export type MirrorReleaseOrder = "recorded" | "reverse";
 
 /** What one side answered for one read, in call order. */
 export type MirrorReadSide = {
@@ -129,7 +103,6 @@ type StaticCallArgs = unknown[];
 
 type ObservedRead = {
     observation: MirrorReadObservation;
-    localFault?: MirrorReadFault;
     chainFault?: MirrorReadFault;
     chainBlockTag?: number;
     restore: () => void;
@@ -163,24 +136,17 @@ export function localExecutorConnection(sm: { diamondStateMachine: unknown }) {
 }
 
 /**
- * Host-side control of the local mirror versus the chain for the local-first
- * reads. Observation is record-only: every read is forwarded to the real
- * contract. Divergence is staged with real state: the mirror can miss
- * InboundMessagesProcessed or ChainSlashed logs the chain has, and chain reads
- * can be served from the chain state just before a chosen event (a chain view
- * that lags the mirror). One-shot faults make a read fail through the real contract
- * and connection.
+ * Host-side observation of the chain reads (and of the local diamond reads
+ * that must not happen). Observation is record-only: every read is forwarded to
+ * the real contract. Chain reads can be served from the chain state just
+ * before a chosen event (a lagging chain view). One-shot faults make a chain
+ * read fail through the real contract and connection.
  */
 export class MirrorService extends ANetworkRpcService<
     MirrorRpcMethods,
     P2PManager<HarnessControlRpcShape>
 > {
     private readonly observed = new Map<ObservableRead, ObservedRead>();
-    // the held calls' arguments and the restore of each suspended update
-    private readonly heldUpdates = new Map<
-        MirrorUpdate,
-        { calls: unknown[][]; restore: () => void }
-    >();
 
     constructor(p2pManager: P2PManager<HarnessControlRpcShape>) {
         super(
@@ -214,15 +180,14 @@ export class MirrorService extends ANetworkRpcService<
         const restoreLocal = this.wrapStaticCall(
             local,
             read,
-            (original, args) =>
-                this.localRead(entry, local, read, original, args)
+            (original, args) => this.localRead(entry, read, original, args)
         );
-        const restoreChain =
-            read === LOCAL_WALK
-                ? () => {}
-                : this.wrapStaticCall(chain, read, (original, args) =>
-                      this.chainRead(entry, chain, read, original, args)
-                  );
+        const restoreChain = this.wrapStaticCall(
+            chain,
+            read,
+            (original, args) =>
+                this.chainRead(entry, chain, read, original, args)
+        );
         entry.restore = () => {
             restoreLocal();
             restoreChain();
@@ -245,13 +210,6 @@ export class MirrorService extends ANetworkRpcService<
     public restore(read: ObservableRead): void {
         this.observed.get(read)?.restore();
         this.observed.delete(read);
-    }
-
-    public failNextLocalRead(
-        read: ObservableRead,
-        fault: MirrorReadFault
-    ): void {
-        this.require(read).localFault = fault;
     }
 
     public failNextChainRead(
@@ -280,89 +238,6 @@ export class MirrorService extends ANetworkRpcService<
         if (!latest) throw new Error(`serveChainReadsBefore: no ${event} log`);
         entry.chainBlockTag = latest.blockNumber - 1;
         return entry.chainBlockTag;
-    }
-
-    /**
-     * Stop applying `update` to the local diamond: the event handler, storage
-     * and ingest keep running, only the mirror misses the logs.
-     */
-    public holdUpdates(update: MirrorUpdate): void {
-        if (!MIRROR_UPDATES.includes(update))
-            throw new Error("Invalid mirror update selection");
-        if (this.heldUpdates.has(update)) return;
-        const localDiamond: BaseContract =
-            this.sm.diamondStateMachine.localDiamondContract;
-        const calls: unknown[][] = [];
-        const restore = this.replaceMethod(
-            localDiamond,
-            update,
-            (original) =>
-                new Proxy(original, {
-                    apply: (_target, _thisArg, args: unknown[]) => {
-                        calls.push(args);
-                        return Promise.resolve(undefined);
-                    }
-                })
-        );
-        this.heldUpdates.set(update, { calls, restore });
-    }
-
-    /**
-     * The next `update` fails in the local EVM: the real contract runs it
-     * with its ABI arguments cut off and reverts in the ABI decoder.
-     */
-    public failNextUpdate(update: MirrorUpdate): void {
-        if (!MIRROR_UPDATES.includes(update))
-            throw new Error("Invalid mirror update selection");
-        const localDiamond: BaseContract =
-            this.sm.diamondStateMachine.localDiamondContract;
-        const restore = this.replaceMethod(
-            localDiamond,
-            update,
-            () =>
-                (...args: unknown[]) => {
-                    restore();
-                    return this.revertingCall(localDiamond, update, args);
-                }
-        );
-    }
-
-    public heldUpdateCount(update: MirrorUpdate): number {
-        return this.heldUpdates.get(update)?.calls.length ?? 0;
-    }
-
-    /**
-     * Resume `update` and apply the held calls to the mirror in `order`:
-     * "reverse" applies the last held call first.
-     */
-    public async releaseUpdates(
-        update: MirrorUpdate,
-        order: MirrorReleaseOrder = "recorded"
-    ): Promise<number> {
-        const held = this.heldUpdates.get(update);
-        if (!held) return 0;
-        held.restore();
-        this.heldUpdates.delete(update);
-        const localDiamond: BaseContract =
-            this.sm.diamondStateMachine.localDiamondContract;
-        const calls =
-            order === "reverse" ? [...held.calls].reverse() : held.calls;
-        for (const args of calls) {
-            await localDiamond.getFunction(update)(...args);
-        }
-        return held.calls.length;
-    }
-
-    /**
-     * Resume `update` and drop the held calls: the mirror missed those logs
-     * for good. Returns how many were dropped.
-     */
-    public discardUpdates(update: MirrorUpdate): number {
-        const held = this.heldUpdates.get(update);
-        if (!held) return 0;
-        held.restore();
-        this.heldUpdates.delete(update);
-        return held.calls.length;
     }
 
     private require(read: ObservableRead): ObservedRead {
@@ -409,7 +284,7 @@ export class MirrorService extends ANetworkRpcService<
      */
     private replaceMethod(
         contract: BaseContract,
-        name: ObservableRead | MirrorUpdate,
+        name: ObservableRead,
         replacement: (original: BaseContractMethod) => unknown
     ): () => void {
         const previous = Object.getOwnPropertyDescriptor(contract, name);
@@ -427,22 +302,13 @@ export class MirrorService extends ANetworkRpcService<
 
     private async localRead(
         entry: ObservedRead,
-        contract: BaseContract,
         read: ObservableRead,
         original: BaseContractMethod,
         args: StaticCallArgs
     ): Promise<unknown> {
         const side = entry.observation.local;
         side.reads++;
-        const fault = entry.localFault;
-        entry.localFault = undefined;
-        return this.record(side, async () => {
-            if (fault === "revert")
-                return this.revertingCall(contract, read, args);
-            if (fault === "transport")
-                return this.corruptedExecutorCall(contract, read, args);
-            return original.staticCall(...args);
-        });
+        return this.record(side, async () => original.staticCall(...args));
     }
 
     private async chainRead(
@@ -500,7 +366,7 @@ export class MirrorService extends ANetworkRpcService<
     /** The same function with its ABI arguments cut off: a real EVM revert. */
     private async revertingCall(
         contract: BaseContract,
-        read: ObservableRead | MirrorUpdate,
+        read: ObservableRead,
         args: StaticCallArgs
     ): Promise<string> {
         const selector = ethers.dataSlice(
@@ -512,42 +378,6 @@ export class MirrorService extends ANetworkRpcService<
             to: await contract.getAddress(),
             data: selector
         });
-    }
-
-    /**
-     * Post the read to the executor with corrupted params. The post happens
-     * synchronously after arming, so no other read can take the fault.
-     */
-    private async corruptedExecutorCall(
-        contract: BaseContract,
-        read: ObservableRead,
-        args: StaticCallArgs
-    ): Promise<string> {
-        const data = contract.interface.encodeFunctionData(read, args);
-        const to = await contract.getAddress();
-        const runner = this.runnerOf(contract);
-        const connection = this.executorConnection();
-        const existing = RuntimeRpcControl.get(connection["transport"]);
-        const control = existing ?? RuntimeRpcControl.attachTo(connection);
-        let call: Promise<string>;
-        try {
-            control.corruptNextParams("simulateCall");
-            call = runner.call!({ to, data });
-            const posted = control.sent.at(-1);
-            if (posted?.method !== "simulateCall" || posted.params !== null)
-                throw new Error(
-                    "The corrupted executor post was not this read"
-                );
-        } finally {
-            // the response still settles through the restored transport
-            if (!existing) control.dispose();
-        }
-        return call;
-    }
-
-    /** This peer's real connection to its contract executor runtime. */
-    private executorConnection() {
-        return localExecutorConnection(this.sm);
     }
 
     /** Send the read to an RPC endpoint that refuses the connection. */

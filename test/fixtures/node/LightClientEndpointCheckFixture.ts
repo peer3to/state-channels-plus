@@ -1,8 +1,8 @@
 // @spec-test-coverage-ignore: a node that lists chosen methods, for the light client fixture's endpoint check; executable evidence belongs to its calling test declarations
 import { withIsolatedHardhatNode } from "./IsolatedHardhatNode";
 import { RpcNodeProxy } from "./RpcNodeProxy";
-import { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
 import { assertLightClientEndpoints } from "@test/fixtures/lightClient/LightClientNodeFixture";
+import { JsonRpcSocket } from "@test/fixtures/lightClient/node/JsonRpcSocket";
 import { waitFor } from "@test/utils/waitFor";
 
 /**

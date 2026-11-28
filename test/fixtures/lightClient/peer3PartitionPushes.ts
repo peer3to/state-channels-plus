@@ -1,5 +1,6 @@
 // @spec-test-coverage-ignore: recorded chain data used by the mapped FrontierPushedPartition and light client declarations
-
+import type { AcceptedBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/APushedPartition";
+import type FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
 /**
  * What a peer3 dev node (`zero-fee-node --dev --chain test --dev-seal manual
  * --light-client`, peer3-parachain branch lc-399-light-client, recorded
@@ -387,3 +388,13 @@ export const peer3PartitionPushes = {
         ]
     }
 };
+
+/** What `partition` took of `message`; fails the test when it ignored the message. */
+export function taken(
+    partition: FrontierPushedPartition,
+    message: unknown
+): AcceptedBlock {
+    const accepted = partition.accept(message);
+    if (!accepted) throw new Error("The partition ignored the message");
+    return accepted;
+}

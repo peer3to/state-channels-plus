@@ -51,55 +51,49 @@ export class AssertSnapshotActions<
             })
         } = options || {};
 
-        let honestPeers;
-        let peerIndices: number[] = [];
-        let localSnapshots: StateSnapshot[] = [];
+        let onChainSnapshot: StateSnapshot | undefined;
         const describe = (snapshot: StateSnapshot) =>
             `h=${snapshot.blockHeight} fork=${snapshot.forkID} ${snapshot.hash}`;
         const condition = async () => {
-            honestPeers = this.harness.getActiveHonestPeers();
-            peerIndices = honestPeers.map((peer) => peer.index);
-            localSnapshots = await Promise.all(
-                honestPeers.map((peer) =>
-                    this.harness.query.getLocalStateSnapshot(peer)
-                )
-            );
-            for (const localSnapshot of localSnapshots) {
-                if (
-                    expectedSnapshot &&
-                    expectedSnapshot.hash !== localSnapshot.hash
-                )
-                    return false;
-                if (
-                    !expectedSnapshot &&
-                    expectedForkId &&
-                    localSnapshot.forkID !== expectedForkId
-                )
-                    return false;
-                if (previousForkId && localSnapshot.forkID === previousForkId)
-                    return false;
-            }
+            onChainSnapshot =
+                await this.harness.query.getOnChainStateSnapshot();
+            if (
+                expectedSnapshot &&
+                expectedSnapshot.hash !== onChainSnapshot.hash
+            )
+                return false;
+            if (
+                !expectedSnapshot &&
+                expectedForkId &&
+                onChainSnapshot.forkID !== expectedForkId
+            )
+                return false;
+            if (previousForkId && onChainSnapshot.forkID === previousForkId)
+                return false;
 
-            return true; // all honest peers observed a snapshot update event
+            return true;
         };
 
-        const promise = this.harness.eventCountsBarrier.waitFor(condition, {
+        await this.harness.eventCountsBarrier.waitFor(condition, {
             timeoutMs: timeoutMs,
-            timeoutMessage: `Honest peers' local snapshots did not change within ${timeoutMs}ms`,
-            // read at the deadline: the last values the condition saw
+            timeoutMessage: `The on-chain snapshot did not change within ${timeoutMs}ms`,
+            // read at the deadline: the last value the condition saw
             timeoutMetaFn: () => ({
                 expectedForkId,
                 previousForkId,
                 expectedSnapshot: expectedSnapshot
                     ? describe(expectedSnapshot)
                     : undefined,
-                localSnapshots: localSnapshots.map(
-                    (snapshot, i) =>
-                        `peer ${peerIndices[i]}: ${describe(snapshot)}`
-                )
+                onChainSnapshot: onChainSnapshot
+                    ? describe(onChainSnapshot)
+                    : undefined
             })
         });
-        return promise;
+        // all honest peers observed the snapshot update event
+        await this.harness.event.waitForSnapshotLogHandled(
+            this.harness.getActiveHonestPeers().map((peer) => peer.index),
+            timeoutMs
+        );
     }
 
     localSnapshotsChangedDetached(options?: {

@@ -20,7 +20,8 @@ import AProvenStateReader, {
     type BlockEnvironment,
     type NodeRequest,
     type ProvenAccountState,
-    type ProvenBlock
+    type ProvenBlock,
+    type WatchRequest
 } from "../AProvenStateReader";
 import StorageProofError from "../StorageProofError";
 import { isHexString } from "ethers";
@@ -81,19 +82,26 @@ export function isStorageBlock(
 /**
  * Proven state of a Frontier chain, read through the node's Substrate RPC:
  * `chain_getHeader` for the best block and one `state_getReadProof` for
- * everything a read asks. A block's environment is the header of its
- * Ethereum block, which the chain's state holds.
+ * everything a read asks, or one watch where a subscription takes the keys.
+ * A block's environment is the header of its Ethereum block, which the
+ * chain's state holds.
  */
 export default class FrontierProvenStateReader extends AProvenStateReader {
     private readonly requestNode: NodeRequest;
     private readonly storageVerifier = new FrontierStorageProofVerifier();
     private readonly accountVerifier: FrontierAccountProofVerifier;
     private readonly constants: FrontierChainConstants;
+    private readonly watch?: WatchRequest;
 
-    constructor(requestNode: NodeRequest, constants: FrontierChainConstants) {
+    constructor(
+        requestNode: NodeRequest,
+        constants: FrontierChainConstants,
+        watch?: WatchRequest
+    ) {
         super();
         this.requestNode = requestNode;
         this.constants = constants;
+        this.watch = watch;
         this.accountVerifier = new FrontierAccountProofVerifier(
             constants.existentialDeposit
         );
@@ -140,7 +148,7 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
         ]);
         // a read that asks nothing needs no proof
         const proofNodes =
-            keys.length > 0 ? await this.readProof(block, keys) : [];
+            keys.length > 0 ? await this.watchedProof(block, keys) : [];
         // one proof for the whole read, so each of its nodes is hashed once
         const proof = new SubstrateTrieProof(proofNodes);
         return reads.map(({ address, slots, account, code }) => ({
@@ -171,6 +179,20 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
         }));
     }
 
+    /**
+     * One proof of all of `keys` at `block`: through a watch, which the node
+     * answers like a read proof and from then on keeps the keys current, or a
+     * plain read proof where no subscription takes them.
+     */
+    private async watchedProof(
+        block: ProvenBlock,
+        keys: string[]
+    ): Promise<string[]> {
+        const watched = await this.watch?.(keys, block);
+        if (!watched) return await this.readProof(block, keys);
+        return this.proofNodes(watched.proof, "watch proof");
+    }
+
     /** One proof of all of `keys` at `block`, as the node gave it. */
     private async readProof(
         block: ProvenBlock,
@@ -180,9 +202,13 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
             keys,
             block.hash
         ])) as { proof?: unknown } | null;
-        const proofNodes = answer?.proof;
-        if (!Array.isArray(proofNodes) || !proofNodes.every(isBytes))
-            throw new StorageProofError("The node answered no read proof");
-        return proofNodes;
+        return this.proofNodes(answer?.proof, "read proof");
+    }
+
+    /** `proof` as proof nodes; throws when the node answered something else. */
+    private proofNodes(proof: unknown, what: string): string[] {
+        if (!Array.isArray(proof) || !proof.every(isBytes))
+            throw new StorageProofError(`The node answered no ${what}`);
+        return proof;
     }
 }

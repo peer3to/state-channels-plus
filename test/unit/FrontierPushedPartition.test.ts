@@ -1,9 +1,11 @@
-import type { AcceptedBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/APushedPartition";
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
 import SubstrateHeader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader";
-import { peer3PartitionPushes } from "@test/fixtures/lightClient/peer3PartitionPushes";
+import {
+    peer3PartitionPushes,
+    taken
+} from "@test/fixtures/lightClient/peer3PartitionPushes";
 import { expect } from "chai";
 import { toBeHex } from "ethers";
 
@@ -11,16 +13,6 @@ const { contract, sender, messages, blocks } = peer3PartitionPushes;
 /** The account that deployed the contract, which no transaction of the followed topic touched. */
 const DEPLOYER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
 const SLOTS = [5, 10, 20];
-
-/** What `partition` took of `message`; fails the test when it ignored the message. */
-function taken(
-    partition: FrontierPushedPartition,
-    message: unknown
-): AcceptedBlock {
-    const accepted = partition.accept(message);
-    if (!accepted) throw new Error("The partition ignored the message");
-    return accepted;
-}
 
 describe("FrontierPushedPartition", function () {
     it("holds the node's own slot values, account and code at every pushed block", function () {
@@ -260,7 +252,10 @@ describe("FrontierPushedPartition", function () {
             // hex that is not whole bytes
             { ...messages[0], ethereumHeader: "0x123" },
             { ...messages[1], values: [{ key: "0x123", value: null }] },
-            { ...messages[1], proofNodes: [...messages[1].proofNodes, "0x123"] }
+            {
+                ...messages[1],
+                proofNodes: [...messages[1].proofNodes, "0x123"]
+            }
         ];
         for (const message of malformed)
             expect(

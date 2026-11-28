@@ -6,7 +6,7 @@
 
 - [`REQ-DACK-1-ESEGGG` (One round per fork per peer pair)](../../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-dack-1-eseggg)
 - [`REQ-IFD-2-13862Z` (Acknowledge only verified disputes)](../../../../../../../specification/peer-communication/dispute-acknowledgment.md#req-ifd-2-13862z)
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 
 ## UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B
 
@@ -19,4 +19,4 @@ Responder verification
 - [x] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P2` — a fork the responder does not see as disputed: counted close of the requester, no blacklist
 - [ ] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P3` — chain-fallback path
 - [x] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P4` — duplicate violation
-- [x] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P5` — chain reads proven: the responder asks the chain, not its mirror, whether the fork is disputed; a fork it does not see as disputed is a counted close of the requester, no blacklist
+- [x] `UNIT-TEST-IS-FORK-DISPUTED-METHODS-1-JZBH4B.P5` — the responder asks the chain whether the fork is disputed; a fork it does not see as disputed is a counted close of the requester, no blacklist

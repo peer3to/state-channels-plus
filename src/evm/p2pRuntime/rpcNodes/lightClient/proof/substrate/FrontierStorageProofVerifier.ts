@@ -19,10 +19,10 @@ export default class FrontierStorageProofVerifier extends AStorageProofVerifier 
         stateRoot: Hash,
         address: ChecksumAddress,
         slots: StorageSlot[],
-        proofNodes: Bytes[]
+        proofNodes: Bytes[] | SubstrateTrieProof
     ): string[] {
         return this.storageIn(
-            new SubstrateTrieProof(proofNodes),
+            SubstrateTrieProof.of(proofNodes),
             stateRoot,
             address,
             slots

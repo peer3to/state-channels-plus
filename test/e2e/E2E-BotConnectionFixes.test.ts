@@ -8,7 +8,6 @@ import {
 } from "@test/fixtures/ForceJoinCountingStaging";
 import {
     expectInitialSyncSkipped,
-    postSnapshotSeenBy,
     probeOpenedRuntimeWithoutParticipant,
     probeSyncingParticipant,
     spawnSpectatorAfterFirstHandshake,
@@ -225,44 +224,6 @@ describe("E2E: Bot connection fixes", function () {
         expect(outcome.responderBlacklistedRequester).to.equal(false);
     });
 
-    it("H11 (adoption after the slashed handshake, mirror lagging): a fresh spectator skips a first-handshake peer its mirror still lists but the chain has slashed, then syncs from an honest participant after the successor adoption lands", async function () {
-        const h = TestSession.getHarness();
-        const { successor, honest, releaseAdoption } =
-            await stageReducedWithoutAdoption(h, [0, 2, 3]);
-        const slashed = h.getPeer(1);
-        const { spectator, beforeAdoption, atFirstHandshake } =
-            await spawnSpectatorAfterFirstHandshake(h, 1, honest, async () => {
-                // The adoption lands, after the slashed handshake, and every
-                // honest mirror applies it before any honest peer can answer
-                // the spectator: no responder serves the source fork's window
-                // afterwards.
-                await releaseAdoption();
-                const adopted = await postSnapshotSeenBy(
-                    h,
-                    0,
-                    honest,
-                    successor
-                );
-                expect(adopted.forkID).to.equal(successor);
-            });
-        // the mirror cached the source snapshot, which lists the slashed peer
-        expect(beforeAdoption.mirrorParticipant).to.equal(true);
-        // At its handshake a mirror read would sync from it; the chain would
-        // not: it subtracts the slash.
-        expect(atFirstHandshake).to.deep.equal({
-            mirrorParticipant: true,
-            chainParticipant: false,
-            chainSlashed: true
-        });
-        await expectInitialSyncSkipped(
-            h,
-            spectator,
-            slashed,
-            honest,
-            successor
-        );
-    });
-
     it("H11 (reduce landed, adoption failed): a fresh spectator whose first handshake is with a peer the chain snapshot still lists but the chain has slashed skips it and syncs from an honest participant", async function () {
         const h = TestSession.getHarness();
         const { successor, honest } = await stageReducedWithoutAdoption(
@@ -273,11 +234,8 @@ describe("E2E: Bot connection fixes", function () {
         const { spectator, atFirstHandshake } =
             await spawnSpectatorAfterFirstHandshake(h, 1, honest);
         // The chain snapshot still lists the slashed peer, but the chain's
-        // participant check subtracts its slash; the spectator's fresh
-        // mirror holds the snapshot without the slash, so a mirror read
-        // would sync from it.
+        // participant check subtracts its slash.
         expect(atFirstHandshake).to.deep.equal({
-            mirrorParticipant: true,
             chainParticipant: false,
             chainSlashed: true
         });
@@ -336,7 +294,6 @@ describe("E2E: Bot connection fixes", function () {
                 participants
             );
         expect(atFirstHandshake).to.deep.equal({
-            mirrorParticipant: false,
             chainParticipant: false,
             chainSlashed: false
         });

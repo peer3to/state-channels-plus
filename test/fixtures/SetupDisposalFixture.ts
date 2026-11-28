@@ -12,6 +12,7 @@ import {
     stopRuntimeTransportModesFixture
 } from "./RuntimeTransportModesFixture";
 import { EvmStateMachine } from "@/evm";
+import { LIGHT_CLIENT_METHODS } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
 import type { P2pSetupOptions } from "@/evm/p2pRuntime/setupP2pRuntime";
 import { P2pRuntimeClientRoot } from "@/rpc/internal/roots/P2pRuntimeClientRoot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
@@ -85,8 +86,19 @@ async function assertFreshRuntimeWorks(setup: RuntimeSetup): Promise<void> {
 }
 
 /**
+ * What a host's chain reads send its node: `eth_call` without the light
+ * client; with it, the proofs it answers them from.
+ */
+const CHAIN_READ_METHODS = [
+    "eth_call",
+    "state_getReadProof",
+    LIGHT_CLIENT_METHODS.watch
+];
+
+/**
  * The client disposes while the host's start is held at its chain reads (a
- * proxy in front of the node holds every `eth_call`), and the reads are
+ * proxy in front of the node holds every `eth_call`, and with the light client
+ * on the proofs it asks for its answers), and the reads are
  * released after the disposal began: the disposal settles within 5 s of the
  * release, the setup rejects, no host error is raised,
  * the signer sent nothing, and a fresh runtime for the signer works.
@@ -104,12 +116,21 @@ export async function assertDisposalDuringChainReads(
     );
     try {
         const nonce = await chainNonce(setup);
-        const releaseReads = proxy.holdRequests("eth_call");
+        const releases = CHAIN_READ_METHODS.map((method) =>
+            proxy.holdRequests(method)
+        );
+        const releaseReads = () => {
+            for (const release of releases) release();
+        };
         const started = startSetup(setup, {
             ...setup.setupOptions,
             config: { ...setup.setupOptions.config, PROVIDER_URL: proxy.url }
         });
-        await waitFor(() => proxy.forwardedMethods.includes("eth_call"));
+        await waitFor(() =>
+            CHAIN_READ_METHODS.some((method) =>
+                proxy.forwardedMethods.includes(method)
+            )
+        );
         const client = started.client!;
         const disposal = client.dispose();
         // a worker host's port is closed while it still reads; an inline

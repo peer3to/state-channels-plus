@@ -4,7 +4,6 @@ import { Status, type SyncPayload } from "@/types";
 import type { Address, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
 import { buildAndEncodeBlock, hash as randomHash } from "@test/factory";
-import { LOCAL_WALK } from "@test/fixtures/customRpc/harnessControl/services/mirror/MirrorService";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
 import {
     chainSnapshot,
@@ -37,8 +36,6 @@ export type SyncInspection = {
 export type TierWalkFault =
     /** the local finalized tier: the trusted-start walk on the local diamond */
     | "localFinalized"
-    /** the local diamond tier: `verifyMilestones` on the local diamond */
-    | "localDiamond"
     /** the chain tier: `verifyMilestones` sent to a refusing RPC endpoint */
     | "chain";
 
@@ -265,25 +262,20 @@ export async function withEarlyHeldRequester<T>(
 /**
  * {@link applyPayloads} of peer 0's served payload on an early requester
  * (see {@link withEarlyHeldRequester}) whose gossip is dropped, after
- * three blocks; its local diamond then misses a consumed top-up
- * ({@link missConsumedTopUp}). With `anchor` peer 0 posts its final point as
- * the chain anchor before the top-up (every mirror holds it, so the
- * requester's anchor walk crosses the missed run) or after it (the requester
- * holds the snapshot event: its local diamond has no anchor and walks from
- * the genesis).
+ * three blocks and a consumed top-up ({@link consumeTopUp}). With `anchor`
+ * "afterTopUp" peer 0 then posts its final point as the chain anchor: the
+ * requester's own finalized state stays below it.
  */
-export async function applyAfterMissedTopUp(
+export async function applyAfterConsumedTopUp(
     h: MathPeerTestHarness,
-    options: ApplyOptions & { anchor?: "beforeTopUp" | "afterTopUp" } = {}
+    options: ApplyOptions & { anchor?: "afterTopUp" } = {}
 ) {
     return await withEarlyHeldRequester(
         h,
         { blockCount: 3, gossip: "drop" },
         async (requester, forkId) => {
-            if (options.anchor === "beforeTopUp") await postAnchor(h);
-            await missConsumedTopUp(h, requester);
-            if (options.anchor === "afterTopUp")
-                await postAnchor(h, { laggingIndices: [requester.index] });
+            await consumeTopUp(h);
+            if (options.anchor === "afterTopUp") await postAnchor(h);
             return await applyPayloads(
                 h,
                 requester,
@@ -323,7 +315,10 @@ export async function applyPayloads(
     const observeWalks = options.observeWalks || !!options.walkFault;
     const walks = observeWalks
         ? {
-              trustedStart: await h.mirror.observe(requester.index, LOCAL_WALK),
+              trustedStart: await h.mirror.observe(
+                  requester.index,
+                  "verifyMilestonesFromTrustedStart"
+              ),
               storage: await h.mirror.observe(
                   requester.index,
                   "verifyMilestones"
@@ -332,15 +327,9 @@ export async function applyPayloads(
         : undefined;
     try {
         if (options.walkFault === "localFinalized")
-            await h.mirror.failNextLocalRead(
+            await h.mirror.failNextChainRead(
                 requester.index,
-                LOCAL_WALK,
-                "transport"
-            );
-        if (options.walkFault === "localDiamond")
-            await h.mirror.failNextLocalRead(
-                requester.index,
-                "verifyMilestones",
+                "verifyMilestonesFromTrustedStart",
                 "transport"
             );
         if (options.walkFault === "chain")
@@ -962,20 +951,10 @@ export function snapshotWithout(
 }
 
 /**
- * The requester's local diamond misses the InboundMessagesProcessed log of
- * peer 0's top-up while its storage and ingest keep up; then two final
- * blocks of peers 0..2 consume the top-up. Every threshold hop over that
- * inbound run is then unprovable on the requester's local diamond, while
- * the chain holds the run.
+ * Peer 0's top-up is force-joined; then two final blocks of peers 0..2
+ * consume it.
  */
-async function missConsumedTopUp(
-    h: MathPeerTestHarness,
-    requester: Peer
-): Promise<void> {
-    const held = await h.mirror.holdUpdates(
-        requester.index,
-        "onInboundMessagesProcessed"
-    );
+async function consumeTopUp(h: MathPeerTestHarness): Promise<void> {
     await h.join.forceInboundJoinWait({
         participant: h.getPeer(0).address,
         observePeerIndices: [0, 1, 2]
@@ -985,10 +964,6 @@ async function missConsumedTopUp(
         waitForPeers: [0, 1, 2],
         waitForFinalization: true
     });
-    expect(
-        await held.heldCount(),
-        "the requester's mirror must have missed the top-up"
-    ).to.be.greaterThan(0);
 }
 
 /**

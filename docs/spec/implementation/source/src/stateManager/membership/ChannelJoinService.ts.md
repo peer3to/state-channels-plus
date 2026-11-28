@@ -15,7 +15,7 @@
 - [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../../../../../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
 - [`REQ-JOINSIG-4-3NBKHK` (Full-channel join)](../../../../../specification/peer-communication/join-authorization.md#req-joinsig-4-3nbkhk)
 - [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../../../../../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
-- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
+- [`REQ-MIRROR-6-0WSB4V` (Replicated channel state is read from the chain, proven when the light client…)](../../../../../specification/enforcement/local-mirror.md#req-mirror-6-0wsb4v)
 
 ## UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB
 
@@ -105,4 +105,3 @@ Own join, top-up and force join
 - [x] `UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P115` — a first join mined with no revert data at every submission while each replay passes stops at the channel's maximum participant count of retries: `false` after that many retries plus the first submission, one collection, no JOIN on chain, `SYNCED` and no abort
 - [x] `UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P116` — a top-up mined with no revert data at every submission while each replay passes stops at the channel's maximum participant count of retries: `false` after that many retries plus the first submission, one collection, no JOIN on chain, `PARTICIPATING` kept and no abort
 - [x] `UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P117` — a first join mined with no revert data in a block its receipt names is replayed at that block, and submitted again when the replay passes
-- [x] `UNIT-TEST-CHANNEL-JOIN-SERVICE-1-BJKHEB.P118` — a force-join deadline with chain reads proven reads the expired window's creation time from the chain while the local diamond lacks the window: the join is retained without submitting

@@ -7,7 +7,7 @@
 - [`INV-RUNTIME-1-AKRHAK` (Execution equivalence)](../../../../../specification/runtime/execution.md#inv-runtime-1-akrhak)
 - [`REQ-TIME-5-S9NQXK` (Every local contract execution observes the runtime's current estimated chain…)](../../../../../specification/protocol-model/time.md#req-time-5-s9nqxk)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
-- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+- [`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 
 ## UNIT-TEST-CONTRACT-EXECUTOR-1-JHG6KJ
 

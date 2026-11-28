@@ -287,26 +287,54 @@ describe("distributed mixed-protocol pool", function () {
         });
     });
 
-    it("lets no accepted worker protocol run a task that requires lightClient", function () {
+    it("lets only a protocol 16 worker run a task that requires lightClient", function () {
         const lightClient = { runner: "hardhat", requires: ["lightClient"] };
-        expect(
-            workerCanRunTask(
-                runnersForDistributedProtocol(DISTRIBUTED_PROTOCOL_VERSION),
+        expect({
+            on15: workerCanRunTask(
+                runnersForDistributedProtocol(15),
                 lightClient
-            )
-        ).to.equal(false);
-        expect(minimumProtocolForTask(lightClient)).to.equal(null);
+            ),
+            on16: workerCanRunTask(
+                runnersForDistributedProtocol(16),
+                lightClient
+            ),
+            minimum: minimumProtocolForTask(lightClient)
+        }).to.deep.equal({ on15: false, on16: true, minimum: 16 });
     });
 
-    it("skips Mocha tasks that need lightClient with a notice, without failing", async function () {
+    it("a pool of protocol 15 and 16 hosts hands Mocha tasks marked for lightClient only to the 16 host", async function () {
         const run = await runAgainstProtocolWorkers(
             [
-                {
-                    name: "host-current",
-                    distributedProtocol: DISTRIBUTED_PROTOCOL_VERSION
-                }
+                { name: "host-15", distributedProtocol: 15 },
+                { name: "host-16", distributedProtocol: 16 }
             ],
-            { tasks: [MIXED_TIER_TASKS[0], ...LIGHT_CLIENT_MOCHA_TASKS] }
+            { tasks: [...MIXED_TIER_TASKS, ...LIGHT_CLIENT_MOCHA_TASKS] }
+        );
+        expect(run.failure).to.equal(null);
+        const marked = LIGHT_CLIENT_MOCHA_TASKS.map((task) => task.label);
+        expect(
+            workerNamed(run.workers, "host-15").labels.filter((label) =>
+                marked.includes(label)
+            )
+        ).to.deep.equal([]);
+        expect(
+            sortedLabels(
+                workerNamed(run.workers, "host-16").labels.filter((label) =>
+                    marked.includes(label)
+                )
+            )
+        ).to.deep.equal(sortedLabels(marked));
+        expect({
+            completed: run.result.completed,
+            skipped: run.result.skipped.length,
+            failed: run.result.failed.length
+        }).to.deep.equal({ completed: 7, skipped: 0, failed: 0 });
+    });
+
+    it("a pool of only protocol 15 hosts skips Mocha tasks marked for lightClient with a notice, without failing", async function () {
+        const run = await runAgainstProtocolWorkers(
+            [{ name: "host-15", distributedProtocol: 15 }],
+            { tasks: [...MIXED_TIER_TASKS, ...LIGHT_CLIENT_MOCHA_TASKS] }
         );
         expect(run.failure).to.equal(null);
         expect({
@@ -316,7 +344,7 @@ describe("distributed mixed-protocol pool", function () {
             ),
             failed: run.result.failed.length
         }).to.deep.equal({
-            completed: 1,
+            completed: 5,
             skipped: sortedLabels(
                 LIGHT_CLIENT_MOCHA_TASKS.map((task) => task.label)
             ),
@@ -324,12 +352,9 @@ describe("distributed mixed-protocol pool", function () {
         });
         const notice = run.warnings.join("\n");
         expect(notice).to.include(
-            "Skipping 2 hardhat task(s) that need lightClient: no connected worker provides lightClient."
+            "Skipping 2 hardhat task(s) that need lightClient: no connected worker provides lightClient; a worker host on distributed protocol 16 or newer runs them."
         );
-        expect(notice).to.include("light client mocha 2");
-        expect(run.summary).to.include(
-            "Skipping 2 hardhat task(s) that need lightClient"
-        );
+        expect(notice).to.include("light client mocha 1");
     });
 
     it("rejects a worker host older than the minimum or newer than the orchestrator", function () {

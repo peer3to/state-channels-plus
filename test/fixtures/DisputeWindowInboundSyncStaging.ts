@@ -1,4 +1,4 @@
-// @spec-test-coverage-ignore: dispute-window sync staging exercised by explicit SpectateService, EvmDiamondStateMachineReduction and E2E-Spectate declarations
+// @spec-test-coverage-ignore: dispute-window sync staging exercised by explicit SpectateService, SpectateSimulateReduceAndFinalize and E2E-Spectate declarations
 import Block from "@/models/Block";
 import StateSnapshot from "@/models/StateSnapshot";
 import type { SyncOutcome } from "@/rpc/network/services/spectate/SpectateService";
@@ -15,6 +15,8 @@ import { ethers, ZeroHash } from "ethers";
 
 const RESPONDER_INDEX = 0;
 const REQUESTER_INDEX = 2;
+// seconds; outlasts the staging's payload fetch and chain call
+const OPEN_KILL_PERIOD_EVIDENCE_TIME = 60;
 // The dispute-window inbound sync staging keeps the top-up out of peer 2's
 // inbound storage while the dispute runs. A missing inbound run is fatal for
 // dispute and audit work, so peer 2's own dispute and each of its audits fail.
@@ -162,12 +164,10 @@ export function redirectDisputesToChannelWithoutWindow(
  * heal). Every peer's reduction entry points are held. Peer 0 serves a
  * payload for the source fork and `mutate` alters it. Peer 2 applies it
  * while `reduction` picks who reduces the window:
- * - `local`: nobody else, so peer 2's sync reduces it in its local diamond;
+ * - `local`: nobody else, so peer 2's sync checks it with the chain's reduction call;
  * - `chainBeforeSync`: peer 0 lands only the reduction on chain first;
  * - `chainAfterFinalityRead`: peer 0 lands it after peer 2's finality read
- *   and before peer 2 fetches the window;
- * - `concurrentLocalSync`: after peer 2 persists the window, a second sync of
- *   peer 0's genuine payload reduces it in peer 2's local diamond first.
+ *   and before peer 2 fetches the window.
  * A missing inbound run is fatal for dispute and audit work, so with the
  * whole handler held (`chainEvent`) peer 2 is also kept out of that work while
  * it lacks the top-up: its own dispute is suppressed and its subscribed
@@ -176,16 +176,12 @@ export function redirectDisputesToChannelWithoutWindow(
  * dispute and audits fail, and the caller settles those errors.
  * The chain snapshot stays on the source fork. The holds stay until
  * `releaseHolds`. Besides the inbound storage it reports whether peer 2
- * blacklisted peer 0, peer 2's fork and its local window's reduced fork.
+ * blacklisted peer 0 and peer 2's fork.
  */
 async function stageAndApplyDisputeWindowInboundSync(
     h: MathPeerTestHarness,
     options: {
-        reduction:
-            | "local"
-            | "chainBeforeSync"
-            | "chainAfterFinalityRead"
-            | "concurrentLocalSync";
+        reduction: "local" | "chainBeforeSync" | "chainAfterFinalityRead";
         requesterInboundHold: "chainEvent" | "storageWrite" | "droppedLog";
         mutate: (payload: SyncPayload) => void;
     }
@@ -364,38 +360,23 @@ async function stageAndApplyDisputeWindowInboundSync(
         )
             outcome = await applyPayload(encodedPayload);
         else {
-            await requesterStub
-                .holdSyncWindowPersistence(
-                    options.reduction === "chainAfterFinalityRead"
-                        ? "beforeFetch"
-                        : "afterPersist"
-                )
-                .request();
+            await requesterStub.holdSyncWindowFetch().request();
             const pending = applyPayload(encodedPayload);
             try {
                 await waitFor(
                     async () =>
                         (await requesterStub
-                            .getSyncWindowPersistenceEntered()
+                            .getSyncWindowFetchEntered()
                             .request()) === 1
                 );
-                if (options.reduction === "chainAfterFinalityRead")
-                    expect(
-                        await h.scenario.finalizeReductionOnChainOnly(
-                            RESPONDER_INDEX,
-                            sourceForkId
-                        )
-                    ).to.equal(true);
-                else
-                    expect(
-                        (
-                            await applyPayload(
-                                servedSyncPayload(response) as string
-                            )
-                        ).synced
-                    ).to.equal(true);
+                expect(
+                    await h.scenario.finalizeReductionOnChainOnly(
+                        RESPONDER_INDEX,
+                        sourceForkId
+                    )
+                ).to.equal(true);
             } finally {
-                await requesterStub.releaseSyncWindowPersistence().request();
+                await requesterStub.releaseSyncWindowFetch().request();
                 outcome = await pending;
             }
         }
@@ -447,9 +428,6 @@ async function stageAndApplyDisputeWindowInboundSync(
             .isBlacklisted(responder.address)
             .request(),
         requesterForkId: await requesterControl.query.getForkId().request(),
-        localReducedForkId: await requesterControl.query
-            .getLocalDisputeWindowReducedForkId(sourceForkId)
-            .request(),
         sourceForkId,
         reducedForkId,
         servedInboundHashes,
@@ -507,11 +485,7 @@ async function settleRequesterMissingInboundRunErrors(): Promise<void> {
 export async function applyDisputeWindowInboundSyncPayload(
     h: MathPeerTestHarness,
     options: {
-        reduction:
-            | "local"
-            | "chainBeforeSync"
-            | "chainAfterFinalityRead"
-            | "concurrentLocalSync";
+        reduction: "local" | "chainBeforeSync" | "chainAfterFinalityRead";
         mutate: (payload: SyncPayload) => void;
     }
 ) {
@@ -771,19 +745,28 @@ export async function recoverWindowDisputesAfterSyncPastFork(
 
 /**
  * A reducible disputed fork, whose reduce applies a top-up of peer 0, with
- * every peer's reduction tasks held. Peer 2
- * fetches peer 0's payload for it and persists the chain's unreduced window
- * into its local diamond. `reduce` runs peer 2's real `reduceAndFinalizeLocally`
- * on the (altered) payload's window, expecting its `reducedForkId`.
+ * every peer's reduction tasks held. Peer 2 fetches peer 0's payload for it.
+ * `reduce` runs peer 2's real `simulateReduceAndFinalize` on the (altered)
+ * payload's window, expecting its `reducedForkId`; `chainReducedForkId` reads
+ * the chain's result for the window. `killPeriod: "open"` returns before the
+ * window's kill period ends.
  */
-export async function stageLocalWindowReduction(h: MathPeerTestHarness) {
+export async function stageChainWindowReduction(
+    h: MathPeerTestHarness,
+    options?: { killPeriod?: "open" }
+) {
     const { sourceForkId } = await h.scenario.stageReducibleDisputedFork({
         // a top-up of an existing participant -> the reduce applies an inbound block
         beforeDispute: async () => {
             await h.join.forceInboundJoinWait({
                 participant: h.getPeer(RESPONDER_INDEX).address
             });
-        }
+        },
+        // a long evidence time keeps the kill period open through the call
+        ...(options?.killPeriod === "open" && {
+            skipEvidenceWait: true,
+            timeConfig: { evidenceTime: OPEN_KILL_PERIOD_EVIDENCE_TIME }
+        })
     });
     const responder = h.getPeer(RESPONDER_INDEX);
     const requester = h.getPeer(REQUESTER_INDEX);
@@ -803,32 +786,20 @@ export async function stageLocalWindowReduction(h: MathPeerTestHarness) {
     expect(payload.disputeWindows.map((window) => window.forkId)).to.deep.equal(
         [sourceForkId]
     );
-    await h.execOnHost(
-        requester,
-        async (sm, args) => {
-            await sm.p2pManager.localRpc.spectateService.fetchAndPersistOnChainDisputeWindows(
-                sm.channelId,
-                [args.forkId]
-            );
-        },
-        { forkId: sourceForkId }
-    );
-    const localReducedForkId = () =>
-        requesterControl.query
-            .getLocalDisputeWindowReducedForkId(sourceForkId)
-            .request();
+    const chainReducedForkId = () => h.query.reducedForkOnChain(sourceForkId);
     // premise: nobody reduced the window yet, and its reduce applies the top-up
-    expect(await localReducedForkId()).to.equal(ZeroHash);
+    expect(await chainReducedForkId()).to.equal(ZeroHash);
     expect(
         payload.disputeWindows[0].inboundMessageBlocksAppliedInReduce.length
     ).to.be.greaterThan(0);
     return {
+        sourceForkId,
         payload,
         reducedForkId: payload.disputeWindows[0].reducedForkId as ForkId,
-        localReducedForkId,
+        chainReducedForkId,
         reduce: (alteredPayload: SyncPayload) =>
             requesterControl.spectate
-                .reduceSyncWindowLocally(
+                .simulateSyncWindowReduction(
                     Codec.encode(alteredPayload, Type.SyncPayload) as string,
                     0
                 )

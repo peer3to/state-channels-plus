@@ -39,8 +39,8 @@ Collector unanimity
 
 Responder validation chain
 
-- Setup: Request signatures with each binding/authority violated and fully valid, after the snapshot moved away from the joiner's pin, with a threshold member's chain calls and block reads held, with a member whose mirror misses its own landed join, and with deadlines around the responder's own clock second
-- Oracle: Only fully bound, in-threshold requests are signed over exact bytes, whatever the current snapshot or fork; failures are penalty-free errors; `signJoinRequest` checks the deadline against `Clock.getTimeInSeconds()` and makes no chain read while the mirror lists the responder
+- Setup: Request signatures with each binding/authority violated and fully valid, after the snapshot moved away from the joiner's pin, with a threshold member's chain calls and block reads held, with a member whose local view does not list its own landed join yet, and with deadlines around the responder's own clock second
+- Oracle: Only fully bound, in-threshold requests are signed over exact bytes, whatever the current snapshot or fork; failures are penalty-free errors; `signJoinRequest` checks the deadline against `Clock.getTimeInSeconds()` and reads the chain's threshold set
 
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P1` — all triple-binding violations
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P3` — exact and expired deadline boundaries
@@ -56,8 +56,7 @@ Responder validation chain
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P13` — deadline after boundary rejected
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P16` — validation refusal keeps the session usable for retry
 - [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P17` — a join is signed after the snapshot moved away from the joiner's pin
-- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P18` — a threshold member whose chain calls and block reads are all held signs from its local clock and mirror, so the collection gets every threshold signature
-- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P19` — a threshold member whose mirror misses its own landed join confirms membership on chain and signs
+- [x] `UNIT-TEST-JOIN-CHANNEL-SERVICE-2-834WFZ.P19` — a threshold member whose local view does not list its own landed join yet confirms membership on chain and signs
 
 ## UNIT-TEST-JOIN-CHANNEL-SERVICE-32-BQYC6G
 

@@ -71,3 +71,5 @@ Intake gates, lifetime and drain scheduling
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P59` — an intake-gate sync whose payload fails validation: the sync blacklists the sender and the copy is not queued
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P60` — an absent sender still in its own initial sync answers the intake-gate sync that it is still syncing: one sync request, one counted close, the sender is not blacklisted and the copy is not queued
 - [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P61` — a queued block's source still in its own initial sync answers the expiry probe that it is still syncing: one counted close and no blacklist
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P62` — the queue executor's disputed-fork check fails: the dequeued blocks go back to the queue, each under its queue timeout, and the executor does not throw
+- [x] `UNIT-TEST-BLOCK-QUEUE-MANAGER-1-YWS2D2.P63` — a queue timeout's disputed-fork check fails: the block goes back to the queue and the timeout runs again after the recheck delay, whose check passes

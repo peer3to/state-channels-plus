@@ -202,11 +202,13 @@ export type StubKey =
     | "networkConfirmations"
     | "spectateSyncApplication"
     | "onChainSlashesQuery"
-    | "localDiamondInboundMessages"
     | "eventLogs"
     | "chainLogQueries"
     | "onChainSlashesRead"
     | "disputeCommittedHandler"
+    | "inboundMessagesProcessedHandler"
+    | "chainSlashedHandler"
+    | "disputeKilledHandler"
     | "disputeCommittedHandling"
     | "disputeLogQueries"
     | "lobbyCreateRpcMethods"
@@ -721,6 +723,7 @@ export class StubService extends ANetworkRpcService<
     };
     private slashRecoveryCount = 0;
     private restoreSlashRecovery?: () => void;
+    private restoreOnChainSlashesRecovery?: () => void;
     readonly stubOriginals = new Map<StubKey, unknown>();
     /** Set by the record-dispute-ack stub when its method fires. */
     disputeAckRequestCalled = false;
@@ -910,6 +913,8 @@ export class StubService extends ANetworkRpcService<
     private failedDisputeCommittedCalls = 0;
     /** Dispute-log handlings held in flight until a dispute log query answered. */
     disputeCommittedHandlingGate?: StubGate;
+    // the held dispute handlings fail instead of running the real handler
+    private failHeldDisputeCommitted = false;
     /** Resolvers waiting for the first held calldata log. */
     private readonly heldCalldataPostedWaiters: (() => void)[] = [];
     /** Every contract log held by `holdContractLogs`, first delivery each, in arrival order. */
@@ -2361,17 +2366,14 @@ export class StubService extends ANetworkRpcService<
     }
 
     public holdSyncReductionResult(): void {
-        const diamondStateMachine = this.sm.diamondStateMachine;
-        const original =
-            diamondStateMachine.reduceAndFinalizeLocally.bind(
-                diamondStateMachine
-            );
+        const service = this.p2pManager.localRpc.spectateService;
+        const original = service.simulateReduceAndFinalize.bind(service);
         const hold = this.createRpcHold("spectate");
         this.syncReductionHold = hold;
         this.restoreSyncReduction = () => {
-            diamondStateMachine.reduceAndFinalizeLocally = original;
+            service.simulateReduceAndFinalize = original;
         };
-        diamondStateMachine.reduceAndFinalizeLocally = async (...args) => {
+        service.simulateReduceAndFinalize = async (...args) => {
             const result = await original(...args);
             this.restoreSyncReduction?.();
             hold.entered += 1;
@@ -2668,36 +2670,28 @@ export class StubService extends ANetworkRpcService<
         return this.heldParticipantChecks?.entered ?? 0;
     }
 
-    // `beforeFetch` parks after the finality read; `afterPersist` after the local window write
-    public holdSyncWindowPersistence(at: "beforeFetch" | "afterPersist"): void {
+    /** Parks the next on-chain dispute window fetch after the finality read, until released. */
+    public holdSyncWindowFetch(): void {
         const service = this.p2pManager.localRpc.spectateService;
-        const original =
-            service.fetchAndPersistOnChainDisputeWindows.bind(service);
+        const original = service.fetchOnChainDisputeWindows.bind(service);
         const hold = this.createRpcHold("spectate");
         this.syncWindowHold = hold;
         this.restoreSyncWindow = () => {
-            service.fetchAndPersistOnChainDisputeWindows = original;
+            service.fetchOnChainDisputeWindows = original;
         };
-        service.fetchAndPersistOnChainDisputeWindows = async (...args) => {
-            if (at === "beforeFetch") {
-                this.restoreSyncWindow?.();
-                hold.entered += 1;
-                await hold.gate;
-                return await original(...args);
-            }
-            const windows = await original(...args);
+        service.fetchOnChainDisputeWindows = async (...args) => {
             this.restoreSyncWindow?.();
             hold.entered += 1;
             await hold.gate;
-            return windows;
+            return await original(...args);
         };
     }
 
-    public getSyncWindowPersistenceEntered(): number {
+    public getSyncWindowFetchEntered(): number {
         return this.syncWindowHold?.entered ?? 0;
     }
 
-    public releaseSyncWindowPersistence(): void {
+    public releaseSyncWindowFetch(): void {
         this.restoreSyncWindow?.();
         this.restoreSyncWindow = undefined;
         this.syncWindowHold?.release();
@@ -2839,16 +2833,18 @@ export class StubService extends ANetworkRpcService<
         return true;
     }
 
-    public holdTimeoutBuild(seam: "chain" | "mirror" = "chain"): void {
+    public holdTimeoutBuild(
+        seam: "predecessor" | "slot" = "predecessor"
+    ): void {
         const sm = this.p2pManager.stateManager;
-        // "chain": the read createTimeOutDispute performs for the predecessor;
-        // "mirror": the check's own slot read, after its deadline is computed.
-        // One-shot, because block-calldata recovery shares the chain read and
-        // must keep flowing while the construction is parked.
-        const contract =
-            seam === "mirror"
-                ? sm.diamondStateMachine.localDiamondContract
-                : sm.stateChannelManagerContract;
+        // "predecessor": the read createTimeOutDispute performs for the
+        // predecessor; "slot": the check's own slot read, after its deadline
+        // is computed. Both read the chain contract; the predecessor read is
+        // the one for a block that is stored here under that author, the slot
+        // read is for a block that is not. One-shot, because block-calldata
+        // recovery shares the chain read and must keep flowing while the
+        // construction is parked.
+        const contract = sm.stateChannelManagerContract;
         const original = contract.getBlockCallDataCommitment;
         const store = sm.storage.timeout.storeTimeout.bind(sm.storage.timeout);
         const hold = this.createRpcHold("timeoutBuild");
@@ -2859,6 +2855,17 @@ export class StubService extends ANetworkRpcService<
             "getBlockCallDataCommitment",
             async (...args: Parameters<typeof original>) => {
                 const result = await original(...args);
+                const [, forkId, height, author] = args;
+                const stored = sm.storage.blocks.getBlock(
+                    String(forkId),
+                    Number(height)
+                );
+                const isPredecessorRead =
+                    stored !== undefined &&
+                    String(stored.author).toLowerCase() ===
+                        String(author).toLowerCase();
+                if ((seam === "predecessor") !== isPredecessorRead)
+                    return result;
                 if (hold.entered > 0) return result;
                 hold.entered += 1;
                 await hold.gate;
@@ -4260,23 +4267,23 @@ export class StubService extends ANetworkRpcService<
     }
 
     /**
-     * Park `localDiamondContract.getOnChainSlashedParticipants` callers until
+     * Park `stateChannelManagerContract.getOnChainSlashedParticipants` callers until
      * released - the dispute audit's first await after it captured auditing
      * data, so a test can mutate real state mid-audit deterministically. Both
      * live call sites invoke the method plainly, so a plain async replacement
      * is faithful.
      */
     public installOnChainSlashesQueryHold(): void {
-        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
+        const chain = this.sm.stateChannelManagerContract;
         if (!this.stubOriginals.has("onChainSlashesQuery")) {
             this.stubOriginals.set(
                 "onChainSlashesQuery",
-                localDiamond.getOnChainSlashedParticipants
+                chain.getOnChainSlashedParticipants
             );
         }
         const original = this.stubOriginals.get(
             "onChainSlashesQuery"
-        ) as typeof localDiamond.getOnChainSlashedParticipants;
+        ) as typeof chain.getOnChainSlashedParticipants;
         let releaseGate!: () => void;
         const gate = new Promise<void>((resolve) => {
             releaseGate = resolve;
@@ -4291,7 +4298,7 @@ export class StubService extends ANetworkRpcService<
             }
         };
         this.heldOnChainSlashesQuery = held;
-        localDiamond.getOnChainSlashedParticipants = (async (
+        chain.getOnChainSlashedParticipants = (async (
             ...args: Parameters<typeof original>
         ) => {
             held.entered += 1;
@@ -4300,7 +4307,7 @@ export class StubService extends ANetworkRpcService<
                 .forEach((resolve) => resolve());
             await gate;
             return original(...args);
-        }) as typeof localDiamond.getOnChainSlashedParticipants;
+        }) as typeof chain.getOnChainSlashedParticipants;
     }
 
     /**
@@ -5184,9 +5191,9 @@ export class StubService extends ANetworkRpcService<
         this.heldOnChainSlashesQuery = undefined;
         const original = this.stubOriginals.get("onChainSlashesQuery");
         if (original === undefined) return false;
-        const localDiamond = this.sm.diamondStateMachine.localDiamondContract;
-        localDiamond.getOnChainSlashedParticipants =
-            original as typeof localDiamond.getOnChainSlashedParticipants;
+        const chain = this.sm.stateChannelManagerContract;
+        chain.getOnChainSlashedParticipants =
+            original as typeof chain.getOnChainSlashedParticipants;
         this.stubOriginals.delete("onChainSlashesQuery");
         return true;
     }
@@ -5267,8 +5274,26 @@ export class StubService extends ANetworkRpcService<
         this.patchChainLogQueries(false);
     }
 
+    /**
+     * Fail the chain's slash reads made by `recoverOnChainSlashes`; the
+     * reads outside a recovery (a dispute's construction) are untouched.
+     */
     failOnChainSlashesRead(): void {
         const contract = this.sm.stateChannelManagerContract;
+        const service = this.sm.eventSyncService;
+        const recover = service.recoverOnChainSlashes;
+        let isRecovering = false;
+        service.recoverOnChainSlashes = async (...parameters) => {
+            isRecovering = true;
+            try {
+                return await recover.apply(service, parameters);
+            } finally {
+                isRecovering = false;
+            }
+        };
+        this.restoreOnChainSlashesRecovery = () => {
+            service.recoverOnChainSlashes = recover;
+        };
         if (!this.stubOriginals.has("onChainSlashesRead")) {
             this.stubOriginals.set(
                 "onChainSlashesRead",
@@ -5282,13 +5307,15 @@ export class StubService extends ANetworkRpcService<
             .getFunction("getOnChainSlashedParticipants")!
             .selector.slice(2);
         this.chainProvider.call = async (transaction) => {
-            if (String(transaction.data).includes(selector))
+            if (isRecovering && String(transaction.data).includes(selector))
                 throw new Error("authoritative slash read failed");
             return original(transaction);
         };
     }
 
     restoreOnChainSlashesRead(): boolean {
+        this.restoreOnChainSlashesRecovery?.();
+        this.restoreOnChainSlashesRecovery = undefined;
         const original = this.stubOriginals.get("onChainSlashesRead");
         if (original === undefined) return false;
         this.chainProvider.call = original as typeof this.chainProvider.call;
@@ -5339,6 +5366,71 @@ export class StubService extends ANetworkRpcService<
         };
     }
 
+    /**
+     * Make `onInboundMessagesProcessed` throw for every dispatched inbound log,
+     * a recovery's dispatch included.
+     */
+    failInboundMessagesProcessedHandler(): void {
+        const eventHandler = this.sm.eventHandler;
+        if (!this.stubOriginals.has("inboundMessagesProcessedHandler")) {
+            this.stubOriginals.set(
+                "inboundMessagesProcessedHandler",
+                eventHandler.onInboundMessagesProcessed.bind(eventHandler)
+            );
+        }
+        eventHandler.onInboundMessagesProcessed = async () => {
+            throw new Error("stubbed onInboundMessagesProcessed failure");
+        };
+    }
+
+    /**
+     * Make `onChainSlashed` and `onDisputeKilled` throw for every dispatched
+     * slash or kill log, a recovery's dispatch included.
+     */
+    failSlashHandlers(): void {
+        const eventHandler = this.sm.eventHandler;
+        if (!this.stubOriginals.has("chainSlashedHandler")) {
+            this.stubOriginals.set(
+                "chainSlashedHandler",
+                eventHandler.onChainSlashed.bind(eventHandler)
+            );
+            this.stubOriginals.set(
+                "disputeKilledHandler",
+                eventHandler.onDisputeKilled.bind(eventHandler)
+            );
+        }
+        eventHandler.onChainSlashed = async () => {
+            throw new Error("stubbed slash handler failure");
+        };
+        eventHandler.onDisputeKilled = async () => {
+            throw new Error("stubbed slash handler failure");
+        };
+    }
+
+    restoreSlashHandlers(): boolean {
+        const slashed = this.stubOriginals.get("chainSlashedHandler");
+        const killed = this.stubOriginals.get("disputeKilledHandler");
+        if (slashed === undefined || killed === undefined) return false;
+        this.sm.eventHandler.onChainSlashed =
+            slashed as typeof this.sm.eventHandler.onChainSlashed;
+        this.sm.eventHandler.onDisputeKilled =
+            killed as typeof this.sm.eventHandler.onDisputeKilled;
+        this.stubOriginals.delete("chainSlashedHandler");
+        this.stubOriginals.delete("disputeKilledHandler");
+        return true;
+    }
+
+    restoreInboundMessagesProcessedHandler(): boolean {
+        const original = this.stubOriginals.get(
+            "inboundMessagesProcessedHandler"
+        );
+        if (original === undefined) return false;
+        this.sm.eventHandler.onInboundMessagesProcessed =
+            original as typeof this.sm.eventHandler.onInboundMessagesProcessed;
+        this.stubOriginals.delete("inboundMessagesProcessedHandler");
+        return true;
+    }
+
     restoreDisputeCommittedHandler(): boolean {
         const original = this.stubOriginals.get("disputeCommittedHandler");
         if (original === undefined) return false;
@@ -5379,9 +5471,12 @@ export class StubService extends ANetworkRpcService<
             ).topicHash;
         const gate = this.createGate();
         this.disputeCommittedHandlingGate = gate;
+        this.failHeldDisputeCommitted = false;
         eventHandler.onDisputeCommitted = async (...args) => {
             gate.entered += 1;
             await gate.gate;
+            if (this.failHeldDisputeCommitted)
+                throw new Error("stubbed in-flight onDisputeCommitted failure");
             return handle(...args);
         };
         provider.getLogs = (async (filter) => {
@@ -5393,6 +5488,16 @@ export class StubService extends ANetworkRpcService<
             }
             return logs;
         }) as typeof provider.getLogs;
+    }
+
+    /**
+     * The handlings held by {@link holdDisputeCommittedHandlingUntilLogQuery}
+     * fail when they run, before the real handler stores the dispute. Only
+     * the handlings already in flight fail; a later dispatch runs the real
+     * handler.
+     */
+    failHeldDisputeCommittedHandling(): void {
+        this.failHeldDisputeCommitted = true;
     }
 
     /** Restore the handler and the log queries, and run the held handlings. */

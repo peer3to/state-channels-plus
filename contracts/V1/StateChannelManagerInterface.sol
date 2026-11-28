@@ -309,6 +309,12 @@ abstract contract StateChannelManagerInterface is StateChannelManagerEvents {
 
     function verifyMilestones(ProofWalkInput memory input) public view virtual returns (ProofWalkResult memory);
 
+    function verifyMilestonesFromTrustedStart(ProofWalkInput memory input, StateSnapshot memory trustedSnapshot)
+        public
+        view
+        virtual
+        returns (ProofWalkResult memory);
+
     function isMilestoneFinal(
         bytes32 forkId,
         SnapshotData memory thresholdSnapshotData,

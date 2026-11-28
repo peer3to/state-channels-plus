@@ -6,7 +6,7 @@
 
 - [`REQ-LC-2-PMY1VG` (What cannot be answered from proven state goes to the endpoint)](../../../../specification/runtime/light-client.md#req-lc-2-pmy1vg)
 - [`REQ-DISPUTE-PIPE-6-6FZB9M` (Minimal intervention and convergence)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-6-6fzb9m)
-- [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
+- [`REQ-MIRROR-4-H9C4YS` (Local evaluation is funded and fails loudly)](../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../../../../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
 
@@ -47,7 +47,7 @@ Classification
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P29` — ECDSAInvalidSignatureS decodes with its argument
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P30` — generated artifact inputs include every routed facet
 - [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P31` — a local revert as the local signer wraps it is an EVM execution failure
-- [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P32` — an error without the revert marker is not an EVM execution failure
+- [ ] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P32` — an error without the revert marker is not an EVM execution failure
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P34` — a mined best-effort upload refused with no revert data (`0x`) is reasonless and takes the decoded refusal of the failed all-or-nothing estimate (the evidence race), so it is handled as that race
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P35` — a mined best-effort upload whose facet reverted without data, which the proxy reports as `Error("StateChannelManagerProxy - Delegatecall failed")`, is reasonless and takes the estimate refusal the same way
 - [x] `UNIT-TEST-EVM-ERROR-HANDLER-1-DP1MJF.P36` — the `MulticallLastCallFailed` revert data is read only from the manager's own receipt log with that topic, and a decoded custom error no handler takes is rethrown
