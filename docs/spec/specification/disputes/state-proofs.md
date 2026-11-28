@@ -101,8 +101,9 @@ For example, a proof built from chain anchor 25 through 50 can fail when attempt
 anchor 5 and still succeed from the chain's correct start. In synchronization the first accepting tier
 establishes validity, not installation: a requester with an own final point installs only a proof
 that verified from that final point or from a trusted start at or above it
-([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)). The dispute audit
-keeps its tiers.
+([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../peer-communication/synchronization.md#req-sync-5-m7w6jx)). A pass from that
+final point of a proof that ends below it checked nothing, so synchronization then tries the local
+mirror and the chain for that proof. The dispute audit keeps its tiers.
 
 Replay follows the same tier order. Each attempt replays from that tier's verified start and
 state, so a chain anchor can exclude a bad earlier transition. Internal errors, unavailable

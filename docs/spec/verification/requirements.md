@@ -996,7 +996,7 @@ Specification cases tested: 0/3.
 Specification cases tested: 22/22.
 
 [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
-Specification cases tested: 14/15. Untested: T2.P7.
+Specification cases tested: 17/17.
 
 [`REQ-TIME-1-FM4651` (Chain time is authoritative)](../specification/protocol-model/time.md#req-time-1-fm4651)
 Specification cases tested: 0/12.

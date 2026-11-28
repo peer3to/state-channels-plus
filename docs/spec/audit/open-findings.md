@@ -3419,3 +3419,21 @@ chain anchor crosses runs below its installed point.
 mechanism fits, and a wake needs a new entry marker). Remaining directions, none chosen: (1) back
 off the retry for a deferred entry; (2) bound both retry paths by a fixed queue lifetime; (3) keep
 the entry when the chain read fails.
+
+<a id="find-sync-reverse-join-1-rmcaqe"></a>
+
+### FIND-SYNC-REVERSE-JOIN-1-RMCAQE — The reverse regression kill misses a JOIN the requester never stored
+
+A served proof is judged in the reverse direction against the requester's own proof
+([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)).
+The regression kill there names the skipped JOIN from the requester's own stored inbound blocks
+only. Those blocks come only from the chain events the requester observed; a sync adds only the
+inbound blocks of the history it installs. A requester that adopted a side chain by sync, and so
+never stored the JOIN that side chain skipped, sees no regression kill. It does not stop signing on
+that fork until its inbound store holds the JOIN; the next sync request asks again. The planned test
+[`REQ-SYNC-5-M7W6JX.T2.P7`](../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx.t2.p7)
+covers only a requester that holds the JOIN. The case without it has no test.
+
+**Status:** Open. Residual accepted (2026-11-28): a fix needs a second source of the JOIN,
+and the JOIN hint is not rebuilt from other material. The specification states the limit in its
+security considerations.

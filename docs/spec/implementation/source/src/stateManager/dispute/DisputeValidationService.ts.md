@@ -15,6 +15,7 @@
 - [`REQ-FP-7-4DD0D7` (A valid dispute fraud proof applied within the kill period kills the committed…)](../../../../../specification/disputes/fraud-proofs.md#req-fp-7-4dd0d7)
 - [`REQ-PROOFSTORE-7-B5PW2P` (Proof evidence outside block history)](../../../../../specification/storage/proof-store.md#req-proofstore-7-b5pw2p)
 - [`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../../../../../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)
+  Partial: `findReverseFinalHistoryKills` finds the regression kill only when `findSkippedJoin` finds the skipped JOIN in this peer's own inbound store ([`FIND-SYNC-REVERSE-JOIN-1-RMCAQE`](../../../../../audit/open-findings.md#find-sync-reverse-join-1-rmcaqe)).
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09
 
