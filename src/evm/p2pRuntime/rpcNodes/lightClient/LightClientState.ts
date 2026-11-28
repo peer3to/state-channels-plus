@@ -36,6 +36,12 @@ type HeldAccount = {
     code?: Uint8Array;
     /** Proven 32-byte words, zero included. */
     storage: Map<StorageSlotKey, Uint8Array>;
+    /** What of it a node proved on request, rather than a pushed partition. */
+    fromNode: {
+        account: boolean;
+        code: boolean;
+        slots: Set<StorageSlotKey>;
+    };
 };
 
 export type LightClientStateOptions = {
@@ -73,6 +79,8 @@ export class LightClientState extends RPCStateManager {
      * string the base keys it with: a revert goes back to it.
      */
     private createdCodeCheckpoints: Map<string, Uint8Array>[] = [];
+    /** Whether a read since {@link takeUsedNodeProof} used state a node proved on request. */
+    private hasUsedNodeProof = false;
 
     constructor(options: LightClientStateOptions) {
         super({ provider: UNUSED_PROVIDER_URL, blockTag: 0n });
@@ -114,8 +122,12 @@ export class LightClientState extends RPCStateManager {
         const accountAddress = toAccountAddress(address);
         this.assertRunsHere(accountAddress);
         const slot = hexlify(key);
-        const known = this.accountOf(accountAddress).storage.get(slot);
-        if (known !== undefined) return known;
+        const account = this.accountOf(accountAddress);
+        const known = account.storage.get(slot);
+        if (known !== undefined) {
+            if (account.fromNode.slots.has(slot)) this.hasUsedNodeProof = true;
+            return known;
+        }
         const missingSlots = this.missing(accountAddress).slots;
         if (!missingSlots.includes(slot)) missingSlots.push(slot);
         return new Uint8Array(32);
@@ -133,10 +145,10 @@ export class LightClientState extends RPCStateManager {
         if (this.isLocalOnly(accountAddress)) return undefined;
         this.assertRunsHere(accountAddress);
         const account = this.accountOf(accountAddress);
-        if (account.balance === undefined || account.nonce === undefined)
-            this.missing(accountAddress).account = true;
+        this.noteAccountRead(accountAddress, account);
         if (account.code === undefined)
             this.missing(accountAddress).code = true;
+        else if (account.fromNode.code) this.hasUsedNodeProof = true;
         const balance = account.balance ?? 0n;
         const nonce = account.nonce ?? 0n;
         const code = account.code ?? new Uint8Array();
@@ -200,8 +212,7 @@ export class LightClientState extends RPCStateManager {
     readAccountOf(address: Address): { nonce: bigint; balance: bigint } {
         const accountAddress = toAccountAddress(address);
         const account = this.accountOf(accountAddress);
-        if (account.balance === undefined || account.nonce === undefined)
-            this.missing(accountAddress).account = true;
+        this.noteAccountRead(accountAddress, account);
         return { nonce: account.nonce ?? 0n, balance: account.balance ?? 0n };
     }
 
@@ -212,23 +223,42 @@ export class LightClientState extends RPCStateManager {
         return taken;
     }
 
-    /** Stores what was proven for `reads`: `proven[i]` answers `reads[i]`. */
-    fill(reads: AccountStateRead[], proven: ProvenAccountState[]): void {
+    /**
+     * Stores what was proven for `reads`: `proven[i]` answers `reads[i]`.
+     * `fromNode` is whether a node proved it on request, rather than a
+     * pushed partition.
+     */
+    fill(
+        reads: AccountStateRead[],
+        proven: ProvenAccountState[],
+        fromNode: boolean
+    ): void {
         reads.forEach((read, index) => {
             const account = this.accountOf(read.address);
             const answer = proven[index];
-            read.slots.forEach((slot, slotIndex) =>
-                account.storage.set(
-                    hexlify(slot),
-                    getBytes(answer.storage[slotIndex])
-                )
-            );
+            read.slots.forEach((slot, slotIndex) => {
+                const key = hexlify(slot);
+                account.storage.set(key, getBytes(answer.storage[slotIndex]));
+                if (fromNode) account.fromNode.slots.add(key);
+                else account.fromNode.slots.delete(key);
+            });
             if (answer.account) {
                 account.nonce = answer.account.nonce;
                 account.balance = answer.account.balance;
+                account.fromNode.account = fromNode;
             }
-            if (answer.code !== undefined) account.code = getBytes(answer.code);
+            if (answer.code !== undefined) {
+                account.code = getBytes(answer.code);
+                account.fromNode.code = fromNode;
+            }
         });
+    }
+
+    /** Whether a read since the last call used state a node proved on request. */
+    takeUsedNodeProof(): boolean {
+        const hasUsed = this.hasUsedNodeProof;
+        this.hasUsedNodeProof = false;
+        return hasUsed;
     }
 
     /** Forgets the proven state: it held at another block. */
@@ -257,9 +287,20 @@ export class LightClientState extends RPCStateManager {
 
     // The proven code, or undefined with the code recorded as missing.
     private readCode(address: AccountAddress): Uint8Array | undefined {
-        const code = this.accountOf(address).code;
-        if (code === undefined) this.missing(address).code = true;
-        return code;
+        const account = this.accountOf(address);
+        if (account.code === undefined) this.missing(address).code = true;
+        else if (account.fromNode.code) this.hasUsedNodeProof = true;
+        return account.code;
+    }
+
+    // Records the nonce and balance of `account` as missing, or as used.
+    private noteAccountRead(
+        address: AccountAddress,
+        account: HeldAccount
+    ): void {
+        if (account.balance === undefined || account.nonce === undefined)
+            this.missing(address).account = true;
+        else if (account.fromNode.account) this.hasUsedNodeProof = true;
     }
 
     // An address the chain answers with its own precompile is not run here.
@@ -271,7 +312,10 @@ export class LightClientState extends RPCStateManager {
     private accountOf(address: AccountAddress): HeldAccount {
         let account = this.accounts.get(address);
         if (!account) {
-            account = { storage: new Map() };
+            account = {
+                storage: new Map(),
+                fromNode: { account: false, code: false, slots: new Set() }
+            };
             this.accounts.set(address, account);
         }
         return account;

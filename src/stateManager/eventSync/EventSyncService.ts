@@ -25,6 +25,7 @@ import {
     Logger,
     Type
 } from "@/utils";
+import { indexedTopic } from "@/utils/bytes32";
 import { ChannelKey, channelKey as toChannelKey } from "@/utils/channelKey";
 import { assertLogQueryMaxBlocks, config } from "@/utils/config";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
@@ -36,14 +37,7 @@ import {
     MessageBlockStruct,
     StateSnapshotStruct
 } from "@typechain-types/contracts/V1/types/DataTypes";
-import {
-    BytesLike,
-    Filter,
-    Log,
-    Provider,
-    hexlify,
-    zeroPadValue
-} from "ethers";
+import { BytesLike, Filter, Log, Provider } from "ethers";
 
 type BlockState = { pending: number; complete: boolean; failed: boolean };
 type OnChainBlockValidationKey = string;
@@ -1172,10 +1166,8 @@ export default class EventSyncService {
             address: String(this.stateChannelManagerContract.target),
             topics: [
                 topics,
-                zeroPadValue(hexlify(channelId), 32),
-                ...indexedTopics.map((topic) =>
-                    zeroPadValue(hexlify(topic), 32)
-                )
+                indexedTopic(channelId),
+                ...indexedTopics.map(indexedTopic)
             ]
         };
     }

@@ -89,6 +89,29 @@ header's digest; its permutations of the earlier pushed block were deleted and t
 stay. The decisions of 2026-11-20 are in the requirements. The agent's own choices the engineer has not
 confirmed are [`OQ-SPEC-LC-1-VKHDPN` (Light client choices the engineer has not confirmed)](../specification/open-questions.md#oq-spec-lc-1-vkhdpn).
 
+## 2026-11-21 — Compared reads and proven chain reads (S4)
+
+Two requirements, on the engineer's decisions of 2026-11-21. [`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9) adds a compare mode for tests: each
+answer the light client gives is asked of the endpoint at the same block and the two are compared.
+[`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9) says that while the chain access answers contract reads from proven state, the chain answers
+local-first predicates alone, the mirror's state-proof tier is skipped and reads of replicated chain
+state go to the chain. The decisions: replace only the reads of replicated state; the mirror keeps
+replicating; one owner decides whether reads are proven, at each read, and an endpoint that has not
+said whether it serves the light client counts as not proven; the replicated reads that go to the
+chain are the dispute window's creation time, the block calldata commitment, the slashed participants
+for a dispute, the anchor a built proof starts from, the snapshot a spectator's sync starts from, and
+whether the chain's pending set lists the signer. Two exceptions, decided the same day: a join
+countersigner's threshold-membership check keeps the local-view-first rule of
+[`REQ-JOINSIG-1-8X1A4V` (Pinned-state authorization)](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v)
+(liveness while chain reads are held, and the bound on what a peer's probe costs), and the per-block
+ingest gate "is this fork disputed" keeps reading the node's own dispute record or the mirror (it runs
+for every block inside the state mutex, and a chain read there could wait a block time or fail and
+lose the block). [`REQ-SP-8-9ZCCEJ` (Construct proofs from the mirrored chain anchor, which may lag the chain but…)](../specification/disputes/state-proofs.md#req-sp-8-9zccej) and
+[`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../specification/disputes/state-proofs.md#req-sp-9-rnxp56) now state the chain
+anchor and the skipped mirror tier for proven reads. After the second review of the same day,
+[`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) raises the serving endpoint's block floor from the logs it delivers
+and its log-search and block answers, and excepts a pending block, which is not mined.
+
 ## 2026-10-26 — Application chain access, local join-signature answers, closed-transport frames
 
 Luka decided these in the shared poker client manager plan (poker-contracts

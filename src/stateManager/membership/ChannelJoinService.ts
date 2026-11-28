@@ -1,4 +1,5 @@
 import Clock from "@/Clock";
+import { replicatedStateSource } from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import { StateSnapshot } from "@/models";
 import type { PreparedJoinChannelConfirmation } from "@/rpc/network/services";
 import { JoinCollectionError } from "@/rpc/network/services/joinChannel/JoinCollectionError";
@@ -633,10 +634,12 @@ export default class ChannelJoinService {
             return sm.membershipService.dropMembership();
         }
         const disputeWindowCreationTimestamp = Number(
-            await sm.diamondStateMachine.localDiamondContract.getDisputeWindowCreationTimestamp(
-                sm.channelId,
-                forkId
-            )
+            await (
+                await replicatedStateSource(
+                    sm.diamondStateMachine.localDiamondContract,
+                    sm.stateChannelManagerContract
+                )
+            ).getDisputeWindowCreationTimestamp(sm.channelId, forkId)
         );
         if (
             disputeWindowCreationTimestamp !== 0 &&

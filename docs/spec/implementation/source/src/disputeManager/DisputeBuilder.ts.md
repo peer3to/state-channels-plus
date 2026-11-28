@@ -16,6 +16,7 @@
 - [`REQ-DISPUTE-PIPE-13-R2QJZN` (Time out only the next height)](../../../../specification/disputes/dispute-processing.md#req-dispute-pipe-13-r2qjzn)
 - [`REQ-DA-1-NVV85Z` (Block data whose calldata commitment is posted MUST be recoverable from the…)](../../../../specification/security/data-availability.md#req-da-1-nvv85z)
 - [`REQ-MSGSTORE-1-6ME9D7` (Content-addressed store with tip tracking)](../../../../specification/storage/message-blocks.md#req-msgstore-1-6me9d7)
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
 
 ## UNIT-TEST-DISPUTE-BUILDER-1-HZMQMN
 
@@ -68,6 +69,8 @@ Construction correctness
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P21` — a stored WrongGenesis proof while the chain holds its fork past genesis is left out and its target is not added
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P22` — a stored WrongGenesis proof while the chain still holds the fork's genesis is bundled and its target is added
 - [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P23` — a stored WrongGenesis proof that was the dispute's only reason, with the chain past genesis before `dispute()`: the proof is left out, the upload asks for an existing window, the chain refuses it `RaceConditionDisputeWindowNotOpen`, nobody is slashed and the fork is not left disputed
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P24` — chain reads proven, mirror missing the join: the auditing-data omission is answered by one chain read and no local read, and the auditing data is posted
+- [x] `UNIT-TEST-DISPUTE-MANAGER-2-FB6G5R.P25` — chain reads proven: the on-chain slashed participants are read from the chain, not the mirror
 
 ## UNIT-TEST-DISPUTE-MANAGER-5-M4E8PZ
 

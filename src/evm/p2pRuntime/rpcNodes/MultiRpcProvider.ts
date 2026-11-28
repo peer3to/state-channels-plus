@@ -86,12 +86,18 @@ abstract class RpcNodesSocketSubscriber implements Subscriber {
 
     start(): void {
         for (const node of this.nodes) {
+            const listener = this.listenerFor(node);
             this.unwatchNodes.push(
                 node.watchSockets((socket) => {
-                    void this.sockets.add(socket, this.event, this.onEvent);
+                    void this.sockets.add(socket, this.event, listener);
                 })
             );
         }
+    }
+
+    /** The listener for the events of `node`'s sockets. */
+    protected listenerFor(_node: RpcNodeProvider): Listener {
+        return this.onEvent;
     }
 
     stop(): void {
@@ -132,6 +138,8 @@ class RpcNodesBlockSubscriber extends RpcNodesSocketSubscriber {
  */
 class RpcNodesLogSubscriber extends RpcNodesSocketSubscriber {
     private readonly filter: EventFilter;
+    /** Told of each log a node delivers, before duplicates are dropped. */
+    private readonly onNodeLog: (node: RpcNodeProvider, log: Log) => void;
     /** The ids of the delivered logs, per block height. */
     private readonly deliveredLogs = new Map<BlockNumber, Set<LogId>>();
     private highestBlockNumber = -1;
@@ -151,10 +159,21 @@ class RpcNodesLogSubscriber extends RpcNodesSocketSubscriber {
     constructor(
         provider: AbstractProvider,
         nodes: readonly RpcNodeProvider[],
-        filter: EventFilter
+        filter: EventFilter,
+        onNodeLog: (node: RpcNodeProvider, log: Log) => void
     ) {
         super(provider, nodes, filter);
         this.filter = filter;
+        this.onNodeLog = onNodeLog;
+    }
+
+    // Overrides RpcNodesSocketSubscriber.listenerFor: also tells which node
+    // delivered each log, a duplicate included.
+    protected override listenerFor(node: RpcNodeProvider): Listener {
+        return (log: Log) => {
+            this.onNodeLog(node, log);
+            this.onEvent(log);
+        };
     }
 
     private forgetLogsBelow(blockNumber: BlockNumber): void {
@@ -248,6 +267,15 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         // nothing to do
     }
 
+    /**
+     * Whether a contract read sent now is answered from state the serving
+     * node proved: the node's answer is then not trusted, and a second copy of
+     * the chain's state adds nothing. Plain chain access trusts the node.
+     */
+    async answersFromProvenState(): Promise<boolean> {
+        return false;
+    }
+
     /** Tells the provider that the runtime no longer follows the channel. */
     unfollowChannel(_contract: string, _channelId: ChannelId): void {
         // nothing to do
@@ -308,7 +336,12 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
         if (sub.type === "block")
             return new RpcNodesBlockSubscriber(this, this.nodes);
         if (sub.type === "event")
-            return new RpcNodesLogSubscriber(this, this.nodes, sub.filter);
+            return new RpcNodesLogSubscriber(
+                this,
+                this.nodes,
+                sub.filter,
+                (node, log) => this.noteDeliveredLog(node, log.blockNumber)
+            );
         return super._getSubscriber(sub);
     }
 
@@ -326,6 +359,12 @@ export default class MultiRpcProvider extends JsonRpcApiProvider {
     ): Promise<JsonRpcResult | JsonRpcError> {
         return (await this.forward(request)).answer;
     }
+
+    /** Called with each log a node's socket delivers, at its block; a subclass may track it. */
+    protected noteDeliveredLog(
+        _node: RpcNodeProvider,
+        _blockNumber: BlockNumber
+    ): void {}
 
     /** Sends one request to the nodes as {@link forward} does; a node's rejection is thrown. */
     protected requestNode(method: string, params: unknown[]): Promise<unknown> {

@@ -987,7 +987,11 @@ export async function assertRpcNodesProviderFailsWithoutReachableNode(): Promise
                 (proxy) => `${proxy.url}/v2/secret-path?key=secret-key`
             );
             const failure = await createRpcNodesProvider(
-                { PROVIDER_URL: urls[0], PROVIDER_URLS: urls },
+                {
+                    PROVIDER_URL: urls[0],
+                    PROVIDER_URLS: urls,
+                    LIGHT_CLIENT_COMPARE_READS: false
+                },
                 logger
             ).then(
                 () => undefined,

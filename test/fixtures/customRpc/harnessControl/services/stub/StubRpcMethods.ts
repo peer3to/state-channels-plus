@@ -117,6 +117,20 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public observeParticipantTimeoutWarnings(): boolean {
+        this.service.observeParticipantTimeoutWarnings();
+        return true;
+    }
+
+    public getParticipantTimeoutWarnings() {
+        return this.service.getParticipantTimeoutWarnings();
+    }
+
+    public restoreParticipantTimeoutWarnings(): boolean {
+        this.service.restoreParticipantTimeoutWarnings();
+        return true;
+    }
+
     public observeDisputeParticipation(): boolean {
         this.service.observeDisputeParticipation();
         return true;
@@ -4111,6 +4125,16 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     public getChainReadObservation(): { failed: number; passed: number } {
         return this.service.getChainReadObservation();
+    }
+
+    public stubProvenChainReads(): boolean {
+        this.service.stubProvenChainReads();
+        return true;
+    }
+
+    public restoreProvenChainReads(): boolean {
+        this.service.restoreProvenChainReads();
+        return true;
     }
 
     public restoreChainReadFailures(): boolean {

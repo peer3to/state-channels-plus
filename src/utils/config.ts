@@ -9,6 +9,10 @@ export type Config = {
     // read longer ranges in windows of this size; set it at or below the
     // endpoints' own range limit. A positive integer.
     LOG_QUERY_MAX_BLOCKS: number;
+    // For tests: every read the light client answers is asked of the node
+    // too, at the block that proved it, and a different answer is logged as
+    // an error and counted. It doubles the chain reads.
+    LIGHT_CLIENT_COMPARE_READS: boolean;
     DEBUG_STATE_MANAGER: boolean;
     DEBUG_DISPUTE_HANDLER: boolean;
     DEBUG_P2P_MANAGER: boolean;
@@ -83,6 +87,7 @@ const DEFAULT_CONFIG: Config = {
     PROVIDER_URL: "http://localhost:8545",
     PROVIDER_URLS: [],
     LOG_QUERY_MAX_BLOCKS: 1000,
+    LIGHT_CLIENT_COMPARE_READS: false,
     DEBUG_STATE_MANAGER: false,
     DEBUG_DISPUTE_HANDLER: false,
     DEBUG_P2P_MANAGER: false,

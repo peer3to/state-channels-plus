@@ -2938,6 +2938,37 @@ describe("Unit: DisputeManager", function () {
             );
         });
 
+        it("chain reads proven on a participant observing the kill's slash → its slash handler asks the chain whether the fork is disputed, not its mirror", async function () {
+            const h = TestSession.getHarness();
+            const { killer } = await h.scenario.stageUnkilledSpamDispute();
+            const observer = h.getPeer(2);
+            const proven = h.control(observer);
+            await proven.stub.stubProvenChainReads().request();
+            try {
+                const reads = await h.mirror.observe(
+                    observer.index,
+                    "isForkDisputed"
+                );
+
+                await killStoredDisputeOnHost(h, killer.index);
+                await h.event.waitForPeers(
+                    "onChainSlashed",
+                    [observer.index],
+                    1,
+                    {
+                        mode: "atLeast"
+                    }
+                );
+
+                const { local, chain } = await reads.observation();
+                await reads.restore();
+                expect(local.reads).to.equal(0);
+                expect(chain.answers).to.include(true);
+            } finally {
+                await proven.stub.restoreProvenChainReads().request();
+            }
+        });
+
         it("two killDispute calls inside one live kill window → one slash, the loser lands as a no-op", async function () {
             const h = TestSession.getHarness();
             const { killer, spammer } =

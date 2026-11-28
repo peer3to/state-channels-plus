@@ -555,6 +555,60 @@ describe("Unit: SpectateService", function () {
         });
     });
 
+    describe("chain reads proven", function () {
+        it("a responder whose chain reads are proven reads the on-chain snapshot from the chain, not its mirror → the payload is accepted", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const forkId = h.activeForkId!;
+            const responder = h.getPeer(0);
+            const requester = h.getPeer(2);
+            expect(
+                await h.transition.postSnapshotWait({
+                    peerIndex: responder.index,
+                    forkId: String(forkId)
+                })
+            ).to.not.equal(undefined);
+            await h.transition.advanceState({
+                count: 2,
+                waitForFinalization: true
+            });
+            const latestHeight = await h
+                .control(responder)
+                .query.getLatestBlockHeight(forkId)
+                .request();
+            expect(latestHeight).to.not.equal(null);
+            const proven = h.control(responder);
+            await proven.stub.stubProvenChainReads().request();
+            try {
+                const reads = await h.mirror.observe(
+                    responder.index,
+                    "getStateSnapshot"
+                );
+                const payload = await proven.spectate
+                    .generateSyncPayload(h.channelId, forkId, latestHeight!)
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+                const { local, chain } = await reads.observation();
+                await reads.restore();
+                expect(payload).to.not.equal(null);
+                expect(local.reads).to.equal(0);
+                expect(chain.reads).to.be.greaterThan(0);
+
+                const accepted = await h
+                    .control(requester)
+                    .spectate.applySyncResponse(
+                        responder.address,
+                        forkId,
+                        latestHeight!,
+                        payload!.encodedSyncPayload
+                    )
+                    .request({ timeoutMs: h.event.protocolEventTimeoutMs() });
+                expect(accepted).to.equal(true);
+            } finally {
+                await proven.stub.restoreProvenChainReads().request();
+            }
+        });
+    });
+
     describe("chain view behind the server's", function () {
         it("requester's provider behind the responder's after a snapshot post → the sync waits until its chain head reaches the payload's chain block, then verifies from the moved anchor and accepts; responder kept", async function () {
             const r = await applySyncFromChainAheadResponder(

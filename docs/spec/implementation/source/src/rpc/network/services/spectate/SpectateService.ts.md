@@ -6,6 +6,7 @@
 
 - [`INV-SYNC-1-XCQZ28` (Nothing trusted on receipt)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-1-xcqz28)
   Contradicts: the genesis timestamp is bound to chain values read in the sync (step-1 chain genesis on the same fork, the origin window's chain-expired kill-period end for a successor), and a self-reduced genesis-case window's snapshot to its disputes' signed `latestStateSnapshotHash` once the chain's kill period ended ([`FIND-SECURITY-6-884TAJ`](../../../../../../../audit/open-findings.md#find-security-6-884taj)); past genesis on chain the payload's timestamp is accepted unverified unless a genesis is held, and the chain no longer judges that fork's block 0 ([`FIND-FRAUD-1-TRWDPS`](../../../../../../../audit/open-findings.md#find-fraud-1-trwdps)). The former chain-final reduction-input persistence path is removed; its broader regression assessment remains pending.
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
 - [`INV-SYNC-2-AT3RXE` (Requester-anchored validation)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-2-at3rxe)
   Contradicts: Responder step 4 puts the on-chain-tip-to-genesis outbound range in every payload; `generateSyncPayload` sends it only across forks and `applySyncResponse` requires it empty on the same fork, decided by no requirement. See [`OQ-IMPL-SYNC-BOUNDARY-1-4AFPKM` (Same-fork outbound range in the sync payload)](../../../../../../open-questions.md#oq-impl-sync-boundary-1-4afpkm).
 - [`INV-SYNC-3-A7A2ED` (Fail-closed with caller-owned consequence)](../../../../../../../specification/peer-communication/synchronization.md#inv-sync-3-a7a2ed)
@@ -155,6 +156,8 @@ Requester verification chain
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P126` — block 0's snapshot on chain, height 0 but not a genesis, unaltered payload: accepted with no rejection and the responder not blacklisted
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P130` — a fresh requester whose RPC node lags one block behind the newer exit snapshot its local diamond already applied from the chain's log: the sync waits for the responder's `chainBlock` and ends with no verdict, no rejection, the responder not blacklisted, and the local diamond keeps the newer anchor
 - [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P131` — the same lagging node under the opened-status refresh (`StateManager.refreshOpenedStatusFromChain`): its pinned `isChannelOpen` read at the lagged head loses the event ordering and the local anchor keeps the newer exit snapshot
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P132` — chain reads proven on a fresh requester with no local finalized state: the local diamond's walk is skipped, the chain walk accepts, and the sync completes
+- [x] `UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P133` — a responder whose chain reads are proven reads the on-chain snapshot from the chain, not its mirror, and the payload is accepted
 
 ## UNIT-TEST-SPECTATE-SERVICE-2-CHK2PD
 

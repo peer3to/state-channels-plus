@@ -268,6 +268,52 @@ describe("JoinChannel signature requests", function () {
         }
     });
 
+    it("collects every countersignature while a threshold member's chain RPC holds every read and its chain reads count as proven: the member still answers from its local clock and mirror", async function () {
+        const h = TestSession.getHarness();
+        const heldIndex = 1;
+        await h.lifecycle.start(2, 0, {
+            rpcNodeProxiesByPeer: { [heldIndex]: 1 }
+        });
+        const joiner = await h.join.addSpectatorWait();
+        await h.assert.sync.peersInSyncWait();
+        const thresholdSet = await h
+            .control(h.getPeer(0))
+            .query.getOnChainThresholdSet()
+            .request();
+        const held = h.control(h.getPeer(heldIndex));
+        await held.stub.stubProvenChainReads().request();
+        const [proxy] = h.getRpcNodeProxies(heldIndex);
+        const releases = ["eth_call", "eth_getBlockByNumber"].map((method) =>
+            proxy.holdRequests(method)
+        );
+        try {
+            const chainTime = await Clock.getBlockchainTime();
+            const prepared =
+                await joiner.p2pInstance.p2pSigner.collectJoinChannelConfirmation(
+                    {
+                        participant: joiner.address,
+                        channelId: h.channelId,
+                        balance: { amount: 500n, data: "0x00" },
+                        deadlineTimestamp: BigInt(chainTime.timestamp + 120)
+                    }
+                );
+            const encodedJoinChannel = String(
+                prepared.confirmation.signedJoinChannel.encodedJoinChannel
+            );
+            expect(
+                prepared.confirmation.signatures.map((signature) =>
+                    SignatureUtils.getSignerAddress(
+                        encodedJoinChannel,
+                        String(signature)
+                    )
+                )
+            ).to.have.deep.members(thresholdSet);
+        } finally {
+            for (const release of releases) release();
+            await held.stub.restoreProvenChainReads().request();
+        }
+    });
+
     it("signs for a threshold member whose mirror misses its own pending join: the chain lists it", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(2, 0);

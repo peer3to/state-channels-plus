@@ -67,6 +67,56 @@ describe("Unit: DisputeManager.constructDispute local-first finality", function 
         );
     });
 
+    it("chain reads proven, mirror missing the join -> the chain answers alone: one chain read, no local read, the auditing data is posted", async function () {
+        const h = TestSession.getHarness();
+        await stageMirrorMissingJoin(h, 0);
+        const proven = h.control(h.getPeer(0));
+        await proven.stub.stubProvenChainReads().request();
+        try {
+            const reads = await h.mirror.observe(
+                0,
+                "isAuditingDataOmissionAllowed"
+            );
+
+            const { dispute, auditingData } =
+                await h.dispute.fetchConstructedDispute(0);
+
+            const { local, chain } = await reads.observation();
+            await reads.restore();
+            expect(local.reads).to.equal(0);
+            expect(chain.answers).to.deep.equal([false]);
+            expect(dispute.postedAuditingData).to.equal(true);
+            expect(dispute.input.disputeAuditingDataHash).to.equal(
+                hash(Codec.encode(auditingData, Type.DisputeAuditingData))
+            );
+        } finally {
+            await proven.stub.restoreProvenChainReads().request();
+        }
+    });
+
+    it("chain reads proven -> the on-chain slashed participants are read from the chain, not the mirror", async function () {
+        const h = TestSession.getHarness();
+        await h.lifecycle.start(3, 3);
+        const proven = h.control(h.getPeer(0));
+        await proven.stub.stubProvenChainReads().request();
+        try {
+            const reads = await h.mirror.observe(
+                0,
+                "getOnChainSlashedParticipants"
+            );
+
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+
+            const { local, chain } = await reads.observation();
+            await reads.restore();
+            expect(dispute.input.onChainSlashes).to.deep.equal([]);
+            expect(local.reads).to.equal(0);
+            expect(chain.reads).to.be.greaterThan(0);
+        } finally {
+            await proven.stub.restoreProvenChainReads().request();
+        }
+    });
+
     it("local revert -> construction throws it, no chain read", async function () {
         const h = TestSession.getHarness();
         await h.lifecycle.start(3, 3);

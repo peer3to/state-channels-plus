@@ -3,6 +3,10 @@ import AgreementManager from "../agreementManager";
 import type { BuiltStateProof } from "../agreementManager/AgreementManager";
 import { StateSnapshot } from "../models";
 import { Address, ChannelId, ForkId, Hash } from "../types/types";
+import {
+    isChainProven,
+    replicatedStateSource
+} from "@/evm/p2pRuntime/rpcNodes/provenChainReads";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage from "@/storage";
 import { FraudProofType, toSolidityFraudProofType } from "@/types/sol-enums";
@@ -280,8 +284,11 @@ export default class DisputeBuilder {
                     forkId,
                     height: latestBlockHeight
                 }),
-                this.diamondStateMachine.localDiamondContract.getOnChainSlashedParticipants(
-                    this.channelId
+                replicatedStateSource(
+                    this.diamondStateMachine.localDiamondContract,
+                    this.stateChannelManagerContract
+                ).then((source) =>
+                    source.getOnChainSlashedParticipants(this.channelId)
                 ),
                 this.storage.getParticipantsUnion({
                     forkId,
@@ -528,7 +535,8 @@ export default class DisputeBuilder {
                 this.stateChannelManagerContract.isAuditingDataOmissionAllowed.staticCall(
                     draftDispute
                 ),
-            (isAllowed) => !isAllowed
+            (isAllowed) => !isAllowed,
+            () => isChainProven(this.stateChannelManagerContract)
         );
         const postedAuditingData = !isOmissionAllowed;
 

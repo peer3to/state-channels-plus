@@ -314,6 +314,31 @@ describe("Unit: MembershipService", function () {
         expect(observed.calls).to.deep.equal(["getStateSnapshot"]);
     });
 
+    it("a pending joiner with chain reads proven reads the pending set from the chain even while its local diamond holds its JOIN", async () => {
+        const h = TestSession.getHarness();
+        const joiner = await stagePendingJoinMirroredByJoiner(h);
+        expect(await readSignerMembershipLookups(h, joiner)).to.deep.include({
+            isInLocalState: false,
+            isPendingInMirror: true
+        });
+        const peer = h.control(joiner);
+        await peer.stub.stubProvenChainReads().request();
+        try {
+            const observed = await recordPendingJoinerChainCalls(
+                h,
+                joiner,
+                "onChainSnapshot"
+            );
+            expect(observed.status).to.equal(Status.PENDING_PARTICIPANT);
+            expect(observed.calls).to.deep.equal([
+                "getStateSnapshot",
+                "getPendingParticipants"
+            ]);
+        } finally {
+            await peer.stub.restoreProvenChainReads().request();
+        }
+    });
+
     it("a pending joiner whose local diamond misses its JOIN reads the pending set from the chain once", async () => {
         const h = TestSession.getHarness();
         const staged = await stagePendingJoinMissedByJoinerMirror(h);

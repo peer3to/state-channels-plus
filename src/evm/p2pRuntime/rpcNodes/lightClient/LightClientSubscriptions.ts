@@ -22,9 +22,6 @@ const MAX_EARLY_NOTIFICATIONS = 64;
 /** Most unknown subscription ids whose notifications are kept while a subscribe waits for its id. */
 const MAX_EARLY_SUBSCRIPTIONS = 4;
 
-/** How long a failed subscription change waits before it is tried again: a peer3 block time. */
-export const SUBSCRIPTION_RETRY_DELAY_MS = 2000;
-
 /** What the subscriptions hand on. */
 export type LightClientSubscriptionListener = {
     /** A subscription for `contract` on a socket of `node` began. */
@@ -100,6 +97,8 @@ type SubscribedSocket = {
  */
 export class LightClientSubscriptions {
     private readonly logger: Logger;
+    /** How long a failed subscription change waits before it is tried again: a block time. */
+    private readonly retryDelayMs: number;
     private readonly listener: LightClientSubscriptionListener;
     /** What is followed: each contract and the log topics that concern its follower. */
     private readonly followed = new Map<ContractAddress, Set<LogTopic>>();
@@ -112,9 +111,11 @@ export class LightClientSubscriptions {
     constructor(
         nodes: readonly RpcNodeProvider[],
         logger: Logger,
+        retryDelayMs: number,
         listener: LightClientSubscriptionListener
     ) {
         this.logger = logger;
+        this.retryDelayMs = retryDelayMs;
         this.listener = listener;
         for (const node of nodes)
             this.unwatchNodes.push(
@@ -228,10 +229,28 @@ export class LightClientSubscriptions {
                 subscribed.held.delete(contract);
                 this.listener.resubscribed();
             }
-        subscribed.changes = subscribed.changes.then(() =>
-            this.unsubscribe(socket, subscribed, held)
-        );
         this.subscribeLater(socket, subscribed);
+        // what the node pushes for it until the node ends it is not handed on
+        if (!subscribed.byId.delete(held.id)) return;
+        this.listener.unsubscribed(held.key);
+        subscribed.changes = subscribed.changes.then(() =>
+            socket
+                .send(LIGHT_CLIENT_METHODS.unsubscribe, [held.id])
+                .then(() => undefined)
+                .catch((error: unknown) => {
+                    // a socket that ended took the subscription with it
+                    if (socket.destroyed || !this.sockets.has(socket)) return;
+                    this.logger.warn(
+                        "Light client unsubscribe failed; the node may push to it until the socket closes",
+                        {
+                            ...LoggerUtils.getRpcNodeMetadata(
+                                subscribed.node.url
+                            ),
+                            error
+                        }
+                    );
+                })
+        );
     }
 
     /** Brings every socket's subscriptions to what is followed now, once started. */
@@ -285,7 +304,7 @@ export class LightClientSubscriptions {
             subscribed.retry = undefined;
             if (this.sockets.get(socket) === subscribed)
                 this.subscribeSocket(socket, subscribed);
-        }, SUBSCRIPTION_RETRY_DELAY_MS);
+        }, this.retryDelayMs);
     }
 
     private async subscribe(

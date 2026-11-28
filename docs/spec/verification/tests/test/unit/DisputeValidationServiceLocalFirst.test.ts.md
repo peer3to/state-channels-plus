@@ -61,3 +61,4 @@ Blind pending-auditor staging persistently disconnects the auditor before the pa
 - `Unit: DisputeValidationService local-first reads > validateTimeoutCalldataPostedProof > local revert -> the audit throws it, no chain read, no proof`: REQ-MIRROR-4-H9C4YS.T1.P17, UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P37
 - `Unit: DisputeValidationService local-first reads > validateTimeoutCalldataPostedProof > local executor failure (not a revert) -> the audit throws it, no chain read, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P27
 - `local valid, chain RPC refuses the connection -> the audit throws it, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P28
+- `chain reads proven, local final -> the chain answers alone: one chain read, no local read, true, no proof`: UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P38, REQ-MIRROR-5-N5SZC9.T4.P15

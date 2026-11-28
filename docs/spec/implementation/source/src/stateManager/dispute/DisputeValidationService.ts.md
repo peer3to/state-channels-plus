@@ -11,6 +11,7 @@
 - [`REQ-MIRROR-4-H9C4YS` (Local-first evaluation, adverse answer confirmed)](../../../../../specification/enforcement/local-mirror.md#req-mirror-4-h9c4ys)
 - [`REQ-SP-9-RNXP56` (Both synchronization and dispute audit try the peer's latest finalized state,…)](../../../../../specification/disputes/state-proofs.md#req-sp-9-rnxp56)
   Contradicts: audit replay can run over history contaminated by retained, unexecuted proof support and produce an unsupported accusation ([`FIND-PROOF-PERSISTENCE-1-HYC9DS`](../../../../../audit/open-findings.md#find-proof-persistence-1-hyc9ds)).
+- [`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../../../../../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)
 - [`REQ-DIS-12-AXY60R` (Posted auditing data MUST carry an outbound run that, cut at the current…)](../../../../../specification/disputes/disputes.md#req-dis-12-axy60r)
 
 ## UNIT-TEST-DISPUTE-VALIDATION-SERVICE-1-XBCA09
@@ -222,6 +223,7 @@ Exhaustive dispute audit, persistence, timeout, and snapshot-hash paths
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P129` — while a replay holds the state mutex with the predecessor state installed on the shared state machine, a timeout audit's next-writer peek settles without the mutex and judges the disputed state; the valid timeout dispute stays valid with no `TimeoutParticipantNotNext`.
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P130` — a forced timeout of an honest first block whose calldata is on-chain stores `TimeoutCalldataPosted` against the disputer
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P131` — a forced timeout of an honest block that carries inbound message blocks and whose calldata is on-chain stores `TimeoutCalldataPosted` against the disputer
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-3-AY91RS.P132` — chain reads proven, a timely timeout: the dispute window's creation time is read from the chain, not the mirror, and the timeout checks pass
 
 ## UNIT-TEST-DISPUTE-INBOUND-RECOVERY-32-6PBRKZ
 
@@ -271,3 +273,4 @@ Local-first audit predicates
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P35` — the latest-state correctness predicate reverts locally during an audit: the error propagates without a chain read, verdict, or fraud proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P36` — the balance-invariant predicate reverts locally during an audit: the error propagates without a chain read, verdict, or fraud proof
 - [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P37` — the timeout-calldata predicate reverts locally during an audit: the error propagates without a chain read, verdict, or fraud proof
+- [x] `UNIT-TEST-DISPUTE-VALIDATION-SERVICE-4-E7PE6X.P38` — chain reads proven, local final: the chain answers alone with one chain read and no local read

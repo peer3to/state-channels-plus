@@ -525,6 +525,31 @@ describe("Unit: AgreementManager proof construction", function () {
             expect(view.chainWalk.valid).to.equal(true);
         });
 
+        it("U24: chain reads proven and the local diamond lagging a newer chain anchor → construction starts at the chain's anchor, which the chain walk accepts", async function () {
+            const h = TestSession.getHarness();
+            const lagging = 1;
+            const { anchor } = await stageFinalBlocks(h, {
+                postAnchor: true,
+                finalBlocks: 2,
+                laggingIndices: [lagging]
+            });
+            expect(
+                (await h.query.getLocalStateSnapshot(h.getPeer(lagging))).hash,
+                "the lagging mirror keeps the older snapshot"
+            ).to.not.equal(anchor!.hash);
+            const peer = h.control(h.getPeer(lagging));
+            await peer.stub.stubProvenChainReads().request();
+            try {
+                const view = await buildProofView(h, lagging);
+
+                expect(view.start.hash).to.equal(anchor!.hash);
+                expect(view.chainWalk.start!.hash).to.equal(anchor!.hash);
+                expect(view.chainWalk.valid).to.equal(true);
+            } finally {
+                await peer.stub.restoreProvenChainReads().request();
+            }
+        });
+
         it("U25: a local finalized state ahead of the local diamond anchor → verification starts there, construction still starts at the anchor", async function () {
             const h = TestSession.getHarness();
             const { latestHeight } = await stageFinalBlocks(h, {

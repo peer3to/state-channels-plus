@@ -88,6 +88,32 @@ describe("Unit: DisputeValidationService local-first reads", function () {
             expect(chain.reads).to.equal(0);
         });
 
+        it("chain reads proven, local final -> the chain answers alone: one chain read, no local read, true, no proof", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 3);
+            const { dispute } = await h.dispute.fetchConstructedDispute(0);
+            expect(dispute.postedAuditingData).to.equal(false);
+            const auditor = h.control(h.getPeer(1));
+            await auditor.stub.stubProvenChainReads().request();
+            try {
+                const reads = await h.mirror.observe(
+                    1,
+                    "isAuditingDataOmissionAllowed"
+                );
+
+                const run = await h.dispute.auditDispute(1, dispute);
+
+                expect(run).to.include({ outcome: "returned", isValid: true });
+                expect(run.disputeFraudProofCount).to.equal(0);
+                const { local, chain } = await reads.observation();
+                await reads.restore();
+                expect(local.reads).to.equal(0);
+                expect(chain.answers).to.deep.equal([true]);
+            } finally {
+                await auditor.stub.restoreProvenChainReads().request();
+            }
+        });
+
         it("local not final, chain not final -> one chain read, false + DisputeLastMilestoneNotFinalAndNoAuditingData", async function () {
             const h = TestSession.getHarness();
             await h.scenario.preDisputeSetupCalldataPath();

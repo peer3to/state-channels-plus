@@ -1,4 +1,9 @@
-import type { LightClient, LocalCall, LocalCallOutcome } from "./LightClient";
+import type {
+    LightClient,
+    LocalCall,
+    LocalCallOutcome,
+    ProvenAnswer
+} from "./LightClient";
 import { NotLocalError } from "./LightClientUnavailableError";
 import { paramsOf } from "../RpcNodeProvider";
 import {
@@ -13,8 +18,10 @@ export type LocalAnswer =
     | { result: unknown }
     | { error: JsonRpcError["error"] };
 
-/** A request the light client can answer, ready to run. */
-export type LocalRead = (lightClient: LightClient) => Promise<LocalAnswer>;
+/** A request the light client can answer, ready to run; it answers with the block that proved it. */
+export type LocalRead = (
+    lightClient: LightClient
+) => Promise<ProvenAnswer<LocalAnswer>>;
 
 /** JSON-RPC error code nodes use for a reverted call. */
 export const REVERT_ERROR_CODE = 3;
@@ -120,16 +127,41 @@ const ACCOUNT_READS: Record<
     "eth_getBalance" | "eth_getCode" | "eth_getTransactionCount",
     (address: string) => LocalRead
 > = {
-    eth_getBalance: (address) => async (lightClient) => ({
-        result: toQuantity(await lightClient.getBalance(address))
-    }),
-    eth_getCode: (address) => async (lightClient) => ({
-        result: await lightClient.getCode(address)
-    }),
-    eth_getTransactionCount: (address) => async (lightClient) => ({
-        result: toQuantity(await lightClient.getTransactionCount(address))
-    })
+    eth_getBalance: (address) => async (lightClient) => {
+        const { value, block } = await lightClient.getBalance(address);
+        return { value: { result: toQuantity(value) }, block };
+    },
+    eth_getCode: (address) => async (lightClient) => {
+        const { value, block } = await lightClient.getCode(address);
+        return { value: { result: value }, block };
+    },
+    eth_getTransactionCount: (address) => async (lightClient) => {
+        const { value, block } = await lightClient.getTransactionCount(address);
+        return { value: { result: toQuantity(value) }, block };
+    }
 };
+
+/** Where each local read method takes its block tag. */
+const BLOCK_TAG_INDEX: Record<string, number> = {
+    eth_call: 1,
+    eth_getStorageAt: 2,
+    eth_getBalance: 1,
+    eth_getCode: 1,
+    eth_getTransactionCount: 1
+};
+
+/**
+ * The params of `request`, a local read, asking for the block with the
+ * Ethereum hash `blockHash` instead of the latest one (EIP-1898).
+ */
+export function paramsAtBlock(
+    request: JsonRpcPayload,
+    blockHash: string
+): unknown[] {
+    const params = [...paramsOf(request)];
+    params[BLOCK_TAG_INDEX[request.method]] = { blockHash };
+    return params;
+}
 
 /** The local read for `request`, or undefined when the nodes must answer it. */
 export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
@@ -139,8 +171,10 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
         case "eth_call": {
             const call = parseCall(params);
             if (!call) return undefined;
-            return async (lightClient) =>
-                callAnswer(await lightClient.call(call));
+            return async (lightClient) => {
+                const { value, block } = await lightClient.call(call);
+                return { value: callAnswer(value), block };
+            };
         }
         case "eth_getStorageAt": {
             const [address, slot, tag] = params;
@@ -152,9 +186,13 @@ export function parseLocalRead(request: JsonRpcPayload): LocalRead | undefined {
                 !isLatestTag(tag)
             )
                 return undefined;
-            return async (lightClient) => ({
-                result: await lightClient.getStorageAt(address, slot)
-            });
+            return async (lightClient) => {
+                const { value, block } = await lightClient.getStorageAt(
+                    address,
+                    slot
+                );
+                return { value: { result: value }, block };
+            };
         }
         case "eth_getBalance":
         case "eth_getCode":

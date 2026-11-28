@@ -3,40 +3,86 @@ import type { LightClientChain } from "./lightClient/LightClientChain";
 import type {
     LightClientCounters,
     PushedBlockTiming,
-    PushedStateCounters
+    PushedStateCounters,
+    ReadComparisonCounters
 } from "./lightClient/LightClientCounters";
-import {
-    LightClientSubscriptions,
-    SUBSCRIPTION_RETRY_DELAY_MS
-} from "./lightClient/LightClientSubscriptions";
+import { LightClientSubscriptions } from "./lightClient/LightClientSubscriptions";
 import { NotLocalError } from "./lightClient/LightClientUnavailableError";
 import { LIGHT_CLIENT_METHODS } from "./lightClient/lightClientWire";
-import { parseLocalRead, type LocalRead } from "./lightClient/LocalReadParser";
+import {
+    paramsAtBlock,
+    parseLocalRead,
+    type LocalAnswer,
+    type LocalRead
+} from "./lightClient/LocalReadParser";
+import type { ProvenBlock } from "./lightClient/proof/AProvenStateReader";
 import StorageProofError from "./lightClient/proof/StorageProofError";
 import MultiRpcProvider from "./MultiRpcProvider";
 import { isMethodNotServed, NodeSocketSubscriptions } from "./RpcNodeProvider";
 import type RpcNodeProvider from "./RpcNodeProvider";
 import type { ChannelId } from "@/types/types";
+import { indexedTopic } from "@/utils/bytes32";
 import { LoggerUtils } from "@/utils/LoggerUtils";
 import type { Logger } from "@/utils/logging/Logger";
 import {
-    hexlify,
+    isError,
     isHexString,
     type JsonRpcError,
     type JsonRpcPayload,
-    type JsonRpcResult,
-    zeroPadValue
+    type JsonRpcResult
 } from "ethers";
 
 export type {
     LightClientCounters,
     PushedBlockTiming,
-    PushedStateCounters
+    PushedStateCounters,
+    ReadComparisonCounters
 } from "./lightClient/LightClientCounters";
 
-/** The log topic an indexed `channelId` is. */
-function channelTopic(channelId: ChannelId): string {
-    return zeroPadValue(hexlify(channelId), 32);
+/** A read's answer reduced to what must match: its return data, revert data or failure. */
+type ComparedAnswer =
+    | { result: unknown }
+    | { revert: string }
+    | { failure: string };
+
+/** The node's answer to a compared read, or undefined when it gave none at that block. */
+function comparedAnswerOf(error: unknown): ComparedAnswer | undefined {
+    if (!isError(error, "CALL_EXCEPTION")) return undefined;
+    return typeof error.data === "string"
+        ? { revert: error.data }
+        : { failure: error.shortMessage };
+}
+
+function isSameAnswer(local: ComparedAnswer, node: ComparedAnswer): boolean {
+    const normalized = (answer: ComparedAnswer) =>
+        JSON.stringify(answer).toLowerCase();
+    return normalized(local) === normalized(node);
+}
+
+/** The block numbers a node's answer to `request` shows it has seen. */
+function seenBlockNumbers(request: JsonRpcPayload, result: unknown): unknown[] {
+    const field = (value: unknown, name: string): unknown =>
+        typeof value === "object" && value !== null
+            ? (value as Record<string, unknown>)[name]
+            : undefined;
+    switch (request.method) {
+        case "eth_blockNumber":
+            return [result];
+        case "eth_getTransactionReceipt":
+            return [field(result, "blockNumber")];
+        case "eth_getBlockByNumber":
+            // a pending block is not mined, so it shows no block the node has
+            return Array.isArray(request.params) &&
+                request.params[0] === "pending"
+                ? []
+                : [field(result, "number")];
+        case "eth_getLogs":
+            return Array.isArray(result)
+                ? result.map((log) => field(log, "blockNumber"))
+                : [];
+        default:
+            return [];
+    }
 }
 
 /**
@@ -69,6 +115,14 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     };
     /** The stages of the last accepted pushed blocks, oldest first, at most 1024. */
     readonly pushedBlockTimings: PushedBlockTiming[] = [];
+    /** How the compared reads matched; counted only with `comparesReads`. */
+    readonly readComparisons: ReadComparisonCounters = {
+        matched: 0,
+        differed: 0,
+        notCompared: 0
+    };
+    /** Whether each read answered locally is also asked of the node, for tests. */
+    private readonly comparesReads: boolean;
     private readonly chain: LightClientChain;
     private readonly subscriptions: LightClientSubscriptions;
     /**
@@ -88,35 +142,51 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
     /** The pending retry of a failed start of the subscriptions. */
     private subscriptionsStartRetry?: ReturnType<typeof setTimeout>;
     /**
-     * Per node, the highest block number in its own new heads and in the
-     * receipts and block numbers it answered: no read is answered at an
-     * earlier block than the serving node's. Another node's blocks never
+     * Per node, the highest block number in its own new heads, the logs it
+     * delivered, and the receipts, blocks, logs and block numbers it
+     * answered: no read is answered at an earlier block than the serving
+     * node's. Another node's blocks never
      * raise it, so a node ahead of the serving one, or one that names a block
      * that does not exist, cannot keep reads off the pushed state.
      */
     private readonly highestSeenBlocks = new Map<RpcNodeProvider, number>();
     /** The node sockets whose new heads raise {@link highestSeenBlocks}. */
     private readonly headSockets = new NodeSocketSubscriptions();
-    /** Stop handing each node's new sockets to {@link headSockets}. */
-    private readonly unwatchHeads: (() => void)[] = [];
+    /** Stop watching each node's new sockets. */
+    private readonly unwatchNodes: (() => void)[] = [];
 
     constructor(
         nodes: readonly RpcNodeProvider[],
         logger: Logger,
-        chain: LightClientChain
+        chain: LightClientChain,
+        { comparesReads = false }: { comparesReads?: boolean } = {}
     ) {
         super(nodes, logger);
         this.chain = chain;
+        this.comparesReads = comparesReads;
+        // a node on a new socket may be another node behind the same URL: it is asked again
+        for (const node of nodes)
+            this.unwatchNodes.push(
+                node.watchSockets((_, reopened) => {
+                    if (reopened) this.endpointsListed.delete(node);
+                })
+            );
         // a light client that did not start follows nothing
-        this.subscriptions = new LightClientSubscriptions(nodes, this.logger, {
-            subscribed: (key, contract, node) =>
-                this.startedLightClient?.subscribed(key, contract, node),
-            unsubscribed: (key) => this.startedLightClient?.unsubscribed(key),
-            pushed: (key, message, receivedAt) =>
-                this.startedLightClient?.pushed(key, message, receivedAt) ??
-                true,
-            resubscribed: () => this.pushedStateCounters.resubscriptions++
-        });
+        this.subscriptions = new LightClientSubscriptions(
+            nodes,
+            this.logger,
+            chain.blockTimeMs,
+            {
+                subscribed: (key, contract, node) =>
+                    this.startedLightClient?.subscribed(key, contract, node),
+                unsubscribed: (key) =>
+                    this.startedLightClient?.unsubscribed(key),
+                pushed: (key, message, receivedAt) =>
+                    this.startedLightClient?.pushed(key, message, receivedAt) ??
+                    true,
+                resubscribed: () => this.pushedStateCounters.resubscriptions++
+            }
+        );
     }
 
     // Overrides MultiRpcProvider.followChannel: the nodes push the channel's
@@ -126,7 +196,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         try {
             this.subscriptions.follow(
                 contract.toLowerCase(),
-                channelTopic(channelId)
+                indexedTopic(channelId)
             );
             this.startSubscriptions();
         } catch (error) {
@@ -143,7 +213,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         try {
             this.subscriptions.unfollow(
                 contract.toLowerCase(),
-                channelTopic(channelId)
+                indexedTopic(channelId)
             );
         } catch (error) {
             this.logger.error("Light client could not unfollow the channel", {
@@ -159,13 +229,41 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         if (!this.destroyed)
             this.logger.info("Light client counts", {
                 ...this.lightClientCounters,
-                ...this.pushedStateCounters
+                ...this.pushedStateCounters,
+                ...(this.comparesReads && {
+                    comparedReads: this.readComparisons
+                })
             });
         clearTimeout(this.subscriptionsStartRetry);
         this.subscriptions.close();
-        for (const unwatch of this.unwatchHeads.splice(0)) unwatch();
+        for (const unwatch of this.unwatchNodes.splice(0)) unwatch();
         void this.headSockets.clear();
         super.destroy();
+    }
+
+    // Overrides MultiRpcProvider.answersFromProvenState: true while the
+    // serving node lists the light client endpoints. A node that has not
+    // answered the question yet counts as without them, so a caller keeps
+    // its checks instead of failing; a failed question is warned about.
+    override async answersFromProvenState(): Promise<boolean> {
+        const node = this.servingNode();
+        if (!node) return false;
+        return await this.hasEndpoints(node).catch((error: unknown) => {
+            this.logger.warn(
+                "RPC node did not say whether it serves the light client; chain reads keep their local checks",
+                { ...LoggerUtils.getRpcNodeMetadata(node.url), error }
+            );
+            return false;
+        });
+    }
+
+    // Overrides MultiRpcProvider.noteDeliveredLog: a log a node delivered
+    // raises the block it was seen at.
+    protected override noteDeliveredLog(
+        node: RpcNodeProvider,
+        blockNumber: number
+    ): void {
+        this.raiseSeenBlock(node, blockNumber);
     }
 
     // Overrides MultiRpcProvider.answer: reads the light client can answer
@@ -177,24 +275,19 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         const answer = read && (await this.answerLocally(request, read));
         if (answer) return answer;
         const { answer: forwarded, answeredBy } = await this.forward(request);
-        this.noteSeenBlock(answeredBy, request.method, forwarded.result);
+        this.noteSeenBlock(answeredBy, request, forwarded.result);
         return forwarded;
     }
 
-    /** Raises the block `node` was seen at by a receipt or a block number it answered. */
+    /** Raises the block `node` was seen at by a receipt, block, logs or block number it answered. */
     private noteSeenBlock(
         node: RpcNodeProvider,
-        method: string,
+        request: JsonRpcPayload,
         result: unknown
     ): void {
-        const blockNumber =
-            method === "eth_getTransactionReceipt"
-                ? (result as { blockNumber?: unknown } | null)?.blockNumber
-                : method === "eth_blockNumber"
-                  ? result
-                  : undefined;
-        if (typeof blockNumber === "string" && isHexString(blockNumber))
-            this.raiseSeenBlock(node, Number(blockNumber));
+        for (const blockNumber of seenBlockNumbers(request, result))
+            if (typeof blockNumber === "string" && isHexString(blockNumber))
+                this.raiseSeenBlock(node, Number(blockNumber));
     }
 
     private raiseSeenBlock(node: RpcNodeProvider, blockNumber: number): void {
@@ -215,10 +308,12 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             }
             // a node that serves the endpoints now pushes what is followed
             this.startSubscriptions();
-            return {
-                id: request.id,
-                ...(await read(await this.getLightClient()))
-            };
+            const { value: answer, block } = await read(
+                await this.getLightClient()
+            );
+            if (this.comparesReads)
+                await this.compareWithNode(node, request, answer, block);
+            return { id: request.id, ...answer };
         } catch (error) {
             // closed while the read ran: the read fails as a plain one would
             if (this.isClosed) throw error;
@@ -240,6 +335,79 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             }
             return undefined;
         }
+    }
+
+    /**
+     * Asks `node` the read `request` at `block`, which proved `answer`, and
+     * counts whether it answers alike; a different answer is logged as an error.
+     */
+    private async compareWithNode(
+        node: RpcNodeProvider,
+        request: JsonRpcPayload,
+        answer: LocalAnswer,
+        block: ProvenBlock
+    ): Promise<void> {
+        let nodeAnswer: ComparedAnswer | undefined;
+        let failure: unknown;
+        try {
+            const sent = await node.trySendOnCurrentSocket(
+                request.method,
+                paramsAtBlock(request, block.ethereumBlockHash)
+            );
+            nodeAnswer = sent && { result: sent.result };
+        } catch (error) {
+            nodeAnswer = comparedAnswerOf(error);
+            failure = error;
+        }
+        // a call at a block the node no longer has fails without being compared
+        if (
+            nodeAnswer &&
+            "failure" in nodeAnswer &&
+            !(await this.knowsBlock(node, block))
+        )
+            nodeAnswer = undefined;
+        if (!nodeAnswer) {
+            // no answer, or the node's socket ended before it answered
+            this.readComparisons.notCompared++;
+            this.logger.warn("RPC node did not answer a compared read", {
+                ...LoggerUtils.getChainReadMetadata(request),
+                block: block.number,
+                ...(failure !== undefined && { error: failure })
+            });
+            return;
+        }
+        const localAnswer: ComparedAnswer =
+            "result" in answer
+                ? { result: answer.result }
+                : { revert: String(answer.error.data) };
+        if (isSameAnswer(localAnswer, nodeAnswer)) {
+            this.readComparisons.matched++;
+            return;
+        }
+        this.readComparisons.differed++;
+        this.logger.error(
+            "Light client answered a read otherwise than the RPC node at the same block",
+            {
+                ...LoggerUtils.getChainReadMetadata(request),
+                block: block.number,
+                local: localAnswer,
+                node: nodeAnswer
+            }
+        );
+    }
+
+    /** Whether `node` still has `block`; false when it does not answer. */
+    private async knowsBlock(
+        node: RpcNodeProvider,
+        block: ProvenBlock
+    ): Promise<boolean> {
+        const sent = await node
+            .trySendOnCurrentSocket("eth_getBlockByHash", [
+                block.ethereumBlockHash,
+                false
+            ])
+            .catch(() => undefined);
+        return sent?.result !== undefined && sent.result !== null;
     }
 
     private getLightClient(): Promise<LightClient> {
@@ -277,7 +445,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
         });
         // each node's new heads come over its sockets, without polling
         for (const node of this.nodes)
-            this.unwatchHeads.push(
+            this.unwatchNodes.push(
                 node.watchSockets((socket) => {
                     void this.headSockets.add(
                         socket,
@@ -316,7 +484,7 @@ export default class LightClientRpcProvider extends MultiRpcProvider {
             );
             this.subscriptionsStartRetry = setTimeout(() => {
                 if (!this.isClosed) this.startSubscriptions();
-            }, SUBSCRIPTION_RETRY_DELAY_MS);
+            }, this.chain.blockTimeMs);
         });
     }
 

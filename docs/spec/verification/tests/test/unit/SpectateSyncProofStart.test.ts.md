@@ -31,3 +31,4 @@ Synchronizes peers against differing proof starts and final points. Cases check 
 - `U120: a served proof missing a milestone snapshot entry → rejected, milestones invalid, responder blacklisted, nothing of the proof stored`: REQ-SP-7-70EMAT.T3.P4, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P59
 - `U120: a served proof with exactly one snapshot entry per milestone → accepted, its blocks stored, the rebuilt proof verifies`: REQ-SP-7-70EMAT.T3.P5, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P60
 - `U120: the valid empty genesis proof (no milestones, no snapshot entries) → accepted, the genesis state installed, no block stored`: REQ-SP-4-NCSEX4.T3.P6, UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P61
+- `U27: chain reads proven on a fresh requester with no local finalized state → the local diamond's walk is skipped, the chain walk accepts, the sync completes`: UNIT-TEST-SPECTATE-SERVICE-1-SJBYCT.P132, REQ-MIRROR-5-N5SZC9.T4.P8

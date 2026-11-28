@@ -28,6 +28,20 @@ export type PushedStateCounters = {
     resubscriptions: number;
 };
 
+/**
+ * With the reads compared (`LIGHT_CLIENT_COMPARE_READS`, for tests): how the
+ * light client's answers matched the node's answer to the same read at the
+ * block that proved them.
+ */
+export type ReadComparisonCounters = {
+    /** Answered alike by the light client and the node, return or revert data included. */
+    matched: number;
+    /** Answered otherwise by the node; each is logged as an error. */
+    differed: number;
+    /** Not compared: the node gave no answer to the read at that block. */
+    notCompared: number;
+};
+
 /** Unix milliseconds of the stages one accepted pushed block passed, node and peer. */
 export type PushedBlockTiming = LightClientStages & {
     number: number;

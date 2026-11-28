@@ -38,3 +38,13 @@ the proxy saw: a read the pushed partition answers asks the endpoint nothing. It
 - `answers a partition read while another read waits for its proof, and the waiting read keeps its block`: REQ-LC-9-KWXV43.T1.P6
 - `starts following once the endpoint answers the methods question that failed when the channel was followed`: REQ-LC-5-MM0BM9.T1.P17
 - `replays a transaction mined with no revert data at its receipt's block, past the pushed block, and sends nothing again`: REQ-LC-2-PMY1VG.T1.P6
+- `counts a read of state the endpoint proved for an earlier read at the same block as a fallback read, and asks for no proof again`: REQ-LC-9-KWXV43.T1.P7
+- `reads at the block of a log the serving endpoint delivered, waiting for its push`: REQ-LC-1-JT5PKT.T1.P21
+- `reads at the block of a log the serving endpoint answered a log search with, waiting for its push`: REQ-LC-1-JT5PKT.T1.P24
+- `reads at a block the serving endpoint answered by number, waiting for its push`: REQ-LC-1-JT5PKT.T1.P25
+- `raises no block floor from the pending block the serving endpoint answered, and reads from the pushed state at once`: REQ-LC-1-JT5PKT.T1.P26
+- `leaves a read to the endpoint as a failed one when the endpoint's best block is below the block it has shown`: REQ-LC-1-JT5PKT.T1.P22
+- `waits only once for a serving endpoint whose pushes stopped while another endpoint keeps pushing`: REQ-LC-1-JT5PKT.T1.P23
+- `asks an endpoint whose connection reopened again whether it serves the light client, and answers from proven state once it does`: REQ-LC-4-E29Y46.T1.P8
+- `opens a refused subscription again when the endpoint fails its unsubscribe, with a warning and no error`: REQ-LC-7-W8WDN3.T1.P7
+- `hands on no push of a refused subscription that arrives before the endpoint ends it, and counts the refusal once`: REQ-LC-7-W8WDN3.T1.P6

@@ -196,6 +196,61 @@ accepted push), and another block of the held height is taken
 ([`REQ-STPROOF-3-NVJGR0.T1.P31`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t1.p31), failed with a same-height block refused). The light client suites then
 passed 70 of 70.
 
+S4 on 2026-11-21, on the engineer's four decisions of that day and the choice that the replicated
+mirror reads go to the chain as well. With the reads compared
+([`REQ-LC-11-MTCBF9` (With the reads compared, each answer is checked against the endpoint's at its…)](../specification/runtime/light-client.md#req-lc-11-mtcbf9)), each local answer is asked of the endpoint by Ethereum block hash, which the peer3
+node answers; six reads, a revert among them, matched, a call the proxy answered otherwise was
+counted and logged, and a failed one was counted as not compared. The declarations failed with the
+block named by its Substrate hash and with every answer taken as alike. With the chain's reads proven,
+the local-first reads, the mirror's state-proof tier and the eight plain mirror read sites (window
+time three times, commitment twice, slashed participants once, the proof anchor once, the spectator's
+snapshot once) go to the chain alone ([`REQ-MIRROR-5-N5SZC9` (With proven chain reads, the chain answers alone)](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9)). After the bot's first review round the evidence is:
+`preferLocal`'s unit suite with 11 declarations ([`UNIT-TEST-PREFER-LOCAL-1-XC95T6.P13`](../implementation/source/src/utils/localDiamond.ts.md#unit-test-prefer-local-1-xc95t6)-`P15` for
+proven reads); [`REQ-LC-11-MTCBF9.T1.P6`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p6)-`P13` for failover, a lost connection, the proving block's
+hash after the chain moved, and each kind of differing answer; and
+[`REQ-MIRROR-5-N5SZC9.T4`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4), run on the test chain with a harness stub that makes a runtime's chain
+reads count as proven (`stubProvenChainReads`): the timeout check's reads
+([`UNIT-TEST-PARTICIPANT-TIMEOUT-SERVICE-1-Q0PAF5.P41`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md#unit-test-participant-timeout-service-1-q0paf5)-`P45`), construction and verification
+([`UNIT-TEST-AGREEMENT-MANAGER-1-KJ6Q9D.P67`](../implementation/source/src/agreementManager/AgreementManager.ts.md#unit-test-agreement-manager-1-kj6q9d), `P68`), the pending-set check and the countersigner's
+exception ([`REQ-JOINSIG-1-8X1A4V.T1.P34`](../specification/peer-communication/join-authorization.md#req-joinsig-1-8x1a4v.t1.p34)). Each of these failed with its fix removed. On 17a2c37e4
+the whole Mocha suite passed 3615 of 3615 on the distributed runner and the light client suites 83
+of 83 against the node built from peer3-parachain PR #3. A first full run found a circular import (`@/utils` re-exports the local diamond module,
+which had imported the chain provider) that failed `InternalTransport.test.ts` 11 of 11; the helpers
+moved to `provenChainReads.ts` and the file passed 11 of 11. Not run: participants on a peer3 node
+with the light client on and the reads compared
+([`REQ-MIRROR-5-N5SZC9.T3.P1`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t3.p1), a gap), because the test harness runs participants on Hardhat nodes only; running them on a peer3 node with
+the channel contracts deployed is planned with the farm workers step. The engineer's two exceptions
+stay local while proven, the join countersigner's membership check and the ingest gate's disputed
+flag, and neither goes to the chain while proven.
+
+A second review of the merged stack on 2026-11-21 led to fixes in the light client and in each mirror
+read site. Each new declaration failed with its fix removed: a log the serving endpoint delivered raises
+its block floor
+([`REQ-LC-1-JT5PKT.T1.P21`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p21)), a read whose endpoint names a best block below the floor is left to the endpoint
+and counted as failed ([`P22`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p22)), the stall is kept per endpoint
+([`P23`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p23)), an endpoint is asked again after its connection reopens
+([`REQ-LC-4-E29Y46.T1.P8`](../specification/runtime/light-client.md#req-lc-4-e29y46.t1.p8)), a refused subscription is counted once and opened again when the endpoint fails to
+end it ([`REQ-LC-7-W8WDN3.T1.P6`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p6), [`P7`](../specification/runtime/light-client.md#req-lc-7-w8wdn3.t1.p7)), a value the endpoint proved for an earlier read is
+counted by what the read used ([`REQ-LC-9-KWXV43.T1.P7`](../specification/runtime/light-client.md#req-lc-9-kwxv43.t1.p7)), and a compared call at a block the
+endpoint no longer has is not compared ([`REQ-LC-11-MTCBF9.T1.P14`](../specification/runtime/light-client.md#req-lc-11-mtcbf9.t1.p14)); nine declarations, nine
+faults, all caught. Every mirror read site now has a declaration with the chain's reads proven
+([`REQ-MIRROR-5-N5SZC9.T4.P10`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p10)-`P17`, and
+[`P8`](../specification/enforcement/local-mirror.md#req-mirror-5-n5szc9.t4.p8) for the spectate requester): the slash handler, the acknowledgment responder,
+dispute construction (the omission answer and the slashed participants), the spectate responder's
+snapshot, the audit's local-first predicate and window time, and the force-join deadline. Thirteen
+faults switched a site back to the mirror, or skipped the chain's anchor and tier at construction and
+verification; each failed its declaration. The node of peer3-parachain PR #3 at 42e5e80 passed 56 of
+56 Rust tests, and six faults in its partition and worker code were all caught. On e16c6a628 the
+whole Mocha suite passed 3627 of 3627 on the distributed runner, and the light client suites 91 of 91
+against the node built from 42e5e80.
+The bot review that followed added three declarations, each failing with its change removed: a
+log-search answer and a block answered by number raise the floor
+([`REQ-LC-1-JT5PKT.T1.P24`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p24), [`P25`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p25)), and a pending block raises none
+([`P26`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1.p26)); with them the light client fixes count twelve declarations and twelve faults, all
+caught. The peer3 node numbers its pending block at its best block, so P26 has the endpoint number it
+one above, as geth and Hardhat do. On 8a9a0178f the light client suites passed 94 of 94 against the
+node built from 42e5e80.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.
