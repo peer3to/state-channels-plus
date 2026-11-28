@@ -5,7 +5,7 @@ Exercises: [FrontierProvenStateReader.ts](../../../../implementation/source/src/
 
 ## Overview
 
-Every declaration starts a peer3 dev node of its own from the binary `PEER3_NODE_BIN` names. The
+Every declaration starts a peer3 dev node of its own (`PEER3_NODE_BIN`, else `zero-fee-node` on `PATH`). The
 runner discovers the file only with `--lc-tests`. Each declaration reads through
 `FrontierProvenStateReader` over a WebSocket to the node. The oracles are what the node itself
 reports for the same block: `chain_getBlockHash`, the Ethereum block, `eth_getStorageAt`,
