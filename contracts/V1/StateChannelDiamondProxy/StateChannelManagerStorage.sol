@@ -4,6 +4,15 @@ import "../types/DisputeTypes.sol";
 import "../types/DataTypes.sol";
 import "../AStateMachine.sol";
 
+/// what the chain reads back of an inbound block; the full block is in InboundMessagesProcessed
+struct StoredInboundBlock {
+    bytes32 previousBlockHash;
+    uint128 blockHeight;
+    uint128 timestamp;
+    Balance totalBalance;
+    address[] joiners; // participants of the block's JOIN messages, in message order
+}
+
 contract StateChannelManagerStorage {
     struct SelectorRoute {
         address facet;
@@ -42,8 +51,8 @@ contract StateChannelManagerStorage {
     /// @dev Channel balance tracker
     mapping(bytes32 channelId => ChannelBalance) channelBalances;
 
-    /// @dev Inbound message blockchain per channel (hash -> MessageBlock)
-    mapping(bytes32 channelId => mapping(bytes32 blockHash => MessageBlock)) inboundMessageBlockMap;
+    /// @dev Inbound message blockchain per channel (hash -> StoredInboundBlock)
+    mapping(bytes32 channelId => mapping(bytes32 blockHash => StoredInboundBlock)) inboundMessageBlockMap;
 
     /// @dev stateSnapshot Data
     mapping(bytes32 channelId => StateSnapshot) stateSnapshots;

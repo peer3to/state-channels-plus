@@ -98,6 +98,46 @@ abstract contract DiamondHarness is Test {
         return abi.encodePacked(r, s, v);
     }
 
+    /// `join` signed by `joinerPk` and co-signed by each of `signerPks`
+    function _joinConfirmation(JoinChannel memory join, uint256 joinerPk, uint256[] memory signerPks)
+        internal
+        pure
+        returns (JoinChannelConfirmation memory confirmation)
+    {
+        bytes memory encodedJoin = abi.encode(join);
+        confirmation.signedJoinChannel =
+            SignedJoinChannel({encodedJoinChannel: encodedJoin, signature: _sign(joinerPk, encodedJoin)});
+        confirmation.signatures = new bytes[](signerPks.length);
+        for (uint256 i = 0; i < signerPks.length; i++) {
+            confirmation.signatures[i] = _sign(signerPks[i], encodedJoin);
+        }
+    }
+
+    /// the 0xA11CE / 0xB0B pair suites open two-party channels with
+    function _twoPartyPrivateKeys() internal pure returns (uint256[] memory pks) {
+        pks = new uint256[](2);
+        pks[0] = 0xA11CE;
+        pks[1] = 0xB0B;
+    }
+
+    // distinct slots of `account` written from zero to nonzero
+    function _freshSlotsOf(address account, Vm.AccountAccess[] memory accesses) internal pure returns (uint256 count) {
+        bytes32[] memory seen = new bytes32[](256);
+        for (uint256 i = 0; i < accesses.length; i++) {
+            Vm.StorageAccess[] memory storageAccesses = accesses[i].storageAccesses;
+            for (uint256 j = 0; j < storageAccesses.length; j++) {
+                Vm.StorageAccess memory access = storageAccesses[j];
+                if (access.account != account || !access.isWrite || access.reverted) continue;
+                if (access.previousValue != 0 || access.newValue == 0) continue;
+                bool counted;
+                for (uint256 k = 0; k < count; k++) {
+                    if (seen[k] == access.slot) counted = true;
+                }
+                if (!counted) seen[count++] = access.slot;
+            }
+        }
+    }
+
     function _makeSignedBlock(
         uint256 pk,
         bytes32 channelId,

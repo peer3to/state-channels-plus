@@ -37,7 +37,7 @@ export class NetworkRpcRouter<
         return this.p2pManager.localRpc;
     }
 
-    protected get defaultRequestTimeoutMs(): number {
+    public get defaultRequestTimeoutMs(): number {
         // `agreementTime` is in seconds; the RPC timeout is in milliseconds.
         return this.p2pManager.stateManager.timeConfig.agreementTime * 1000;
     }

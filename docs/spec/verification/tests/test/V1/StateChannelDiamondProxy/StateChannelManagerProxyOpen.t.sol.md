@@ -56,6 +56,11 @@ gates — zero channel id, threshold shortfall, deposit composition — are cove
 [OpenChannel.test.ts](../DiamondProxy/StateChannelManager/OpenChannel.test.ts.md). The
 `DEF-1-92NTAG` short-balances and zero-address reverts are planned but not yet tested.
 
+A genesis-record case opens the same two-party channel, decodes the emitted genesis inbound block and
+asserts the chain finds it under the hash of that full block, the snapshot's inbound head is that
+hash at height 1 with total deposits `500`, no participant is pending, and the block does not read
+as uncommitted.
+
 ## Tests
 
 - `test_open_duplicateParticipants_reverts`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P12
@@ -67,3 +72,4 @@ gates — zero channel id, threshold shortfall, deposit composition — are cove
 - `test_open_atDeadline_opensChannel`: REQ-ENFADM-4-2NN96F.T1.P2, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P18
 - `test_open_afterDeadline_revertsWithOpenChannelExpired`: REQ-ENFADM-4-2NN96F.T1.P3, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P19
 - `test_open_alreadyOpenAfterDeadline_revertsWithChannelAlreadyOpen`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P20
+- `test_open_storesTheGenesisRecordUnderTheFullBlockHash`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P25

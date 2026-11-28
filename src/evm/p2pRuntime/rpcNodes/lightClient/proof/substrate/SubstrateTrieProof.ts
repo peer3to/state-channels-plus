@@ -27,7 +27,9 @@ const HASH_LENGTH = 32;
 const CHILD_COUNT = 16;
 const BITMAP_LENGTH = 2;
 
-const blake2_256 = (data: Uint8Array) => blake2b(data, { dkLen: HASH_LENGTH });
+/** Substrate's hash, BlakeTwo256: of a trie node, and of a header. */
+export const blake2_256 = (data: Uint8Array) =>
+    blake2b(data, { dkLen: HASH_LENGTH });
 
 function toNibbles(bytes: Uint8Array, skipFirst = false): Nibble[] {
     const nibbles: Nibble[] = [];

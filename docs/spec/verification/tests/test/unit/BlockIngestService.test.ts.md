@@ -24,7 +24,8 @@ When the state proof keeps its honest block, the predicate finds it valid: the p
 `{ accepted: true, threw: null }` and no proof is stored. Neither path throws, including the refusal
 log over the undecodable bytes.
 
-One test starts three peers with a 17M transition budget and gives one non-leader peer the EVM's
+One test starts three peers with a 17M transition budget (`MAX_TRANSACTION_GAS` raised to 34M so its
+replay requirement fits) and gives one non-leader peer the EVM's
 default call gas (`executorCallGasLimitByPeer`), below what that budget needs. The leader authors the
 next block off the wire (`authorNextBlockOffWireWait`), and the full ingest runs on the limited peer
 (`runBlockIngest`): it throws an error naming `ErrorInsufficientGasForStateTransition`, returns no

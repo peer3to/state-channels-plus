@@ -1,7 +1,7 @@
 import ScaleReader from "./ScaleReader";
 import type { BlockEnvironment } from "../AProvenStateReader";
 import StorageProofError from "../StorageProofError";
-import { encodeRlp, hexlify, keccak256, toBeArray, toBigInt } from "ethers";
+import { encodeRlp, hexlify, keccak256, toBeArray } from "ethers";
 
 const HASH_LENGTH = 32;
 const ADDRESS_LENGTH = 20;
@@ -9,16 +9,6 @@ const BLOOM_LENGTH = 256;
 const U256_LENGTH = 32;
 const U64_LENGTH = 8;
 const NONCE_LENGTH = 8;
-
-/** A SCALE fixed-width unsigned integer, which is little-endian. */
-function readUnsigned(reader: ScaleReader, length: number): bigint {
-    return toBigInt(reader.take(length).slice().reverse());
-}
-
-/** An integer as RLP holds it: big-endian without leading zeros, empty for zero. */
-function rlpInteger(value: bigint): Uint8Array {
-    return value === 0n ? new Uint8Array() : toBeArray(value);
-}
 
 /**
  * The header of the Ethereum block a Frontier runtime built, read from the
@@ -46,11 +36,11 @@ export default class FrontierEthereumHeader {
         const transactionsRoot = reader.take(HASH_LENGTH);
         const receiptsRoot = reader.take(HASH_LENGTH);
         const logsBloom = reader.take(BLOOM_LENGTH);
-        this.difficulty = readUnsigned(reader, U256_LENGTH);
-        this.number = readUnsigned(reader, U256_LENGTH);
-        this.gasLimit = readUnsigned(reader, U256_LENGTH);
-        const gasUsed = readUnsigned(reader, U256_LENGTH);
-        this.timestampMs = readUnsigned(reader, U64_LENGTH);
+        this.difficulty = reader.readUnsigned(U256_LENGTH);
+        this.number = reader.readUnsigned(U256_LENGTH);
+        this.gasLimit = reader.readUnsigned(U256_LENGTH);
+        const gasUsed = reader.readUnsigned(U256_LENGTH);
+        this.timestampMs = reader.readUnsigned(U64_LENGTH);
         const extraData = reader.take(reader.readCompactLength());
         const mixHash = reader.take(HASH_LENGTH);
         const nonce = reader.take(NONCE_LENGTH);
@@ -65,11 +55,13 @@ export default class FrontierEthereumHeader {
                 transactionsRoot,
                 receiptsRoot,
                 logsBloom,
-                rlpInteger(this.difficulty),
-                rlpInteger(this.number),
-                rlpInteger(this.gasLimit),
-                rlpInteger(gasUsed),
-                rlpInteger(this.timestampMs),
+                // an integer as RLP holds it: big-endian without leading
+                // zeros, empty for zero
+                toBeArray(this.difficulty),
+                toBeArray(this.number),
+                toBeArray(this.gasLimit),
+                toBeArray(gasUsed),
+                toBeArray(this.timestampMs),
                 extraData,
                 mixHash,
                 nonce

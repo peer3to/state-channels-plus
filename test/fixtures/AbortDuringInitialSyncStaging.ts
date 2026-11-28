@@ -1,6 +1,5 @@
 // @spec-test-coverage-ignore: shared initial-sync staging exercised by mapped P2PManager declarations
 
-import { rejectionOf } from "./ProvenSubmissionFailureStaging";
 import { clientRootFor } from "./RuntimeRootObservation";
 import { isRootDisposedError } from "@/rpc/internal/RemoteRoot";
 import type { P2pRuntimeHostRoot } from "@/rpc/internal/roots/P2pRuntimeHostRoot";
@@ -12,6 +11,7 @@ import type { PeerTestHarness } from "@test/fixtures/PeerTestHarness";
 
 import { slotAccountIndex } from "@test/harness/core/slotAccounts";
 import type { TestPeer } from "@test/harness/core/types";
+import { rejectionOf } from "@test/utils/rejectionOf";
 import { waitFor } from "@test/utils/waitFor";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";

@@ -119,16 +119,18 @@ export async function refuseOneThresholdCountersignature(
 
 /**
  * The balance amounts of the on-chain JOIN messages (joins and top-ups) for
- * `participant` in chain blocks from `fromBlock` on.
+ * `participant` in chain blocks after `latestBlockBefore`, the latest block
+ * read before the action: that block is sealed, and can still hold the
+ * setup's own joins when blocks group transactions (the parachain's 2 s ones).
  */
 export async function chainJoinAmounts(
     h: MathPeerTestHarness,
     participant: string,
-    fromBlock: number
+    latestBlockBefore: number
 ): Promise<bigint[]> {
     const logs = await h.channelManager.queryFilter(
         h.channelManager.filters.InboundMessagesProcessed(h.channelId),
-        fromBlock
+        latestBlockBefore + 1
     );
     return logs.flatMap((log) =>
         Codec.decode(

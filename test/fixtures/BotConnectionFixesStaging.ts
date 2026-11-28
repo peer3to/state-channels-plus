@@ -513,6 +513,13 @@ export async function stageInboundBlockedProtocolExit(
     options: InboundJoinStagingOptions = {}
 ) {
     const staged = await stageOmittedInboundJoin(h, options);
+    // the setup's last author varies: the founders author until the leaver
+    // writes next, so its exit needs no participant timeout
+    await h.transition.keepAuthoringUntil({
+        until: () => h.control(staged.leaver).query.isMyTurn().request(),
+        waitForPeers: [0, 1, 2],
+        maximumBlocks: 3
+    });
     await h.transition.participantLeaveStateTransition({
         leaverIndex: staged.leaver.index,
         waitForPeers: [0, 1, 2]

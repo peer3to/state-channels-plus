@@ -36,6 +36,9 @@ fetch proofs and does not cover how the state root is obtained.
 - `throws when the bytes of any node on the key's path were changed`: REQ-STPROOF-1-J20P5Y.T2.P4, UNIT-TEST-STPROOF-1-K1CTJZ.P13
 - `throws for a state root the proof does not lead to`: REQ-STPROOF-1-J20P5Y.T2.P5, UNIT-TEST-STPROOF-1-K1CTJZ.P14
 - `throws when the node holding a hashed value is left out`: UNIT-TEST-STPROOF-1-K1CTJZ.P15
+- `reads the value a branch holds by hash where the key ends`: UNIT-TEST-STPROOF-1-K1CTJZ.P21
+- `throws when the node holding a branch's hashed value is left out`: UNIT-TEST-STPROOF-1-K1CTJZ.P22
+- `reads a branch that holds its value by hash under a partial key of 16 nibbles`: UNIT-TEST-STPROOF-1-K1CTJZ.P23
 - `throws on a node with an unknown header`: REQ-STPROOF-1-J20P5Y.T2.P7, UNIT-TEST-STPROOF-1-K1CTJZ.P16
 - `throws on a node that ends before its announced content`: REQ-STPROOF-1-J20P5Y.T2.P8, UNIT-TEST-STPROOF-1-K1CTJZ.P17
 - `throws on an odd partial key whose padding is not zero`: UNIT-TEST-STPROOF-1-K1CTJZ.P18

@@ -51,7 +51,10 @@ import {
     stageLeavePostClosingBeforeAdoption
 } from "@test/fixtures/NonFinalZeroParticipantReductionStaging";
 import { postSnapshotFrom } from "@test/fixtures/ProofOwnerStaging";
-import { MathTestSession as TestSession } from "@test/harness";
+import {
+    MathTestSession as TestSession,
+    MIN_TEST_TIME_CONFIG
+} from "@test/harness";
 import { expectDecodedError } from "@test/test_utils/customErrorAssertions";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -386,7 +389,9 @@ describe("Unit: bot-connection fixes", function () {
                         ).includes(leaver.address),
                     h.event.protocolEventTimeoutMs()
                 );
-                const results = await posts.results();
+                // the landing post records its result once its own wait
+                // returns, which can follow the chain's update
+                const results = await posts.resultsWait(await posts.started());
                 expect(results.at(-1)).to.equal("posted");
                 expect(results.slice(0, -1)).to.deep.equal(
                     results
@@ -746,7 +751,11 @@ describe("Unit: bot-connection fixes", function () {
             const { joiner, leaver, disputes, posts } =
                 await stageLeaveAwaitingTurn(h, {
                     watchdogMs: 60_000,
-                    forwardDisputes: true
+                    forwardDisputes: true,
+                    // the leaver's self-removal must land within the
+                    // evidence period of the dispute it observes; the
+                    // staging's 4 s is two parachain blocks
+                    evidenceTime: MIN_TEST_TIME_CONFIG.evidenceTime
                 });
             const forkId = h.activeForkId!;
             const comparisons = await h.rpcStub.recordEvidenceComparisons(
@@ -793,7 +802,11 @@ describe("Unit: bot-connection fixes", function () {
             const { joiner, leaver, disputes } =
                 await stageInboundBlockedProtocolExit(h, {
                     watchdogMs: 60_000,
-                    forwardDisputes: true
+                    forwardDisputes: true,
+                    // the leaver's self-removal must land within the
+                    // evidence period of the dispute it observes; the
+                    // staging's 4 s is two parachain blocks
+                    evidenceTime: MIN_TEST_TIME_CONFIG.evidenceTime
                 });
             const forkId = h.activeForkId!;
             const comparisons = await h.rpcStub.recordEvidenceComparisons(
@@ -838,7 +851,11 @@ describe("Unit: bot-connection fixes", function () {
             const { joiner, leaver, disputes, expireWatchdog } =
                 await stageLeaveAwaitingTurn(h, {
                     holdWatchdog: true,
-                    forwardDisputes: true
+                    forwardDisputes: true,
+                    // the leaver's self-removal must land within the
+                    // evidence period of the dispute it observes; the
+                    // staging's 4 s is two parachain blocks
+                    evidenceTime: MIN_TEST_TIME_CONFIG.evidenceTime
                 });
             const forkId = h.activeForkId!;
             const hostErrors = recordHostErrors(leaver);
@@ -968,7 +985,12 @@ describe("Unit: bot-connection fixes", function () {
                 expect(
                     await h.channelManager.getParticipants(h.channelId)
                 ).to.not.include(leaver.address);
-                expect((await posts.results()).at(-1)).to.equal("posted");
+                // the landing post records its result once its own wait
+                // returns, which can follow the leave
+                const started = await posts.started();
+                expect((await posts.resultsWait(started)).at(-1)).to.equal(
+                    "posted"
+                );
                 // a started exit is never retracted
                 expect(await readForceExit(h, leaver)).to.equal(true);
                 expect(await disputes.submissions()).to.deep.equal([]);

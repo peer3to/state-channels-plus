@@ -141,29 +141,31 @@ export default class FrontierProvenStateReader extends AProvenStateReader {
         // a read that asks nothing needs no proof
         const proofNodes =
             keys.length > 0 ? await this.readProof(block, keys) : [];
+        // one proof for the whole read, so each of its nodes is hashed once
+        const proof = new SubstrateTrieProof(proofNodes);
         return reads.map(({ address, slots, account, code }) => ({
             address,
             storage:
                 slots.length > 0
-                    ? this.storageVerifier.provenStorage(
+                    ? this.storageVerifier.storageIn(
+                          proof,
                           block.stateRoot,
                           address,
-                          slots,
-                          proofNodes
+                          slots
                       )
                     : [],
             ...(account && {
-                account: this.accountVerifier.provenAccount(
+                account: this.accountVerifier.accountIn(
+                    proof,
                     block.stateRoot,
-                    address,
-                    proofNodes
+                    address
                 )
             }),
             ...(code && {
-                code: this.accountVerifier.provenCode(
+                code: this.accountVerifier.codeIn(
+                    proof,
                     block.stateRoot,
-                    address,
-                    proofNodes
+                    address
                 )
             })
         }));
