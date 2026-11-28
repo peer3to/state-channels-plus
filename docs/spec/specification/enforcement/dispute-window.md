@@ -80,8 +80,10 @@ manipulation perturbing the reduced set (the order-dependence concern tracked un
 owner must resolve canonical ordering), spam via many identities (throttle is per-address only —
 Sybil bounds come from dispute eligibility), and timestamp manipulation at period edges (chain
 time is authoritative; boundary behavior per the owner's rules). A clear of the channel's dispute data ends
-every throttle early, so a sender may upload once more after each clear; a clear needs a snapshot update proven by
-the participants' signatures or by a finished dispute game, which the sender cannot repeat alone.
+every throttle early, so a sender may upload once more after each clear. Any participant can post each newer
+threshold-signed milestone as its own same-fork update, so the bound is one extra upload per newer milestone, which
+normal operation supplies at the channel's block cadence. An upload on the current fork marks it disputed and blocks
+further same-fork clears, and windows on other forks are wiped by the next clear anyway.
 
 ## Verification and test plan
 

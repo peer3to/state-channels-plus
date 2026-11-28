@@ -627,7 +627,7 @@ Specification cases tested: 7/7.
 Specification cases tested: 13/13.
 
 [`REQ-LIF-13-0MH9JW` (A clean close leaves no channel state)](../specification/settlement/lifecycle.md#req-lif-13-0mh9jw)
-Specification cases tested: 6/6.
+Specification cases tested: 7/7.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.

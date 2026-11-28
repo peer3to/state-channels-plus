@@ -85,6 +85,10 @@ failure as an event.
 
 - The execution platform provides deterministic call/delegation semantics and collision-resistant selectors.
 - Storage layout, selector ownership, and module versions are deployment commitments.
+- The peer3 parachain's free lane reads three manager slots by number, from its `set_target` deployment record:
+  `evidenceTime` (slot 3), `stateSnapshots` (slot 18) for a snapshot's participants, and `disputeData` (slot 20)
+  for a dispute window's creation and last-evidence timestamps. A deployment whose layout moves any of them needs a
+  matching `set_target`.
 - Deployment size and gas limits may constrain decomposition but do not weaken protocol validation.
 - A channel opened under one state-machine or storage encoding cannot be reinterpreted by a later module set.
 - The module set is fixed at deployment; there is no in-place module replacement or addition.

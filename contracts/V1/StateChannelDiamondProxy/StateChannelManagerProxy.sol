@@ -30,8 +30,10 @@ contract StateChannelManagerProxy is StateChannelCommon {
     uint256 private constant DEFAULT_DISPUTE_EXECUTION_GAS_LIMIT = 3_000_000;
     uint256 private constant DEFAULT_MAX_CHANNEL_PARTICIPANTS = 32;
 
-    // config words the proxy's own code reads, kept in code -> no cold SLOAD per call. The storage words stay:
-    // facets run under delegatecall and read storage, and the free lane reads the proxy's storage
+    // config words the proxy's own code reads, kept in code -> no cold SLOAD per call. The storage words stay: facets
+    // run under delegatecall and read the state machine, utility facet and participant maximum from storage, and
+    // consumerFacetAddress, read by no contract, holds its slot so the later slots the free lane reads keep their
+    // numbers (contracts.md assumptions)
     AStateMachine private immutable codeStateMachine;
     address private immutable codeUtilityFacet;
     address private immutable codeConsumerFacet;

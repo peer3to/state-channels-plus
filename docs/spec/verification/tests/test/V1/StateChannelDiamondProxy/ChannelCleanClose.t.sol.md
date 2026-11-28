@@ -8,7 +8,9 @@ Exercises: [StateChannelCommon.sol](../../../../../implementation/source/contrac
 The Foundry harness deploys the real diamond, opens channels through the proxy's `open` and closes them with
 threshold-signed zero-participant snapshots through the routed `updateStateSnapshotSameFork`. The final close
 emits exactly one `StateSnapshotUpdated` with no participants for that channel ID and leaves a balance tracker that
-reads zero; a repeated close reverts and the channel stays empty.
+reads zero, an empty snapshot and a pruned closing head. One close pays a deposit out through an exit block, so it
+writes a withdrawal total and an outbound height before the delete; both read zero after it. A repeated
+close reverts with `RaceConditionSnapshotForkMismatch` at the zeroed chain fork and the channel stays empty.
 
 The clean-close cases record a state diff over a whole lifecycle at two and six seats: open, a fallback
 `postBlockCalldata`, a `topUpBalance`, two real `uploadDispute` calls on another fork, a same-fork snapshot update
@@ -19,6 +21,12 @@ that expiry, after the mid-life clear; and a disputer throttled before the final
 reopened channel, which starts from inbound height 1 and none of the old deposit. One case lands a deposit above the open's inbound block, closes and checks that exactly one
 `ChannelStorageCleared` names the snapshot head and both inbound blocks are gone.
 
+The fork-adoption case etches a consumer facet that also stages what a finished dispute game leaves, through the
+production writers: a slash record and a committed reduced result on the current fork's window. After a top-up and two real uploads on the current fork, the routed
+`updateStateSnapshotFork` adopts a zero-participant genesis whose inbound head is the open block. Every diamond slot
+written across the lifecycle reads zero except slots the top-up wrote; the top-up's inbound block stays, while the
+window, the slash record, both throttles, the snapshot and the balance tracker are gone.
+
 ## Tests
 
 - `test_finalClose_emitsOneZeroParticipantSnapshotEvent`: REQ-LIF-8-2HDG3A.T1.P1, REQ-LOBBY-1-PZTPKD.T1.P4
@@ -26,5 +34,6 @@ reopened channel, which starts from inbound height 1 and none of the old deposit
 - `test_updateStateSnapshotSameFork_finalClosePrunesTheInboundHeadWithOneStorageClear`: UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P53
 - `test_cleanClose_twoSeats_leavesNoChannelSlotButCalldataCommitments`: REQ-LIF-13-0MH9JW.T1.P1
 - `test_cleanClose_sixSeats_leavesNoChannelSlotButCalldataCommitments`: REQ-LIF-13-0MH9JW.T1.P2
+- `test_forkAdoptionClose_leavesNoChannelSlotButTheInboundBlockAboveTheAdoptedHead`: REQ-LIF-13-0MH9JW.T1.P7
 - `test_midLifeClear_endsAnUnexpiredThrottle_disputerUploadsAgainAtOnce`: REQ-DIS-2-PKVZ7E.T1.P33, REQ-DIS-2-PKVZ7E.T1.P34
 - `test_finalClose_endsEveryThrottle_reopenedChannelAcceptsTheOldDisputerAtOnce`: REQ-LIF-13-0MH9JW.T1.P4, REQ-LIF-13-0MH9JW.T1.P5, UNIT-TEST-MANAGER-PROXY-1-NTYR71.P30

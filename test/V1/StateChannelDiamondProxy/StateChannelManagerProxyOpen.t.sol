@@ -307,6 +307,43 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         _assertOpenedWithDeposits();
     }
 
+    // the parachain free lane reads these manager slots by number (its `set_target` deployment record): evidenceTime (3),
+    // stateSnapshots (18) for the snapshot's participants and disputeData (20) for a window's evidence timestamps
+    function test_freeLaneSlots_holdEvidenceTimeSnapshotParticipantsAndWindowTimestamps() public {
+        diamond.open(_deadlineOpenConfirmation());
+        address d = address(diamond);
+        assertEq(uint256(vm.load(d, bytes32(uint256(3)))), diamond.getEvidenceTime(), "evidenceTime slot");
+
+        // snapshotData.participants sits at slot 2 of stateSnapshots[channel]
+        bytes32 participantsSlot = bytes32(uint256(keccak256(abi.encode(DEADLINE_CHANNEL_ID, uint256(18)))) + 2);
+        assertEq(uint256(vm.load(d, participantsSlot)), 2, "participant count slot");
+        bytes32 firstParticipant = keccak256(abi.encode(participantsSlot));
+        assertEq(vm.load(d, firstParticipant), _word(vm.addr(SIGNER_PK)), "first participant slot");
+        assertEq(
+            vm.load(d, bytes32(uint256(firstParticipant) + 1)), _word(vm.addr(SECOND_SIGNER_PK)), "second participant"
+        );
+
+        // an upload opens the window: disputeWindowMap sits at slot 1 of disputeData[channel], and slots 1 and 2 of the
+        // window hold evidence.creationTimestamp and evidence.lastEvidenceSubmissionTimestamp
+        StateSnapshot memory snapshot = diamond.getStateSnapshot(DEADLINE_CHANNEL_ID);
+        Dispute memory dispute;
+        dispute.input.channelId = DEADLINE_CHANNEL_ID;
+        dispute.input.forkId = snapshot.forkId;
+        dispute.input.disputer = vm.addr(SIGNER_PK);
+        dispute.input.latestInboundMessageBlockHash = snapshot.snapshotData.latestInboundMessageBlockHash;
+        dispute.input.lastInboundMessageBlockHeight = snapshot.snapshotData.latestInboundMessageBlockHeight;
+        DisputeConfirmation memory confirmation;
+        confirmation.signedDispute.encodedDispute = abi.encode(dispute);
+        confirmation.signedDispute.signature = _sign(SIGNER_PK, confirmation.signedDispute.encodedDispute);
+        vm.prank(vm.addr(SIGNER_PK));
+        diamond.uploadDispute(confirmation);
+
+        bytes32 windows = bytes32(uint256(keccak256(abi.encode(DEADLINE_CHANNEL_ID, uint256(20)))) + 1);
+        uint256 window = uint256(keccak256(abi.encode(snapshot.forkId, windows)));
+        assertEq(uint256(vm.load(d, bytes32(window + 1))), block.timestamp, "window creation slot");
+        assertEq(uint256(vm.load(d, bytes32(window + 2))), block.timestamp, "window last evidence slot");
+    }
+
     function _word(address account) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(account)));
     }

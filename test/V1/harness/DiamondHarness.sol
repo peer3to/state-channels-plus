@@ -229,6 +229,16 @@ abstract contract DiamondHarness is Test {
         view
         returns (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots)
     {
+        return _makeSameForkSnapshotWithOutbound(channelId, nextParticipants, pks, new MessageBlock[](0));
+    }
+
+    /// the same-fork snapshot whose outbound head, height and withdrawal total move over `outboundBlocks`
+    function _makeSameForkSnapshotWithOutbound(
+        bytes32 channelId,
+        address[] memory nextParticipants,
+        uint256[] memory pks,
+        MessageBlock[] memory outboundBlocks
+    ) internal view returns (MilestoneProof[] memory proofs, StateSnapshot[] memory snapshots) {
         StateSnapshot memory currentSnapshot = deployedDiamond.getStateSnapshot(channelId);
         ChannelBalance memory inboundHead = deployedDiamond.getChannelBalance(channelId);
         StateSnapshot memory nextSnapshot = currentSnapshot;
@@ -237,6 +247,15 @@ abstract contract DiamondHarness is Test {
         nextSnapshot.snapshotData.latestInboundMessageBlockHeight = inboundHead.latestInboundMessageBlockHeight;
         nextSnapshot.blockHeight = currentSnapshot.blockHeight + 1;
         nextSnapshot.timestamp = currentSnapshot.timestamp + 1;
+        for (uint256 i = 0; i < outboundBlocks.length; i++) {
+            for (uint256 j = 0; j < outboundBlocks[i].messages.length; j++) {
+                nextSnapshot.snapshotData.totalWithdrawals = stateMachine.addBalance(
+                    nextSnapshot.snapshotData.totalWithdrawals, outboundBlocks[i].messages[j].balance
+                );
+            }
+            nextSnapshot.snapshotData.latestOutboundMessageBlockHash = keccak256(abi.encode(outboundBlocks[i]));
+            nextSnapshot.snapshotData.latestOutboundMessageBlockHeight += 1;
+        }
 
         Block memory nextBlock;
         nextBlock.transaction.header.channelId = channelId;

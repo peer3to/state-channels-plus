@@ -87,3 +87,4 @@ those words and requires the configured participant maximum, state machine, cons
 - `test_open_storesTheGenesisRecordUnderTheFullBlockHash`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P25
 - `test_open_twoSeats_writesSeventeenFreshSlots`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P31
 - `test_open_readsNoConfigurationWordFromStorage`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P32
+- `test_freeLaneSlots_holdEvidenceTimeSnapshotParticipantsAndWindowTimestamps`: UNIT-TEST-MANAGER-PROXY-1-NTYR71.P33

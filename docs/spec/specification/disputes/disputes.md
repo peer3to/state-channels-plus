@@ -443,7 +443,9 @@ producing an `ExitChannel` on the outbound stream.
 Objectively invalid dispute behavior is deterred by the kill period plus slashing: an invalid
 committed dispute loses its opener's stake (§4.2), an invalid dispute fraud proof self-slashes an
 eligible submitter, and the upload throttle (`disputerThrottle`, one dispute per `evidenceTime`
-per sender per channel) plus the one-dispute-per-window rule bound spam from any single identity
+per sender per channel until the next clear of the channel's dispute data; each newer same-fork milestone is such a
+clear, see [dispute-window.md](../enforcement/dispute-window.md#security-considerations)) plus the one-dispute-per-window
+rule bound spam from any single identity
 ([`REQ-DIS-2-PKVZ7E`](disputes.md#req-dis-2-pkvz7e)). The off-chain auditor preflights every dispute fraud proof (e.g.
 `validateTimeoutCalldataPostedProof.staticCall` in
 `DisputeValidationService`) so an
