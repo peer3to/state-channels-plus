@@ -7207,6 +7207,48 @@
       "peakRssGb": 0.182,
       "measurementReason": null
     },
+    "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints pushes no block to a removed subscription": {
+      "durationMs": 8654,
+      "avgCores": 1.45,
+      "peakRssGb": 0.628,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints pushes no block whose logs carry no subscribed topic": {
+      "durationMs": 7889,
+      "avgCores": 1.544,
+      "peakRssGb": 0.61,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints throws at once when no peer3 node binary is named": {
+      "durationMs": 568,
+      "avgCores": 0.405,
+      "peakRssGb": 0.075,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientEndpoints.test.ts|Light client endpoints throws when the RPC node lists no light client endpoints": {
+      "durationMs": 2480,
+      "avgCores": 3.403,
+      "peakRssGb": 0.507,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientPushedBlocks.test.ts|Light client pushed blocks proves a slot a live node pushed as cleared": {
+      "durationMs": 7471,
+      "avgCores": 1.668,
+      "peakRssGb": 0.603,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientPushedBlocks.test.ts|Light client pushed blocks proves every write of a live block in which one of two transactions logged the subscribed topic": {
+      "durationMs": 6448,
+      "avgCores": 1.954,
+      "peakRssGb": 0.63,
+      "measurementReason": null
+    },
+    "hardhat|test/lightClient/LightClientPushedBlocks.test.ts|Light client pushed blocks proves the write of a block a live node pushed": {
+      "durationMs": 5778,
+      "avgCores": 2.15,
+      "peakRssGb": 0.561,
+      "measurementReason": null
+    },
     "hardhat|test/models/Block.test.ts|Block Model Authenticity should be authentic when the author signature recovers to the header participant": {
       "durationMs": 2413,
       "avgCores": 0.692,
@@ -11971,6 +12013,12 @@
       "peakRssGb": 0.23,
       "measurementReason": null
     },
+    "hardhat|test/scripts/e2eParallelForgeTasks.test.ts|parallel forge tier guards selects light client tests only with --lc-tests": {
+      "durationMs": 1380,
+      "avgCores": 0.558,
+      "peakRssGb": 0.221,
+      "measurementReason": null
+    },
     "hardhat|test/scripts/e2eParallelForgeTasks.test.ts|parallel forge tier selection applies the shared test pattern to both tiers": {
       "durationMs": 2732,
       "avgCores": 1.058,
@@ -12653,6 +12701,12 @@
       "durationMs": 2948,
       "avgCores": 0.98,
       "peakRssGb": 0.26,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool lets no accepted worker protocol run a task that requires lightClient": {
+      "durationMs": 451,
+      "avgCores": 0.798,
+      "peakRssGb": 0.09,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelMixedProtocolPool.test.ts|distributed mixed-protocol pool rejects a worker host older than the minimum or newer than the orchestrator": {
@@ -13355,6 +13409,12 @@
       "durationMs": 2737,
       "avgCores": 1.049,
       "peakRssGb": 0.402,
+      "measurementReason": null
+    },
+    "hardhat|test/scripts/e2eParallelTaskDiscovery.test.ts|parallel Mocha task discovery discovers light client cases only when enabled and marks their tasks": {
+      "durationMs": 683,
+      "avgCores": 0.498,
+      "peakRssGb": 0.092,
       "measurementReason": null
     },
     "hardhat|test/scripts/e2eParallelTaskDiscovery.test.ts|parallel Mocha task discovery discovers ordinary and E2E tests and marks only E2E tasks for shared infra": {

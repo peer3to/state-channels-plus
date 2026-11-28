@@ -66,7 +66,10 @@ uncertain, and leave final fingerprint approval to the engineer.
 
 `yarn test:parallel:distributed --parachain --test-parallel-script --test-browser` is the canonical full test gate (also used by CI). Without `--test-parallel-script` and `--test-browser`, parallel-runner self-tests and browser tests are excluded; without `--parachain`, the tests run on Hardhat instead of the parachain dev node. The full gate runs three
 tiers across the configured distributed workers: all Mocha tests, the forge
-tests and the browser gates (`test/browser/run-*.mjs`). Pass `--e2e-only` to
+tests and the browser gates (`test/browser/run-*.mjs`). Mocha files marked
+`@distributed-requires: lightClient` are not part of the gate or of CI: they
+run only on the local runner with `--lc-tests` and a peer3 node binary (`PEER3_NODE_BIN`, else
+`zero-fee-node` on `PATH`). Pass `--e2e-only` to
 limit Mocha discovery to `test/e2e`; it also drops the forge and browser tiers.
 
 During development, leave these optional groups disabled unless the changes
@@ -76,10 +79,14 @@ touch their relevant files or dependencies:
   configuration, or their self-tests.
 - Use `--test-browser` when changing browser code, browser build/runtime
   dependencies, or browser tests, including shared code that affects those paths.
+- Use `--lc-tests` when changing light client code or its tests. It needs
+  a peer3 node binary (`PEER3_NODE_BIN`, else `zero-fee-node` on `PATH`) and the
+  local runner; see the README's
+  [Light client tests](README.md#light-client-tests) section.
 
 Run only the relevant optional group and focused tests for those changes. Do not
-add both flags routinely to development validation; CI runs both groups on every
-full gate so the development cycle stays lean.
+add the first two flags routinely to development validation; CI runs those two
+groups on every full gate so the development cycle stays lean.
 
 Browser gates, and Mocha test files marked `// @distributed-requires: browser`,
 run only on a protocol 14 or newer worker host whose runner image matches its

@@ -30,8 +30,43 @@ were added afterwards. Not covered: the browser build beyond its typecheck.
 declarations) cover all 15 planned cases of [`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0). Their data is three blocks a peer3 dev
 node pushed through the sidecar on 2026-11-18, with the block hashes that node reported. Each of 11
 single-line faults put into the three source files failed at least one declaration, and all 51 light client
-declarations passed with the source restored. The sidecar has no test of its own: the recorded blocks are
-its only evidence, and no repository test starts a peer3 node yet.
+declarations passed with the source restored. The recorded blocks were the sidecar's only evidence until the live suite below.
+
+[LightClientPushedBlocks.test.ts](../verification/tests/test/lightClient/LightClientPushedBlocks.test.ts.md) (3
+declarations, added 2026-11-18) is the first suite that starts a peer3 node: each declaration runs the
+binary `PEER3_NODE_BIN` names with the sidecar in front of it, and the runner discovers the file only with
+`--lc-tests`. Its declarations cover the three live cases of [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2) with the node's own
+receipt, block hash and storage read as oracles; they run outside CI
+([`OQ-47-8W9VT0`](../verification/open-questions.md#oq-47-8w9vt0)). `test/lightClient/LightClientEndpoints.test.ts`
+(3 declarations, local only) is marked out of specification scope: two declarations check the endpoint
+behaviour the sidecar stands in for, a block without a subscribed topic and a removed subscription, which no
+requirement states yet; one checks the failure "RPC node doesn't support LC endpoints" (Luka, 2026-11-18)
+without a node binary. Added on 2026-11-20 after the automated review, and run in CI: `test/unit/LightClientEndpointCheck.test.ts`
+(4) checks that failure against a node whose `rpc_methods` fails (a proxy error, on Hardhat and on `--parachain`), one listing neither method and one listing one,
+and the pass against one listing both; `test/unit/JsonRpcSocket.test.ts` (2) checks that requests fail on a
+dropped or closed socket; `test/scripts/peer3NodeLauncher.test.ts` (4) checks the launcher's start failures,
+its node output in the error, and the removal of a dead node's database. Each of 15 single-line faults
+failed a declaration: topic filter off, unsubscribe kept, endpoint check off, missing-binary check off,
+discovery filter off, flag ignored, socket rejection off, closed-socket check off, dead-node sweep off,
+output tail off, skip-notice wording, `rpc_methods` fallback off, an unreadable or invalid process id swept,
+and the nodes directory ignored; all passed with the code restored. Not covered: a distributed worker, because no
+worker protocol advertises the `lightClient` runner (the runner image has carried `zero-fee-node` since the
+merge of `dev`) and the orchestrator skips these tasks with a warning; a node that leaves a write out of a
+pushed block; the node's own endpoint, which does not exist yet.
+
+Changed on 2026-11-28, after the review of the `dev` merge: `startPeer3Node` is the one launcher of the
+peer3 dev node, and the `--parachain` slot nodes start through it. It binds port 0 and reads the port the
+node reports when no port is given, and writes the process id file for every node, slot nodes included.
+The binary is `PEER3_NODE_BIN`, else `zero-fee-node` on `PATH` (engineer decision of 2026-11-28), and the
+light client fixture turns a binary it cannot find into `RPC node doesn't support LC endpoints`, which
+replaces the missing-binary check above. `peer3NodeLauncher.test.ts` now has 7 declarations: the `PATH`
+fallback, port 0 asked for, two stand-in nodes started at once answering on the two ports they bound (no
+real node needed), and a slot node's directory
+that names its process and is removed when it dies are new. Four faults each failed one declaration: the
+`PATH` fallback off, a reserved free port instead of port 0, no process id file, and slot nodes not routed
+through the launcher; all 7 passed with the code restored. The fallback test of the endpoint check now
+fails `rpc_methods` through the proxy, so it holds under `--parachain`, whose node lists its methods; with
+the fallback's `catch` removed it failed on Hardhat and on `--parachain`.
 
 Added on 2026-11-19 after the first automated review: three declarations in SubstrateTrieProof.test.ts read
 a hand-encoded branch that holds its value by hash (state version 1), with and without the value's proof

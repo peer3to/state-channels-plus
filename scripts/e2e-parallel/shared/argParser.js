@@ -23,6 +23,7 @@ Options:
       --forge-threads <count>    Threads per forge task (default 1)
       --test-parallel-script    Include parallel-runner infrastructure tests
       --test-browser            Include browser gates and browser-required Mocha tests
+      --lc-tests                Include light client tests (need a peer3 node: PEER3_NODE_BIN, else zero-fee-node on PATH)
       --browser-only             Discover only browser gates
       --no-browser               Skip browser gates
   -d, --log-dir, --logDir, --dir <path>
@@ -53,7 +54,7 @@ Options:
       --discovery-timeout <ms>   Time to wait for the first worker
       --forward-env <name>       Environment variable to forward (repeatable)
 
-By default Mocha tests (excluding parallel-runner and browser-required tests)
+By default Mocha tests (excluding parallel-runner, browser-required and light client tests)
 and all Foundry test contracts under test/ are discovered and logs are written to a new logs/run-N directory.
 Use --e2e-only only when the ordinary Mocha tier is not needed; it also drops
 the forge and browser tiers.
@@ -103,6 +104,8 @@ function parseCliArgs(argv) {
         // --no-browser drops them, --browser-only drops every other tier.
         browser: false,
         testParallelScript: false,
+        // Light client tests are opt-in via --lc-tests.
+        lightClient: false,
         browserOnly: false,
         dryRun: false,
         // Warm slot pool size; undefined → DEFAULT_SLOTS.
@@ -263,6 +266,10 @@ function parseCliArgs(argv) {
         }
         if (arg === "--test-browser") {
             options.browser = true;
+            continue;
+        }
+        if (arg === "--lc-tests") {
+            options.lightClient = true;
             continue;
         }
         if (arg === "--browser-only") {
