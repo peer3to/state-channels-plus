@@ -353,16 +353,23 @@ export class RpcNodeProxy {
 
     /**
      * Keep the node's subscription notifications at the proxy until
-     * `release` sends the one carrying the log of a transaction; `stop` lets
-     * later notifications pass again and keeps the withheld ones.
+     * `release` sends the one carrying the log of a transaction; `holds`
+     * tells whether one is kept; `stop` lets later notifications pass again
+     * and keeps the withheld ones.
      */
     withholdNotifications(): {
+        holds: (transactionHash: string) => boolean;
         release: (transactionHash: string) => void;
         stop: () => void;
     } {
         const withheld: WithheldNotification[] = [];
         this.withheldNotifications = withheld;
         return {
+            holds: (transactionHash) =>
+                withheld.some(
+                    (notification) =>
+                        notification.transactionHash === transactionHash
+                ),
             release: (transactionHash) => {
                 const index = withheld.findIndex(
                     (notification) =>

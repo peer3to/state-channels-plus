@@ -8,7 +8,10 @@ import {
     signEncodedBlock
 } from "@test/fixtures/BlockEncodingFixture";
 import { disposeAndRelease } from "@test/fixtures/DisposeCutOffStaging";
-import { BUDGET_ABOVE_DEFAULT } from "@test/fixtures/LocalEvmCallGas.fixture";
+import {
+    BUDGET_ABOVE_DEFAULT,
+    TRANSACTION_CAP_ABOVE_BUDGET
+} from "@test/fixtures/LocalEvmCallGas.fixture";
 import { MathTestSession as TestSession } from "@test/harness";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
@@ -490,6 +493,9 @@ describe("Unit: BlockIngestService", function () {
             const limited = 2;
             await h.lifecycle.start(3, 0, {
                 stateMachineGasLimit: Number(BUDGET_ABOVE_DEFAULT),
+                configOverrides: {
+                    MAX_TRANSACTION_GAS: TRANSACTION_CAP_ABOVE_BUDGET
+                },
                 executorCallGasLimitByPeer: {
                     [limited]: Number(DEFAULT_LOCAL_EVM_CALL_GAS_LIMIT)
                 }

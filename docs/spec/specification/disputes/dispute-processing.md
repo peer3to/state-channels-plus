@@ -77,12 +77,14 @@ one, and escalate.
 6. **Sign and submit in one transaction** (evidence applications + upload). Every evidence
    application must succeed or nothing lands; the upload, sent last, is best effort: when it is
    refused, the evidence applications before it still land and the refusal is classified as a
-   refused lone upload would be. The batch's gas is estimated on its all-or-nothing form plus the
-   replay requirement; only when that estimate is refused, so the upload already fails, is the
+   refused lone upload would be. The batch's gas is estimated on its all-or-nothing form; a batch whose evidence replays a
+   transition declares that estimate plus the replay requirement, capped at the per-transaction gas
+   cap and the block gas limit ([`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)), and any other batch declares it with the
+   signer's headroom; only when that estimate is refused, so the upload already fails, is the
    best-effort form estimated, which keeps a searching estimator from funding the evidence
    applications alone while the upload could still land. Classify races: ineligibility (the node was slashed), a window
    opened too early for the timeout, or an expired evidence window (a lost evidence race: a no-op reported to the caller,
-   [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../open-questions.md#oq-spec-evidence-race-1-tknwbj)); roll back the once-per-fork guard on failure. An upload carries the signer's estimate plus headroom, not a fixed gas limit, so a concurrent dispute landing between estimate and inclusion cannot push a late disputer out of gas and past the evidence window.
+   [`OQ-SPEC-EVIDENCE-RACE-1-TKNWBJ` (Interpreting a lost evidence race)](../open-questions.md#oq-spec-evidence-race-1-tknwbj)); roll back the once-per-fork guard on failure. An upload carries the signer's estimate plus headroom, not a fixed gas limit, so a concurrent dispute landing between estimate and inclusion cannot push a late disputer out of gas and past the evidence window; in a replaying batch the replay requirement gives that margin while the batch stays under the cap.
 
 ### Stage 3 — Chain intake (auditor role)
 

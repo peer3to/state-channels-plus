@@ -38,10 +38,15 @@ omissions, not a consistent lie.
 [`REQ-STPROOF-3-NVJGR0` (A pushed partition is accepted only as its proof decides it under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0) was added the same day for a block an endpoint pushes: the writes are accepted
 only under the state root of the header pushed with them, the block is identified by the header hash and
 by the Ethereum block hash the chain wrote into the header, and a rejected block yields no write. The
-shape of the pushed block (header, written slots, proof, matching logs) follows the user's decisions of
-2026-11-18 and is not confirmed by Luka yet. Not specified: which blocks an endpoint must push, and how a
-participant notices a write an endpoint left out. The plan [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2), added the same
-day, asks for the same check on blocks a running chain node pushes.
+shape of the pushed block (header, written slots, proof, matching logs) follows the engineer's decisions of
+2026-11-18 and 2026-11-19; Luka reviews it in the pull requests. Which blocks an endpoint must push, and how
+a participant notices a write an endpoint left out, are specified with the subscription.
+
+Added on 2026-11-19 on the engineer's decisions of that day: pushed logs are hints whose content is not
+proven and that never change what a participant holds; only the header hash binds a pushed block to a
+block the participant trusts; a pushed block of the wrong shape is rejected. They are stated as
+assumptions of [storage-proofs.md](../specification/runtime/storage-proofs.md). Which blocks an endpoint
+pushes, and which writes, is decided too and specified with the subscription.
 
 [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64) and [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) were added on 2026-11-19 for the read a participant makes itself.
 [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64) extends the rule of [`REQ-STPROOF-1-J20P5Y` (A slot value is accepted only when the proof decides it)](../specification/runtime/storage-proofs.md#req-stproof-1-j20p5y) to an account's nonce, balance and code, which a
@@ -51,8 +56,11 @@ balance less what the chain keeps back, with the existential deposit supplied by
 runtime constant the state does not hold; the document records that a wrong deposit gives a wrong balance
 only. [`REQ-STPROOF-5-HRDXEG` (A read from a node yields only what its proof decides, at one block)](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) states the read: the node's best block, one proof for everything asked at that block's
 hash, and only proven values returned. The best block is taken on the node's word, like a pushed header;
-binding a block to the chain stays future work. Not specified yet: when a participant reads, what it
-keeps, and what it does after a failed read.
+binding a block to the chain stays future work. On 2026-11-20 the user decided how a node's own error
+fails a read, and [`REQ-STPROOF-5-HRDXEG`](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg) was amended: a JSON-RPC error from the node fails the read with that error, not with
+the failure of a proof, because a node that could not answer has not been shown to lie; a read at a block
+obtained earlier holds only while the node still keeps that block's state. Not specified yet: when a
+participant reads, what it keeps, and which node it turns to after a failed read.
 
 New subject [light-client.md](../specification/runtime/light-client.md), added on 2026-11-19: chain reads at
 the latest block answered from proven state. [`REQ-LC-1-JT5PKT` (Reads at the latest block are answered from proven state of one block)](../specification/runtime/light-client.md#req-lc-1-jt5pkt) states the answer a caller gets, equal to the

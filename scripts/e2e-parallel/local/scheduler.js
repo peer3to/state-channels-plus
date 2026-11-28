@@ -16,9 +16,8 @@ const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { CostCache } = require("../shared/costCache");
 const { WorkerScheduler } = require("../shared/workerScheduler");
 const {
-    admissionCost,
+    allowsWorkerAssignment,
     budgetHoldReason,
-    holdReason,
     requestCostBudget
 } = require("../shared/scheduling");
 const { normalizeTaskRunner } = require("../shared/taskRunners");
@@ -51,6 +50,7 @@ async function runScheduler({
     tickMs = SCHEDULER_TICK_MS,
     runTaskImpl = runTask,
     accountPartitions = new AccountPartitionPool(),
+    settlePartition,
     resourceGate,
     projectRoot = process.cwd(),
     schedule = "fifo",
@@ -68,7 +68,8 @@ async function runScheduler({
     const taskResources = new TaskResourcePool({
         baseEnv,
         slots,
-        accountPartitions
+        accountPartitions,
+        settle: settlePartition
     });
     const resources =
         resourceGate ||
@@ -124,28 +125,26 @@ async function runScheduler({
         retryMs: tickMs,
         canRun: async (running, assignment, activeAssignments) => {
             if (!assignment && coordinator.queue.length === 0) return false;
-            const allowed = await resources.allows(
+            // the worker's account and resource admission; with nothing
+            // prefetched, the queue head's account need and no cost
+            return allowsWorkerAssignment(
+                {
+                    scheduler,
+                    taskResources,
+                    resources,
+                    config: {
+                        concurrencyCap,
+                        memBoundGb,
+                        targetLoad,
+                        taskCount: tasks.length
+                    },
+                    logging
+                },
                 running,
-                concurrencyCap,
-                admissionCost(schedule, assignment, activeAssignments)
+                assignment,
+                activeAssignments,
+                (assignment ?? coordinator.queue[0])?.task
             );
-            if (!allowed && coordinator.finish().pending) {
-                const next = assignment ?? coordinator.queue[0];
-                const reason = holdReason({
-                    schedule,
-                    running,
-                    concurrencyCap,
-                    resourceGate: resources,
-                    memBoundGb,
-                    targetLoad
-                });
-                logging.hold({
-                    seq: next?.seq || tasks.length,
-                    total: tasks.length,
-                    reason
-                });
-            }
-            return allowed;
         },
         requestTask: async () =>
             coordinator.requestTask("local", {
@@ -196,7 +195,13 @@ async function runScheduler({
                     logging.getLogPath(logDir, assignment.task.logName)
                 );
             } finally {
-                execution.release();
+                execution
+                    .release()
+                    .catch((error) =>
+                        console.warn(
+                            `Releasing ${assignment.task.label}'s resources failed: ${error}`
+                        )
+                    );
             }
             const result = coordinator.completeAttempt("local", {
                 ...attempt,

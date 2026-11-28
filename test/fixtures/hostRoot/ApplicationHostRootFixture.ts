@@ -25,6 +25,7 @@ import {
     probeRpcManifest
 } from "@test/fixtures/hostRoot/ProbeHostRootManifest";
 import { CUT_GRACE_MS } from "@test/harness/core/peerErrorAttribution";
+import { errorRejectionOf } from "@test/utils/rejectionOf";
 import type { MathStateMachine } from "@typechain-types";
 import { expect } from "chai";
 import type { Signer } from "ethers";
@@ -34,17 +35,6 @@ type ProbeInstance = P2pInstance<MathStateMachine, ProbeHostRoot>;
 /** The rejection a call gets when it names a service no root serves. */
 function unknownEndpointError(service: string, method: string): string {
     return `Unknown RPC endpoint '${service}.${method}'`;
-}
-
-/** Message of a promise's rejection; fails when it resolves. */
-async function rejectionOf(pending: Promise<unknown>): Promise<Error> {
-    try {
-        await pending;
-    } catch (error) {
-        expect(error).to.be.instanceOf(Error);
-        return error as Error;
-    }
-    throw new Error("Expected the request to reject");
 }
 
 /**
@@ -129,7 +119,7 @@ export async function assertSecondDeployCompleteRejects(
             );
             const localAddress = await deployStateMachine(deployer);
             const diamondAddress = await deployStateMachine(deployer);
-            const failure = await rejectionOf(
+            const failure = await errorRejectionOf(
                 instance.host.sdkSetup
                     .deployComplete(localAddress, diamondAddress)
                     .request()
@@ -182,7 +172,7 @@ export async function assertDefaultHostRootStarts(
             await instance.host.deploySigner.getAddress().request()
         ).to.equal(signerAddress);
         // The client typed a probe root; the host it got has none.
-        const failure = await rejectionOf(
+        const failure = await errorRejectionOf(
             instance.host.probe.echo("absent").request()
         );
         expect(failure.message).to.equal(unknownEndpointError("probe", "echo"));
@@ -200,7 +190,7 @@ export async function assertNonClassManifestRejects(
             runSdkInThread,
             vmDedicatedThread: false
         });
-        const failure = await rejectionOf(
+        const failure = await errorRejectionOf(
             EvmStateMachine.p2pSetup(
                 setup.scm,
                 setup.deployedStateMachine,
@@ -237,7 +227,7 @@ export async function assertFailedBuildRepliesPromptly(
             runSdkInThread,
             vmDedicatedThread: false
         });
-        const failure = await rejectionOf(
+        const failure = await errorRejectionOf(
             EvmStateMachine.p2pSetup(
                 setup.scm,
                 setup.deployedStateMachine,
@@ -275,7 +265,7 @@ export async function assertServiceErrorKeepsIdentity(
         runSdkInThread,
         probeHostRootManifest(),
         async (instance) => {
-            const failure = await rejectionOf(
+            const failure = await errorRejectionOf(
                 instance.host.probe
                     .fail(
                         "ProbeFailure",
@@ -310,7 +300,7 @@ export async function assertDisposalRejectsRunningCall(
         async (instance) => {
             host = instance.host;
             await instance.host.probe.echo("ready").request();
-            running = rejectionOf(instance.host.probe.hang().request());
+            running = errorRejectionOf(instance.host.probe.hang().request());
             const startedAt = Date.now();
             await instance.dispose();
             disposalMs = Date.now() - startedAt;
@@ -321,7 +311,7 @@ export async function assertDisposalRejectsRunningCall(
     const failure = await running!;
     expect(isRootDisposedError(failure)).to.equal(true);
     expect(failure.message).to.equal(childDisposedError().message);
-    const late = await rejectionOf(host!.probe.echo("late").request());
+    const late = await errorRejectionOf(host!.probe.echo("late").request());
     expect(late.message).to.equal(childDisposedError().message);
 }
 

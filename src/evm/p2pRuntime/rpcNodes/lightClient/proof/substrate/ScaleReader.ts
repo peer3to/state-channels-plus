@@ -1,4 +1,5 @@
 import StorageProofError from "../StorageProofError";
+import { toBigInt } from "ethers";
 
 /** Reads SCALE-encoded bytes front to back. */
 export default class ScaleReader {
@@ -16,6 +17,11 @@ export default class ScaleReader {
 
     readByte(): number {
         return this.take(1)[0];
+    }
+
+    /** A fixed-width unsigned integer of `length` bytes, which SCALE writes little-endian. */
+    readUnsigned(length: number): bigint {
+        return toBigInt(this.take(length).slice().reverse());
     }
 
     take(length: number): Uint8Array {

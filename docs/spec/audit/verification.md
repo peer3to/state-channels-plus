@@ -36,15 +36,74 @@ declarations passed with the source restored. The recorded blocks were the sidec
 declarations, added 2026-11-18) is the first suite that starts a peer3 node: each declaration runs the
 binary `PEER3_NODE_BIN` names with the sidecar in front of it, and the runner discovers the file only with
 `--lc-tests`. Its declarations cover the three live cases of [`REQ-STPROOF-3-NVJGR0.T2`](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0.t2) with the node's own
-receipt, block hash and storage read as oracles. `test/lightClient/LightClientEndpoints.test.ts` (4
-declarations) is marked out of specification scope: two declarations check the endpoint behaviour the
-sidecar stands in for, a block without a subscribed topic and a removed subscription, which no requirement
-states yet; two check the failure "RPC node doesn't support LC endpoints" (Luka, 2026-11-18), without a node
-binary and against a node that does not list the methods. Each of six single-line faults (topic filter off,
-unsubscribe kept, endpoint check off, missing-binary check off, discovery filter off, flag ignored) failed
-its declaration, and all passed with the code restored. Not covered: a distributed worker, because no
-worker protocol provides the node binary and the orchestrator skips these tasks with a warning; a node that
-leaves a write out of a pushed block; the node's own endpoint, which does not exist yet.
+receipt, block hash and storage read as oracles; they run outside CI
+([`OQ-47-8W9VT0`](../verification/open-questions.md#oq-47-8w9vt0)). `test/lightClient/LightClientEndpoints.test.ts`
+(3 declarations, local only) is marked out of specification scope: two declarations check the endpoint
+behaviour the sidecar stands in for, a block without a subscribed topic and a removed subscription, which no
+requirement states yet; one checks the failure "RPC node doesn't support LC endpoints" (Luka, 2026-11-18)
+without a node binary. Added on 2026-11-20 after the automated review, and run in CI: `test/unit/LightClientEndpointCheck.test.ts`
+(4) checks that failure against a node whose `rpc_methods` fails (a proxy error, on Hardhat and on `--parachain`), one listing neither method and one listing one,
+and the pass against one listing both; `test/unit/JsonRpcSocket.test.ts` (2) checks that requests fail on a
+dropped or closed socket; `test/scripts/peer3NodeLauncher.test.ts` (4) checks the launcher's start failures,
+its node output in the error, and the removal of a dead node's database. Each of 15 single-line faults
+failed a declaration: topic filter off, unsubscribe kept, endpoint check off, missing-binary check off,
+discovery filter off, flag ignored, socket rejection off, closed-socket check off, dead-node sweep off,
+output tail off, skip-notice wording, `rpc_methods` fallback off, an unreadable or invalid process id swept,
+and the nodes directory ignored; all passed with the code restored. Not covered: a distributed worker, because no
+worker protocol advertises the `lightClient` runner (the runner image has carried `zero-fee-node` since the
+merge of `dev`) and the orchestrator skips these tasks with a warning; a node that leaves a write out of a
+pushed block; the node's own endpoint, which does not exist yet.
+
+Changed on 2026-11-28, after the review of the `dev` merge: `startPeer3Node` is the one launcher of the
+peer3 dev node, and the `--parachain` slot nodes start through it. It binds port 0 and reads the port the
+node reports when no port is given, and writes the process id file for every node, slot nodes included.
+The binary is `PEER3_NODE_BIN`, else `zero-fee-node` on `PATH` (engineer decision of 2026-11-28), and the
+light client fixture turns a binary it cannot find into `RPC node doesn't support LC endpoints`, which
+replaces the missing-binary check above. `peer3NodeLauncher.test.ts` now has 7 declarations: the `PATH`
+fallback, port 0 asked for, two stand-in nodes started at once answering on the two ports they bound (no
+real node needed), and a slot node's directory
+that names its process and is removed when it dies are new. Four faults each failed one declaration: the
+`PATH` fallback off, a reserved free port instead of port 0, no process id file, and slot nodes not routed
+through the launcher; all 7 passed with the code restored. The fallback test of the endpoint check now
+fails `rpc_methods` through the proxy, so it holds under `--parachain`, whose node lists its methods; with
+the fallback's `catch` removed it failed on Hardhat and on `--parachain`.
+
+Added on 2026-11-19 after the first automated review: three declarations in SubstrateTrieProof.test.ts read
+a hand-encoded branch that holds its value by hash (state version 1), with and without the value's proof
+node and under a 16-nibble partial key; one in SubstrateHeader.test.ts reads the Frontier log variant that
+holds the Ethereum block hash alone; six in proveFrontierStorageBlock.test.ts refuse malformed pushed
+blocks. Each of six faults (the branch's partial-key width, the branch read as an inline value, the log
+variant number, and each of three shape checks switched off) failed a declaration. A node only state
+version 0 produces, an inline value longer than 32 bytes, is tested in the pull request whose crafted leaf
+can hold one. On 2026-11-20, after the second review, two more declarations refuse a proof node and a
+digest log of odd-length hex; with odd lengths let through, both failed.
+
+## Gas estimates at the pending block, genesis-free block time, parachain test runs — 2026-11-20
+
+Engineer decisions (Luke, 2026-11-20, PR #605):
+
+- The runtime's provider estimates gas at the `pending` block, the one a transaction lands in. ethers
+  sends no block, and geth and Frontier then estimate at the latest block's timestamp, so a timeout
+  claim sent at its `minTimeStamp` failed its first estimate. Frontier runs even a `pending` estimate
+  on the head's state and timestamp, so the peer3 node answers a `pending` estimate of a call on a
+  pending block of its own, stamped with the next block's slot time (peer3-parachain #1).
+  [RpcNodes.test.ts](../verification/tests/test/evm/RpcNodes.test.ts.md) checks that a call valid
+  only after the latest block's second estimates
+  ([`UNIT-TEST-MULTI-RPC-1-SVGGZ5`](../implementation/source/src/evm/p2pRuntime/rpcNodes/MultiRpcProvider.ts.md#unit-test-multi-rpc-1-svggz5) `.P29`).
+  A revert at the pending block is confirmed at the latest block before it stands, and the pending
+  block's revert is the one reported: a pending block can hold other senders' unmined transactions
+  (geth's does), and a competitor's pending reduce that never lands must not end ours (`.P30`, `.P31`;
+  each fails without its rule).
+- The clock leaves genesis out of the measured block time: a fresh parachain's genesis has timestamp 0
+  ([`UNIT-TEST-CLOCK-AVERAGE-1-6PDVR0`](../implementation/source/src/Clock.ts.md#unit-test-clock-average-1-6pdvr0)).
+- `--parachain` runs the slot nodes, the isolated test nodes and the tests on the parachain dev node,
+  locally or on the workers, whose runner image copies the node image peer3-parachain publishes
+  (`docker/zero-fee-node.Dockerfile` there). In E2E-Timeouts, "should handle timeout when next peer to write does not
+  author a block", "should demonstrate timeout creates disputes", "should handle timeout when non-author
+  peer disconnects (calldata posting)" and "should handle timeout when author peer disconnects", with
+  all of RpcNodes.test.ts, passed with `--parachain` on the pinned node, peer3-parachain `e5f29f6`, on
+  three workers running this branch's runner image (run-1229, 2026-11-24, 173 passing with the timeout,
+  join, gas and dispute E2E files).
 
 [FrontierAccountProofVerifier.test.ts](../verification/tests/test/unit/FrontierAccountProofVerifier.test.ts.md)
 (18 declarations, added 2026-11-19) covers all 18 planned cases of [`REQ-STPROOF-4-XK5S64` (An account's nonce, balance and code are accepted only when the proof decides…)](../specification/runtime/storage-proofs.md#req-stproof-4-xk5s64). Its positive oracles are
@@ -56,17 +115,27 @@ a chain answer. Each of 10 single-line faults put into the account verifier and 
 part of the balance rule, the field order, each refusal, each absent-entry answer, each key prefix) failed
 at least one declaration, and all passed with the source restored.
 
-[LightClientProvenReads.test.ts](../verification/tests/test/lightClient/LightClientProvenReads.test.ts.md) (6
-declarations, added 2026-11-19) covers the six planned cases of [`REQ-STPROOF-5-HRDXEG.T1`](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg.t1) on a peer3 node of each
+[LightClientProvenReads.test.ts](../verification/tests/test/lightClient/LightClientProvenReads.test.ts.md) (12
+declarations: 6 added 2026-11-19, 6 added 2026-11-20) covers the six planned cases of [`REQ-STPROOF-5-HRDXEG.T1`](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg.t1) and the six of [`REQ-STPROOF-5-HRDXEG.T2`](../specification/runtime/storage-proofs.md#req-stproof-5-hrdxeg.t2) on a peer3 node of each
 declaration's own, discovered only with `--lc-tests`. The oracles are the node's own block hash, Ethereum
 block and Ethereum reads at the same block. The refusals put the existing `RpcNodeProxy` in front of the
-node and make it answer one request in the node's place, with the node's real proof of an earlier block or
-with no proof or header. Each of eight single-line faults put into the reader (the block hash left out of
-the proof request, each shape check off, the empty-read shortcut off, a wrong key for the account, the code
-or a slot, the state root taken from another field) failed its declaration, and all passed with the source
-restored. Not covered: a distributed worker, as for the suite above, so CI does not run this suite yet; a
-node that gives the header of another chain; a read at the genesis block, whose header names no Ethereum
-block.
+node and make it answer one request in the node's place, with the node's real proof of an earlier block,
+with no proof or header, with a header or proof node whose hex is not whole bytes, with a header that
+carries no Ethereum block hash, with a proof of only some of the asked entries, or with a JSON-RPC error.
+For the first six declarations, each of eight single-line faults put into the reader (the block hash left
+out of the proof request, each shape check off, the empty-read shortcut off, a wrong key for the account,
+the code or a slot, the state root taken from another field) failed its declaration, and all passed with
+the source restored. For the six of 2026-11-20, four single-line faults were put into the reader together
+(a header hash accepted as any hex, the proof nodes' byte check off, a node error turned into an empty
+answer, the code key asked only with the account): five of the 12 declarations failed (`T2.P1`, `T2.P3`,
+`T2.P5`, `T2.P6` and `T1.P5`, which the byte check also guards), the other seven passed, and all 12 passed
+with the source restored. A fifth fault, run alone (the Ethereum block hash taken from another header
+field, so the digest is never checked), failed `T2.P2` and `T1.P1`, and the other ten passed. `T2.P4` had
+no fault of its own: the reader has no line that decides it, and the rule it exercises is the trie
+proof's refusal of a missing node, whose fault evidence is with the verifier suite above. Not covered: a
+distributed worker, as for the suite above, so CI does not run this suite yet; a node that gives the header
+of another chain. A read at the genesis block is refused like any header without an Ethereum block hash
+(`T2.P2`).
 
 [LightClientProvider.test.ts](../verification/tests/test/lightClient/LightClientProvider.test.ts.md) (15
 declarations, added 2026-11-19) covers the 15 planned cases of [`REQ-LC-1-JT5PKT.T1`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1), [`REQ-LC-2-PMY1VG.T1`](../specification/runtime/light-client.md#req-lc-2-pmy1vg.t1), [`REQ-LC-3-W7RRHM.T1`](../specification/runtime/light-client.md#req-lc-3-w7rrhm.t1)
@@ -262,6 +331,25 @@ The retry tests wait for two held submissions; they do not prove that no third o
 submits a top-up with a made-up snapshot pin. No runtime stores that pin, so the retry condition, which needs
 both the pinned and the new snapshot stored, is not met, and the test still returns `false` (passed in the
 full gate).
+
+## Test timing inputs — 2026-11-21
+
+Engineer decision (Luke, 2026-11-21, PR #606), standing: a parachain test whose `evidenceTime` is
+below the harness minimum `MIN_TEST_TIME_CONFIG.evidenceTime` (10) may be raised to 10 once its log
+shows `RaceConditionDisputeEvidencePeriodExpired` refusing in-window work; each raise still gets an
+entry here. The rule is mirrored in `test/AGENTS.md` ("Protocol wait budgets"). First use: the three U72 cases in
+`BotConnectionFixes.test.ts` whose leaver submits its self-removal for an observed dispute go from
+the staging's 4 to 10. On the parachain, observing the dispute, building the self-removal and
+landing it spans two or three 2 s blocks, so 4 s let the chain refuse it with
+`RaceConditionDisputeEvidencePeriodExpired`. No oracle changed.
+
+## Test timing inputs — 2026-11-20
+
+Engineer decision (Luke, 2026-11-20, PR #606): `disputerThrottle.test.ts` widens its active-window
+`evidenceTime` from 5 to 10 for the two "within evidenceTime" cases. On the parachain the second
+dispute's estimate is judged at the block it lands in, a 2 s slot after the build, so construction under
+farm load plus one or two blocks can outlast 5 s and the throttle has run out; 10 s leaves room. No
+oracle changed.
 
 ## Test timing inputs — 2026-10-15
 

@@ -23,7 +23,7 @@ Options:
       --forge-threads <count>    Threads per forge task (default 1)
       --test-parallel-script    Include parallel-runner infrastructure tests
       --test-browser            Include browser gates and browser-required Mocha tests
-      --lc-tests                Include light client tests (need PEER3_NODE_BIN)
+      --lc-tests                Include light client tests (need a peer3 node: PEER3_NODE_BIN, else zero-fee-node on PATH)
       --browser-only             Discover only browser gates
       --no-browser               Skip browser gates
   -d, --log-dir, --logDir, --dir <path>
@@ -49,6 +49,7 @@ Options:
       --vm-thread                Run the VM executor in a worker thread
       --no-vm-thread             Run the VM executor on the main thread
       --dry-run                  Print resolved scheduling configuration only
+      --parachain                Run the slot nodes and tests on the parachain dev node
       --distributed              Run tasks on authenticated remote workers
       --discovery-timeout <ms>   Time to wait for the first worker
       --forward-env <name>       Environment variable to forward (repeatable)
@@ -92,6 +93,8 @@ function parseCliArgs(argv) {
         browserTestPattern: undefined,
         help: false,
         e2eOnly: false,
+        // --parachain runs on the parachain dev node instead of hardhat
+        parachain: false,
         // Foundry test contracts are discovered alongside Mocha tests by
         // default; --no-forge drops them, --forge-only drops the Mocha tier.
         forge: true,
@@ -239,6 +242,10 @@ function parseCliArgs(argv) {
             options.browserTestPattern = arg.slice(
                 "--browser-test-pattern=".length
             );
+            continue;
+        }
+        if (arg === "--parachain") {
+            options.parachain = true;
             continue;
         }
         if (arg === "--e2e-only") {

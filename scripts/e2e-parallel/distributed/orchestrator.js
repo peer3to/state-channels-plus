@@ -32,7 +32,7 @@ const {
 } = require("../shared/constants");
 const { CostCache } = require("../shared/costCache");
 const { budgetHoldReason } = require("../shared/scheduling");
-const { normalizeTaskRunner } = require("../shared/taskRunners");
+const { normalizeTaskRunner, TASK_RUNNERS } = require("../shared/taskRunners");
 const { TaskCoordinator } = require("../shared/taskCoordinator");
 const { fromWireCostBudget, toWireTask } = require("./taskWire");
 const { OrchestratorLogStore } = require("./orchestratorLogStore");
@@ -158,10 +158,16 @@ function formatSkippedTasksNotice(tasks) {
     for (const { runner, needs, tasks: skipped } of groups.values()) {
         const required = minimumProtocolForTask(skipped[0]);
         const missing = needs.length ? needs.join(", ") : runner;
+        // a requirement such as lightClient is no runner of its own
+        const allRunners = (needs.length ? needs : [runner]).every((need) =>
+            Object.values(TASK_RUNNERS).includes(need)
+        );
         lines.push(
             `Skipping ${skipped.length} ${runner} task(s)` +
                 (needs.length ? ` that need ${missing}` : "") +
-                `: no connected worker supports the ${missing} runner` +
+                (allRunners
+                    ? `: no connected worker supports the ${missing} runner`
+                    : `: no connected worker provides ${missing}`) +
                 (required
                     ? `; a worker host on distributed protocol ${required} or newer runs them.`
                     : ".")

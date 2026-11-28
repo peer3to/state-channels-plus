@@ -2812,19 +2812,32 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
 
     /**
      * Answer this peer's chain-signer estimates for `methods` scaled by
-     * `numerator / denominator`, recording each real estimate.
+     * `numerator / denominator` (only the first `times`, when given),
+     * recording each real estimate.
      */
     public stubScaleReplayGasEstimates(
         methods: ReplayGasEstimateMethod[],
         numerator: number,
-        denominator: number
+        denominator: number,
+        times?: number
     ): boolean {
         this.service.installReplayGasEstimateScale(
             methods,
             numerator,
-            denominator
+            denominator,
+            times
         );
         return true;
+    }
+
+    /** Pass this peer's next replay preflight at a caller gas limit. */
+    public stubPassReplayPreflight(): boolean {
+        this.service.installPassedReplayPreflight();
+        return true;
+    }
+
+    public getPassedReplayPreflights(): number {
+        return this.service.replayPreflightsPassed;
     }
 
     public getRecordedReplayGasEstimates(): RecordedGasEstimate[] {
@@ -3000,32 +3013,41 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return this.service.completeWithGenesisCount;
     }
 
-    public getReplayGasBlockReadFailures(): number {
-        return this.service.replayGasBlockReadFailures;
+    public getStubbedReplayGasBlockReads(): number {
+        return this.service.replayGasBlockReadsStubbed;
     }
 
     /**
-     * Reject the next latest-block read made by the dispute manager's gas
-     * limit (`replayGasLimit`); every other read of the shared provider passes.
+     * Answer the next latest-block read made by the dispute manager's gas
+     * limit (`fraudProofGasLimit`) with the block's gas limit set to `gasLimit`
+     * (decimal), or reject it when `gasLimit` is null; every other read of
+     * the shared provider passes.
      */
-    public stubFailReplayGasBlockRead(): boolean {
+    public stubReplayGasBlockRead(gasLimit: string | null): boolean {
         const provider =
             this.service.sm.stateChannelManagerContract.runner?.provider;
         if (!provider) throw new Error("the manager contract has no provider");
         const getBlock = provider.getBlock.bind(provider);
-        let failed = false;
+        let stubbed = false;
         Reflect.set(
             provider,
             "getBlock",
-            (...args: Parameters<typeof getBlock>) => {
-                if (!failed && new Error().stack?.includes("replayGasLimit")) {
-                    failed = true;
-                    this.service.replayGasBlockReadFailures += 1;
-                    return Promise.reject(
-                        new Error("stubbed block read failure")
-                    );
-                }
-                return getBlock(...args);
+            async (...args: Parameters<typeof getBlock>) => {
+                if (
+                    stubbed ||
+                    !new Error().stack?.includes("fraudProofGasLimit")
+                )
+                    return getBlock(...args);
+                stubbed = true;
+                this.service.replayGasBlockReadsStubbed += 1;
+                if (gasLimit === null)
+                    throw new Error("stubbed block read failure");
+                const block = await getBlock(...args);
+                return block === null
+                    ? null
+                    : Object.create(block, {
+                          gasLimit: { value: BigInt(gasLimit) }
+                      });
             }
         );
         return true;
