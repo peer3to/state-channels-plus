@@ -66,6 +66,38 @@ export function idleNodeBinary(): string {
     return binary;
 }
 
+/**
+ * An executable Node script that stands in for a node that gets ready: it
+ * listens on the `--rpc-port` it is given (0: one the system picks), prints
+ * the line the launcher reads the bound port from, and answers every JSON-RPC
+ * request, `eth_chainId` with 0x1.
+ */
+export function servingNodeBinary(): string {
+    const binary = path.join(testDir("bin-"), "zero-fee-node");
+    const script = `
+const http = require("node:http");
+const args = process.argv.slice(2);
+const port = Number(args[args.indexOf("--rpc-port") + 1]);
+const server = http.createServer((req, res) => {
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+        const { id, method } = JSON.parse(body || "{}");
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ jsonrpc: "2.0", id, result: method === "eth_chainId" ? "0x1" : "0x0" }));
+    });
+});
+server.listen(port, "127.0.0.1", () =>
+    console.log(\`Running JSON-RPC server: addr=127.0.0.1:\${server.address().port}\`)
+);
+process.on("SIGTERM", () => process.exit(0));
+`;
+    fs.writeFileSync(binary, `#!${process.execPath}\n${script}`, {
+        mode: 0o755
+    });
+    return binary;
+}
+
 /** The value the launcher gave the stand-in `binary` for `flag`. */
 export function argumentGivenTo(binary: string, flag: string): string {
     const args = fs.readFileSync(`${binary}.args`, "utf8").split("\n");
@@ -150,7 +182,8 @@ export async function withNodeOnPath<T>(
 
 /**
  * Starts two peer3 nodes at once without a port and returns the URLs they
- * answered on, each with its chain id; both are stopped.
+ * answered on, each with its chain id; both are stopped. The node is the
+ * binary `PEER3_NODE_BIN` names.
  */
 export async function twoNodesStartedAtOnce(
     nodesDir: string

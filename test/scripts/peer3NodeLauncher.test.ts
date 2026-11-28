@@ -9,6 +9,7 @@ import {
     nodeDirsIn,
     nodeDirWithPid,
     peer3NodeStartFailure,
+    servingNodeBinary,
     slotNodeDirectory,
     twoNodesStartedAtOnce,
     withNodeOnPath,
@@ -89,11 +90,14 @@ describe("peer3 node launcher", function () {
     });
 
     it("starts two nodes at once without a port on two different ports that both answer", async function () {
-        const nodes = await twoNodesStartedAtOnce(freshNodesDir());
+        const nodesDir = freshNodesDir();
+        const nodes = await withPeer3NodeBin(servingNodeBinary(), () =>
+            twoNodesStartedAtOnce(nodesDir)
+        );
         expect({
             distinct: new Set(nodes.map(({ url }) => url)).size,
-            answered: nodes.map(({ chainId }) => typeof chainId)
-        }).to.deep.equal({ distinct: 2, answered: ["string", "string"] });
+            answered: nodes.map(({ chainId }) => chainId)
+        }).to.deep.equal({ distinct: 2, answered: ["0x1", "0x1"] });
     });
 
     it("gives a --parachain slot node a database directory that names its process and is removed when it dies", async function () {

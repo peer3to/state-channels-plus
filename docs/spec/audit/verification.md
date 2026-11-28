@@ -60,7 +60,8 @@ node reports when no port is given, and writes the process id file for every nod
 The binary is `PEER3_NODE_BIN`, else `zero-fee-node` on `PATH` (engineer decision of 2026-11-28), and the
 light client fixture turns a binary it cannot find into `RPC node doesn't support LC endpoints`, which
 replaces the missing-binary check above. `peer3NodeLauncher.test.ts` now has 7 declarations: the `PATH`
-fallback, port 0 asked for, two nodes started at once answering on two ports, and a slot node's directory
+fallback, port 0 asked for, two stand-in nodes started at once answering on the two ports they bound (no
+real node needed), and a slot node's directory
 that names its process and is removed when it dies are new. Four faults each failed one declaration: the
 `PATH` fallback off, a reserved free port instead of port 0, no process id file, and slot nodes not routed
 through the launcher; all 7 passed with the code restored. The fallback test of the endpoint check now
