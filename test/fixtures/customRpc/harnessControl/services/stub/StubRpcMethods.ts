@@ -1658,6 +1658,11 @@ export class StubRpcMethods extends ANetworkRpcMethods<StubService> {
         return true;
     }
 
+    public setHistoryPruning(isPruned: boolean): boolean {
+        this.service.setHistoryPruning(isPruned);
+        return true;
+    }
+
     public restoreMaxTransactionBytes(): boolean {
         this.service.restoreMaxTransactionBytes();
         return true;

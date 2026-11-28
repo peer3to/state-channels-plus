@@ -1399,6 +1399,11 @@ export class StubService extends ANetworkRpcService<
         };
     }
 
+    /** Turn this host's history pruning (`PRUNE_HISTORY`) on or off. */
+    public setHistoryPruning(isPruned: boolean): void {
+        this.sm.agreementManager.pruneHistory = isPruned;
+    }
+
     public restoreMaxTransactionBytes(): void {
         this.restoreTransactionBytes?.();
         this.restoreTransactionBytes = undefined;
@@ -4361,8 +4366,8 @@ export class StubService extends ANetworkRpcService<
 
     /**
      * Test-harness pruning of one stored state snapshot by hash. Snapshot
-     * storage has no delete API, so this removes the entry from its map. A
-     * genesis snapshot is refused.
+     * storage deletes only by fork and height, so this removes the entry
+     * from its map. A genesis snapshot is refused.
      */
     public deleteStoredSnapshot(snapshotHash: Hash): void {
         const snapshots = this.sm.storage.stateSnapshots;
@@ -4378,7 +4383,7 @@ export class StubService extends ANetworkRpcService<
 
     /** Remove one required application state; session teardown discards the peer. */
     public deleteStoredState(stateHash: Hash): boolean {
-        return this.sm.storage.stateMachineStates["statesByHash"].delete(
+        return this.sm.storage.stateMachineStates.deleteStateMachineState(
             stateHash
         );
     }
@@ -4392,7 +4397,8 @@ export class StubService extends ANetworkRpcService<
      * Test-harness pruning of the snapshots and application states below an
      * anchor: for every stored block of `forkId` below `anchorHeight`, its
      * resulting snapshot and that snapshot's state-machine state are removed
-     * (their storages have no delete API). The anchor block's snapshot and
+     * (without the block deletes of `Storage.pruneBelowAnchor`, which the
+     * blocks then follow). The anchor block's snapshot and
      * state and the fork genesis are kept. Run it before pruning the blocks.
      * Returns the pruned snapshot hashes.
      */
@@ -4433,7 +4439,7 @@ export class StubService extends ANetworkRpcService<
                 snapshot.snapshotData.stateMachineStateHash
             ) as Hash;
             if (!keptStates.has(String(stateHash)))
-                states["statesByHash"].delete(stateHash);
+                states.deleteStateMachineState(stateHash);
             snapshots["snapshotsByHash"].delete(snapshot.hash);
             pruned.push(snapshot.hash);
         }

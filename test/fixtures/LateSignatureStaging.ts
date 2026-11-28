@@ -1,6 +1,7 @@
 // @spec-test-coverage-ignore: shared staging of a stored block missing one real participant signature; executable evidence belongs to its calling test declarations
 import { Codec, Type } from "@/utils";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import type { HarnessOptions } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 
@@ -8,14 +9,19 @@ import { expect } from "chai";
  * A three-peer channel where the writer's stored latest block lacks one
  * participant's valid confirmation signature. No peer runs the
  * participant-timeout check, so staging is not cut short by a timeout
- * dispute. One non-writer's broadcast is suppressed while the writer authors
+ * dispute (`configOverrides` apply to every peer). One non-writer's broadcast is suppressed while the writer authors
  * the block; the writer's block is read once the other non-writer's
  * signature merged, and the silenced peer's own signed copy is read before
- * its broadcast is restored. Returns the writer, the block as the writer stored it, the
+ * its broadcast is restored. Returns the writer, the silenced peer, the block as the writer stored it, the
  * silenced peer's signatures on it and the ones the writer lacks.
  */
-export async function stageMissingParticipantSignature(h: MathPeerTestHarness) {
-    await h.lifecycle.start(3, 1);
+export async function stageMissingParticipantSignature(
+    h: MathPeerTestHarness,
+    options: { configOverrides?: HarnessOptions["configOverrides"] } = {}
+) {
+    await h.lifecycle.start(3, 1, {
+        configOverrides: options.configOverrides
+    });
     const forkId = h.activeForkId!;
     for (const peer of h.peers)
         await h.rpcStub.suppressTimeoutCheck(peer.index);
@@ -78,6 +84,7 @@ export async function stageMissingParticipantSignature(h: MathPeerTestHarness) {
     return {
         forkId,
         writer: h.getPeer(writer.index),
+        silenced: h.getPeer(silenced.index),
         height,
         signedBlock: Codec.decode(
             writerBundle.encodedSignedBlock,

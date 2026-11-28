@@ -96,6 +96,8 @@ yarn && yarn build
 
 `PROVIDER_URLS` lists several RPC endpoints of the same chain in priority order, for example `["wss://primary.example", "wss://backup.example"]`. Requests go to the first connected endpoint and fail over to the next; events are observed on every endpoint. When the list is empty, `PROVIDER_URL` is the only endpoint. Every listed endpoint is trusted. `LOG_QUERY_MAX_BLOCKS` is the most blocks one `eth_getLogs` read may span; set it at or below the smallest range limit of your endpoints (default 1000).
 
+`PRUNE_HISTORY` (default `false`) deletes the block history the stored state proof no longer needs: everything below the on-chain anchor when the anchor advances, and the blocks and states between the anchor and the latest final point that a proven final hop skips. Fraud evidence, message blocks and the stored proof are kept.
+
 ## Run Tests
 Install local dependencies
 ```shell

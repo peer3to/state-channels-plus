@@ -2,6 +2,7 @@ import { Block, StateSnapshot, StateProof } from "@/models";
 import type EventSyncService from "@/stateManager/eventSync/EventSyncService";
 import Storage, { SortOrder } from "@/storage";
 import type { EvidenceKey } from "@/storage/keys";
+import type { PrunedHistory } from "@/storage/Storage";
 import { ReduceData } from "@/types";
 import type { StoredProof, StoredProofHop } from "@/types/disputes";
 import {
@@ -14,6 +15,7 @@ import {
     Signature
 } from "@/types/types";
 import { Codec, difference, hash, Logger, Type } from "@/utils";
+import { config } from "@/utils/config";
 import { errorMessage } from "@/utils/errorMessage";
 import type { LocalDiamondContract } from "@/utils/localDiamond";
 import { LoggerUtils } from "@/utils/LoggerUtils";
@@ -159,6 +161,8 @@ class AgreementManager {
         forkId: ForkId;
         upperInboundHashes: Set<Hash>;
     };
+    /** prunes the history the stored proof no longer needs (`PRUNE_HISTORY`) */
+    pruneHistory = config.PRUNE_HISTORY;
 
     constructor(
         private storage: Storage,
@@ -341,6 +345,7 @@ class AgreementManager {
             genesis.forkID,
             this.startStoredProof(genesis, encodedState)
         );
+        this.pruneSkippedHistory(genesis.forkID);
     }
 
     /**
@@ -426,6 +431,7 @@ class AgreementManager {
             write: () => {
                 if (isKept(this.storage.storedProofs.get(forkId))) return;
                 this.storage.storedProofs.set(forkId, candidate);
+                this.pruneSkippedHistory(forkId);
             }
         };
     }
@@ -871,8 +877,17 @@ class AgreementManager {
     public dropLeftForkEvidence(anchor: StateSnapshot): void {
         const left = this.anchorForkId;
         this.anchorForkId = anchor.forkID;
-        if (left !== undefined && left !== anchor.forkID)
-            this.storage.proofEvidence.dropFork(left);
+        if (left === undefined || left === anchor.forkID) return;
+        this.storage.proofEvidence.dropFork(left);
+        // the fork's block history goes with it (Phase 1)
+        void this.pruneUndisputed(left, "left fork", () =>
+            this.storage.pruneFork(left)
+        ).catch((error) =>
+            this.logger.warn("Left fork not pruned", {
+                forkId: left,
+                error: errorMessage(error)
+            })
+        );
     }
 
     /** The final blocks (each hop's first block) at `height` that audit evidence of `forkId` holds. */
@@ -1210,6 +1225,7 @@ class AgreementManager {
         )
             return;
         this.storage.storedProofs.set(forkId, advanced);
+        this.pruneSkippedHistory(forkId);
         this.logger.debug("Stored proof advanced", {
             forkId,
             finalized: LoggerUtils.getSnapshotMetadata(
@@ -1331,6 +1347,60 @@ class AgreementManager {
         this.storage.storedProofs.set(forkId, reRooted);
         // a restart at the anchor proves the later final points again
         if (isRestart) await this.tryAdvanceStoredProof(forkId);
+        await this.pruneUndisputed(forkId, "below the anchor", () =>
+            this.storage.pruneBelowAnchor(forkId, anchor.blockHeight)
+        );
+    }
+
+    /**
+     * Phase 2 pruning, after a write of the stored proof of `forkId`: the
+     * blocks and states between its anchor and its final point, which its
+     * proven final hop skips. Synchronous, so no write races it.
+     */
+    private pruneSkippedHistory(forkId: ForkId): void {
+        if (!this.pruneHistory) return;
+        const stored = this.storage.storedProofs.get(forkId);
+        if (!stored) return;
+        const anchor = StateSnapshot.from(stored.anchorSnapshot);
+        const finalized = StateSnapshot.from(stored.finalizedSnapshot);
+        if (finalized.isGenesis) return;
+        const pruned = this.storage.pruneSkippedHistory(
+            forkId,
+            anchor.isGenesis ? -1 : anchor.blockHeight,
+            finalized.blockHeight
+        );
+        if (pruned.blockCount > 0)
+            this.logger.debug("History pruned", {
+                forkId,
+                phase: "skipped by the final hop",
+                ...pruned
+            });
+    }
+
+    /**
+     * Phase 1 pruning of `forkId` by `prune`, skipped while the local
+     * diamond mirrors a dispute on that fork. The deletes run in one
+     * synchronous step after that check.
+     */
+    private async pruneUndisputed(
+        forkId: ForkId,
+        phase: string,
+        prune: () => PrunedHistory
+    ): Promise<void> {
+        if (!this.pruneHistory) return;
+        if (
+            await this.localDiamondContract.isForkDisputed(
+                this.channelId,
+                forkId
+            )
+        ) {
+            this.logger.debug("History not pruned: the fork is disputed", {
+                forkId,
+                phase
+            });
+            return;
+        }
+        this.logger.debug("History pruned", { forkId, phase, ...prune() });
     }
 
     /** A stored proof of `start` alone, with its state; undefined when that state is not held. */

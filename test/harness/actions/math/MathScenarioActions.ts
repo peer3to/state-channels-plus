@@ -812,6 +812,7 @@ export class MathScenarioActions extends ScenarioActions {
         timeConfig?: HarnessOptions["timeConfig"];
         /** post the latest final state as the chain anchor before the join */
         postAnchorBeforeJoin?: boolean;
+        configOverrides?: HarnessOptions["configOverrides"];
     }): Promise<TestPeer> {
         const initialPeers = options?.initialPeers ?? 2;
         const initialTransitions = options?.initialTransitions ?? 2;
@@ -824,7 +825,8 @@ export class MathScenarioActions extends ScenarioActions {
         };
 
         await this.harness.lifecycle.start(initialPeers, 0, {
-            timeConfig
+            timeConfig,
+            configOverrides: options?.configOverrides
         });
 
         // Spectating and joining are asynchronous to the channel:

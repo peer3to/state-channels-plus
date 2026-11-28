@@ -12,6 +12,7 @@ import {
     uploadSelfRemovalDispute
 } from "@test/fixtures/ChallengeBoundaryStaging";
 import { readLocalFinalizedHeight } from "@test/fixtures/OlderDisputeStaging";
+import type { HarnessOptions } from "@test/harness/core/types";
 import {
     decodeMathState,
     type MathStateDecoded
@@ -392,13 +393,15 @@ export type JoinerBypassInbound =
     | "unknown";
 
 export async function stageSeatedJoinerHistory(
-    h: MathPeerTestHarness
+    h: MathPeerTestHarness,
+    options: { configOverrides?: HarnessOptions["configOverrides"] } = {}
 ): Promise<SeatedJoinerHistory> {
     const charlie = await h.scenario.spectatorPromotedViaJoinChannelWait({
         initialPeers: 2,
         // the harness baseline timing: Charlie's kill must land in the kill period
         timeConfig: {},
-        postAnchorBeforeJoin: true
+        postAnchorBeforeJoin: true,
+        configOverrides: options.configOverrides
     });
     const forkId = h.activeForkId!;
     for (const index of [ALICE_INDEX, BOB_INDEX, charlie.index])

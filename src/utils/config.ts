@@ -62,6 +62,11 @@ export type Config = {
     // fraud proof larger than this is not sent, and a kill with our own
     // upload that exceeds it goes out as two transactions.
     MAX_TRANSACTION_BYTES: number;
+    // true prunes the block history the stored proof no longer needs: below
+    // the chain anchor at each re-root (and the forks the anchor left), and
+    // the blocks and states a proven final hop skips. False (the default)
+    // keeps all history.
+    PRUNE_HISTORY: boolean;
     // Crash log collection
     CRASH_LOG_UPLOAD_ENDPOINT: string;
     CRASH_LOG_API_TOKEN: string;
@@ -112,6 +117,7 @@ const DEFAULT_CONFIG: Config = {
     MAX_TRANSACTION_GAS: 17_916_000,
     // the peer3 parachain runtime's per-transaction calldata limit (64 KiB)
     MAX_TRANSACTION_BYTES: 65_536,
+    PRUNE_HISTORY: false,
     // Crash log collection is enabled when upload endpoint is configured.
     CRASH_LOG_UPLOAD_ENDPOINT: "",
     CRASH_LOG_API_TOKEN: "",
