@@ -16,7 +16,6 @@ import {
     holdsState,
     snapshotAt,
     stageAuditedHeadAboveView,
-    stageBlindPendingAuditor,
     stageForgedSupportBelowHonestTail,
     stageFrozenViewBehindDisputeTail,
     stageLaggingParticipantBehindTail,
@@ -24,10 +23,9 @@ import {
     stagePendingJoinerMissingHopBase,
     stagePersistedSideBlockAtHonestTail,
     stageSideBlockBelowAuditorHead,
-    stageSideReplayBelowHonestTail,
-    waitUntilAuditorKeptBlockAt
+    stageSideReplayBelowHonestTail
 } from "@test/fixtures/DisputeAuditStaging";
-import { postSelfRemovalDispute } from "@test/fixtures/MilestoneProofStartStaging";
+import { stageHeadKeptOnlyAsAuditEvidence } from "@test/fixtures/MilestoneProofStartStaging";
 import { MathTestSession as TestSession } from "@test/harness";
 import { expect } from "chai";
 
@@ -786,24 +784,8 @@ describe("Unit: DisputeValidationService replay persistence", function () {
 
         it("the window reduces to a head the auditor kept only as audit evidence → its reduce data is found", async function () {
             const h = TestSession.getHarness();
-            await h.scenario.preDisputeSetup({
-                timeConfig: { evidenceTime: 15 }
-            });
-            const forkId = h.activeForkId!;
-            const { auditorIndex } = await stageBlindPendingAuditor(
-                h,
-                [0, 1, 2]
-            );
-            await Promise.all(
-                [0, 1, 2].map((index) => h.rpcStub.suppressDisputeKill(index))
-            );
-            await h.dispute.suppressDisputeInitiation([1, 2]);
-            const head = (await h
-                .control(h.getPeer(0))
-                .query.getLatestBlockInfo(forkId)
-                .request())!;
-            await postSelfRemovalDispute(h, 0, () => {}, { malicious: false });
-            await waitUntilAuditorKeptBlockAt(h, auditorIndex, forkId, head);
+            const { forkId, auditorIndex, head } =
+                await stageHeadKeptOnlyAsAuditEvidence(h);
             // premise - the auditor holds no snapshot of the head
             expect(
                 await h

@@ -4,6 +4,7 @@ import { StateSnapshot } from "@/models";
 import type Storage from "@/storage";
 import type { BlockHeight, Bytes, ForkId, Hash } from "@/types/types";
 import type { MathPeerTestHarness } from "@test/fixtures/MathPeerTestHarness";
+import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
 import type { HarnessOptions } from "@test/harness/core/types";
 import { waitFor } from "@test/utils/waitFor";
 import { ethers } from "ethers";
@@ -278,7 +279,8 @@ export async function peerBlockHeights(
 /**
  * Pruning on for every peer: `peerCount` peers finalize `blocksBefore`
  * blocks, the chain adopts a snapshot (the anchor advances), then they
- * finalize `blocksAfter` more. Returns the posted anchor.
+ * finalize `blocksAfter` more. Returns the posted anchor. With `pruned`
+ * false no peer prunes.
  */
 export async function stagePrunedChannelPastAnchor(
     h: MathPeerTestHarness,
@@ -287,10 +289,11 @@ export async function stagePrunedChannelPastAnchor(
         blocksBefore: number;
         blocksAfter: number;
         timeConfig?: HarnessOptions["timeConfig"];
+        pruned?: boolean;
     }
 ): Promise<{ forkId: ForkId; anchor: StateSnapshot }> {
     await h.lifecycle.start(options.peerCount, 0, {
-        configOverrides: PRUNING_ON,
+        configOverrides: options.pruned === false ? {} : PRUNING_ON,
         timeConfig: options.timeConfig
     });
     const forkId = h.activeForkId!;
@@ -311,4 +314,49 @@ export async function stagePrunedChannelPastAnchor(
     });
     await h.assert.sync.peersInSyncWait({ peerIndices });
     return { forkId, anchor };
+}
+
+/** How many proof evidence records of `forkId` peer `peerIndex` holds. */
+export async function forkEvidenceCount(
+    h: MathPeerTestHarness,
+    peerIndex: number,
+    forkId: ForkId
+): Promise<number> {
+    return h.execOnHost(
+        h.getPeer(peerIndex),
+        async (sm, args) =>
+            sm.storage.proofEvidence.getForkEvidence(args.forkId).length,
+        { forkId }
+    );
+}
+
+/**
+ * After a dispute reduced the channel to `newForkId`, peers `peerIndices`
+ * finalize blocks on it and the chain adopts a snapshot of it: the next
+ * chain anchor event. Their writer-timeout checks are off.
+ */
+export async function postNextForkAnchor(
+    h: MathPeerTestHarness,
+    newForkId: ForkId,
+    peerIndices: number[]
+): Promise<void> {
+    // the channel idles while the post waits for the reduction to settle:
+    // no writer timeout races it
+    await suppressTimeoutChecks(h, peerIndices);
+    await h.transition.advanceState({
+        count: 2,
+        waitForPeers: peerIndices,
+        waitForFinalization: true
+    });
+    const posted = await h.transition.postSnapshotWait({
+        forkId: String(newForkId)
+    });
+    if (!posted) throw new Error("postNextForkAnchor: no snapshot posted");
+    // the post waits for the reduction to settle on chain
+    await waitFor(
+        async () =>
+            (await h.channelManager.getStateSnapshot(h.channelId)).forkId ===
+            newForkId,
+        h.event.protocolEventTimeoutMs()
+    );
 }

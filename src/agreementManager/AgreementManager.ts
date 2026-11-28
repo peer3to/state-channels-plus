@@ -44,6 +44,9 @@ const MESSAGE_TYPE_JOIN = id("JOIN_CHANNEL_MESSAGE");
 // the most genesis-hop misses remembered for one fork
 const MAX_GENESIS_HOP_MISSES = 256;
 
+/** A fork the chain anchor left whose proof evidence or history is not released yet. */
+type LeftForkId = ForkId;
+
 /** Where a proof of a fork starts: its same-fork non-genesis anchor, else its genesis. */
 type ProofStart = {
     canUseOnChainSnapshot: boolean;
@@ -154,6 +157,9 @@ class AgreementManager {
     private queuedAdvance?: { forkId: ForkId; done: Promise<void> };
     // the fork of the latest chain anchor this peer applied
     private anchorForkId?: ForkId;
+    // forks the chain anchor left that this node still executed or whose
+    // history a mirrored dispute held back: retried at every anchor event
+    private readonly leftForks = new Set<LeftForkId>();
     // the upper inbound hashes of hops from `forkId`'s genesis whose run event
     // recovery could not supply: a later signer on such a hop is stripped
     // without another chain log scan. Reset on another fork.
@@ -872,22 +878,23 @@ class AgreementManager {
 
     /**
      * The chain anchor is now `anchor`: when it left the fork of the anchor
-     * before it, that fork's proof evidence is dropped.
+     * before it, that fork's proof evidence is dropped once this node no
+     * longer executes it, and its history is pruned once the local diamond
+     * also mirrors no dispute on it. A fork not released yet is retried at
+     * every later anchor event.
      */
     public dropLeftForkEvidence(anchor: StateSnapshot): void {
         const left = this.anchorForkId;
         this.anchorForkId = anchor.forkID;
-        if (left === undefined || left === anchor.forkID) return;
-        this.storage.proofEvidence.dropFork(left);
-        // the fork's block history goes with it (Phase 1)
-        void this.pruneUndisputed(left, "left fork", () =>
-            this.storage.pruneFork(left)
-        ).catch((error) =>
-            this.logger.warn("Left fork not pruned", {
-                forkId: left,
-                error: errorMessage(error)
-            })
-        );
+        if (left !== undefined && left !== anchor.forkID)
+            this.leftForks.add(left);
+        for (const forkId of [...this.leftForks])
+            void this.tryReleaseLeftFork(forkId).catch((error) =>
+                this.logger.warn("Left fork not pruned", {
+                    forkId,
+                    error: errorMessage(error)
+                })
+            );
     }
 
     /** The final blocks (each hop's first block) at `height` that audit evidence of `forkId` holds. */
@@ -1378,16 +1385,34 @@ class AgreementManager {
     }
 
     /**
+     * Releases the left fork `forkId` unless this node still executes it:
+     * drops its proof evidence, then prunes its history (Phase 1). It stays
+     * held while a mirrored dispute keeps its history.
+     */
+    private async tryReleaseLeftFork(forkId: LeftForkId): Promise<void> {
+        if (forkId === this.getActiveForkId()) return;
+        this.storage.proofEvidence.dropFork(forkId);
+        // the fork's block history goes with it (Phase 1)
+        if (
+            await this.pruneUndisputed(forkId, "left fork", () =>
+                this.storage.pruneFork(forkId)
+            )
+        )
+            this.leftForks.delete(forkId);
+    }
+
+    /**
      * Phase 1 pruning of `forkId` by `prune`, skipped while the local
      * diamond mirrors a dispute on that fork. The deletes run in one
-     * synchronous step after that check.
+     * synchronous step after that check. False only when that dispute
+     * held the history back.
      */
     private async pruneUndisputed(
         forkId: ForkId,
         phase: string,
         prune: () => PrunedHistory
-    ): Promise<void> {
-        if (!this.pruneHistory) return;
+    ): Promise<boolean> {
+        if (!this.pruneHistory) return true;
         if (
             await this.localDiamondContract.isForkDisputed(
                 this.channelId,
@@ -1398,9 +1423,10 @@ class AgreementManager {
                 forkId,
                 phase
             });
-            return;
+            return false;
         }
         this.logger.debug("History pruned", { forkId, phase, ...prune() });
+        return true;
     }
 
     /** A stored proof of `start` alone, with its state; undefined when that state is not held. */

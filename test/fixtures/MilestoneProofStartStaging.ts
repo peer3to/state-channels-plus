@@ -7,7 +7,10 @@ import { DisputeFraudProofType } from "@/types/sol-enums";
 import type { ForkId, Hash } from "@/types/types";
 import { Codec, hash, Type } from "@/utils";
 import { hash as randomHash, hexString } from "@test/factory";
-import { stageBlindPendingAuditor } from "@test/fixtures/DisputeAuditStaging";
+import {
+    stageBlindPendingAuditor,
+    waitUntilAuditorKeptBlockAt
+} from "@test/fixtures/DisputeAuditStaging";
 import { readLocalFinalizedHeight } from "@test/fixtures/OlderDisputeStaging";
 import { readDisputeKill } from "@test/fixtures/OmittedInboundJoinerStaging";
 import type { DisputeTamper } from "@test/harness/actions/DisputeTamperingActions";
@@ -762,4 +765,29 @@ function blockHeightOf(confirmation: BlockConfirmationStruct): number {
             Type.Block
         ).transaction.header.transactionCnt
     );
+}
+
+/**
+ * A blind pending auditor (see `stageBlindPendingAuditor`) audits peer 0's
+ * honest self-removal dispute of the head and keeps that head only as audit
+ * evidence. Kills and the other peers' disputes are suppressed, so the window
+ * stays open on `forkId`, which the auditor still executes.
+ */
+export async function stageHeadKeptOnlyAsAuditEvidence(h: MathPeerTestHarness) {
+    await h.scenario.preDisputeSetup({
+        timeConfig: { evidenceTime: 15 }
+    });
+    const forkId = h.activeForkId!;
+    const { auditorIndex } = await stageBlindPendingAuditor(h, [0, 1, 2]);
+    await Promise.all(
+        [0, 1, 2].map((index) => h.rpcStub.suppressDisputeKill(index))
+    );
+    await h.dispute.suppressDisputeInitiation([1, 2]);
+    const head = (await h
+        .control(h.getPeer(0))
+        .query.getLatestBlockInfo(forkId)
+        .request())!;
+    await postSelfRemovalDispute(h, 0, () => {}, { malicious: false });
+    await waitUntilAuditorKeptBlockAt(h, auditorIndex, forkId, head);
+    return { forkId, auditorIndex, head };
 }

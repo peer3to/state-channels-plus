@@ -1,12 +1,19 @@
 import { hash as randomHash, randomAddress, randomWallet } from "../factory";
+import type StateSnapshot from "@/models/StateSnapshot";
 import { BlockOrigin } from "@/storage/QueueStorage";
-import type { BlockHeight } from "@/types/types";
+import type { BlockHeight, Hash } from "@/types/types";
 import { Codec, Type } from "@/utils";
+import { stageHeadKeptOnlyAsAuditEvidence } from "@test/fixtures/MilestoneProofStartStaging";
 import { suppressTimeoutChecks } from "@test/fixtures/OlderDisputeStaging";
 import {
     blockSnapshotHashAt,
     localFinalizedView
 } from "@test/fixtures/ProofOwnerStaging";
+import {
+    forkEvidenceCount,
+    postNextForkAnchor,
+    stagePrunedChannelPastAnchor
+} from "@test/fixtures/PruningStaging";
 import {
     judgeGenesisHopMisses,
     signerAdmissionView,
@@ -1241,6 +1248,111 @@ describe("Unit: AgreementManager", function () {
                 oldest.chainLogQueries,
                 "the oldest miss was evicted at the bound"
             ).to.be.greaterThan(0);
+        });
+    });
+
+    describe("dropLeftForkEvidence", function () {
+        it("the chain anchor leaves the fork while the auditor still executes it → the head it kept only as audit evidence stays: its reduce data is found", async function () {
+            const h = TestSession.getHarness();
+            const { forkId, auditorIndex, head } =
+                await stageHeadKeptOnlyAsAuditEvidence(h);
+
+            const activeForkId = await h.execOnHost(
+                h.getPeer(auditorIndex),
+                async (sm, args) => {
+                    const genesis =
+                        sm.storage.stateSnapshots.getGenesisSnapshotByForkId(
+                            args.forkId
+                        )!;
+                    const snapshotType =
+                        genesis.constructor as typeof StateSnapshot;
+                    // an anchor on the fork, then one on another fork
+                    sm.agreementManager.dropLeftForkEvidence(genesis);
+                    sm.agreementManager.dropLeftForkEvidence(
+                        snapshotType.from({
+                            ...genesis.toStruct(),
+                            forkId: args.otherForkId
+                        })
+                    );
+                    return String(sm.forkId);
+                },
+                { forkId, otherForkId: randomHash() }
+            );
+            const reduce = await h.query.reduceData(forkId, auditorIndex);
+
+            expect(activeForkId, "the auditor's fork").to.equal(forkId);
+            expect(
+                await h
+                    .control(h.getPeer(auditorIndex))
+                    .query.getStateSnapshotStructByHash(
+                        head.stateSnapshotHash as Hash
+                    )
+                    .request(),
+                "the head's snapshot in block history"
+            ).to.equal(null);
+            expect(reduce.threw).to.equal("");
+            expect(reduce.blockCount).to.not.equal(null);
+        });
+
+        it("a dispute moves the chain anchor to the reduced fork while an honest peer's reduction is held → that peer keeps the left fork's proof evidence; once it follows the reduced fork, the next anchor event drops it", async function () {
+            const h = TestSession.getHarness();
+            const { forkId: leftForkId } = await stagePrunedChannelPastAnchor(
+                h,
+                { peerCount: 4, blocksBefore: 2, blocksAfter: 1, pruned: false }
+            );
+            const maliciousPeerIndex = (await h.query.getNextPeerToWrite())
+                .index;
+            const [heldIndex, ...otherIndices] = h.peers
+                .map((peer) => peer.index)
+                .filter((index) => index !== maliciousPeerIndex);
+            const heldReduction = await h.rpcStub.holdReductionAttempt(
+                heldIndex,
+                "attempt"
+            );
+            const { newForkId } = await h.scenario.disputeWithReduction({
+                maliciousPeerIndex,
+                honestPeerIndices: otherIndices
+            });
+            // its mirror holds the adoption: the anchor left the fork while
+            // its held reduction keeps it on that fork
+            await waitFor(
+                async () =>
+                    String(
+                        (
+                            await h.query.getLocalStateSnapshot(
+                                h.getPeer(heldIndex)
+                            )
+                        ).forkID
+                    ) === String(newForkId),
+                h.event.protocolEventTimeoutMs()
+            );
+            const activeForkId = await h
+                .control(h.getPeer(heldIndex))
+                .query.getForkId()
+                .request();
+            const keptCount = await forkEvidenceCount(h, heldIndex, leftForkId);
+            await heldReduction.release();
+            await waitFor(
+                async () =>
+                    (await h
+                        .control(h.getPeer(heldIndex))
+                        .query.getForkId()
+                        .request()) === newForkId,
+                h.event.protocolEventTimeoutMs()
+            );
+            await postNextForkAnchor(h, newForkId, [
+                heldIndex,
+                ...otherIndices
+            ]);
+
+            expect(activeForkId, "the held peer's fork").to.equal(leftForkId);
+            expect(keptCount, "kept after the anchor left").to.be.greaterThan(
+                0
+            );
+            expect(
+                await forkEvidenceCount(h, heldIndex, leftForkId),
+                "after the next anchor event"
+            ).to.equal(0);
         });
     });
 });
