@@ -3,6 +3,41 @@
 > **Agent assessment:** In progress.
 > **Engineer disposition:** Pending.
 
+## Storage proof verifier for Frontier chains — 2026-11-18
+
+What changed (light client card, Trello 399):
+
+1. [SubstrateTrieProof.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof.ts.md):
+   reads one key from a Substrate read proof. It decodes nodes as `sp-trie`'s node codec does (polkadot-sdk
+   `stable2603`), follows the key from the state root, and tells a key the nodes show to be absent (`null`)
+   from a proof that does not reach the key (`StorageProofError`).
+2. [FrontierStorageProofVerifier.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierStorageProofVerifier.ts.md):
+   derives the trie key of pallet-evm's `AccountStorages(address, slot)` entry and returns 32-byte values,
+   zero for an absent entry.
+3. [AStorageProofVerifier.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/AStorageProofVerifier.ts.md):
+   the interface further representations implement.
+
+Requirements: [`REQ-STPROOF-1-J20P5Y` (A slot value is accepted only when the proof decides it)](../specification/runtime/storage-proofs.md#req-stproof-1-j20p5y) and [`REQ-STPROOF-2-ABCQR7` (One verifier per proof representation)](../specification/runtime/storage-proofs.md#req-stproof-2-abcqr7). Nothing calls the verifier yet. The key
+prefix is a constant; its correctness rests on the real-chain test, where the proven value equals the
+chain's own `eth_getStorageAt`. New direct dependency `@noble/hashes` 1.4.0 for Blake2b, a version the
+lockfile already held. The proofs in the tests come from Moonbeam and from a peer3 dev node
+(`zero-fee-node` at d845dbfb, run locally on 2026-11-18). On that node the same run showed that
+`chain_getHeader` and `state_getReadProof` answer on the Ethereum RPC port, that the Ethereum block's
+`stateRoot` differs from the header's and refuses the proof, and that the header digest carries the
+Ethereum block hash.
+
+Added the same day for pushed blocks ([`REQ-STPROOF-3-NVJGR0` (A pushed block is accepted only under its own header)](../specification/runtime/storage-proofs.md#req-stproof-3-nvjgr0)):
+[lightClientWire.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire.ts.md) names the
+three `lightClient_*` methods and the pushed block;
+[SubstrateHeader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader.ts.md)
+hashes a header and reads the Ethereum block hash from its Frontier digest log;
+[proveFrontierStorageBlock.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/proveFrontierStorageBlock.ts.md)
+checks a pushed block; [ScaleReader.ts](../implementation/source/src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader.ts.md)
+holds the SCALE reading the trie proof and the header share. No node serves the `lightClient_*` methods
+yet. A test-owned sidecar (`test/fixtures/lightClient/LightClientSidecar.ts`) stands in: a WebSocket proxy
+in front of a peer3 node that builds the pushed blocks from the node's wildcard storage subscription,
+which the node allows only with unsafe RPC methods. Nothing in `src` calls the new code yet.
+
 ## Discovery joins after the dispose cut — 2026-11-02
 
 What changed (Luke: refuse a late join where it registers):
