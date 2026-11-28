@@ -6,17 +6,12 @@ import AAccountProofVerifier, {
 } from "../AAccountProofVerifier";
 import StorageProofError from "../StorageProofError";
 import type { Bytes, ChecksumAddress, Hash } from "@/types/types";
-import { hexlify, toBigInt } from "ethers";
+import { hexlify } from "ethers";
 
 const U32_LENGTH = 4;
 const U128_LENGTH = 16;
 /** `AccountInfo`: nonce and three reference counts, then four balances. */
 const ACCOUNT_INFO_LENGTH = 4 * U32_LENGTH + 4 * U128_LENGTH;
-
-/** A SCALE fixed-width unsigned integer, which is little-endian. */
-function readUnsigned(reader: ScaleReader, length: number): bigint {
-    return toBigInt(reader.take(length).slice().reverse());
-}
 
 /**
  * Accounts of a Frontier chain whose accounts are the 20-byte addresses
@@ -64,12 +59,12 @@ export default class FrontierAccountProofVerifier extends AAccountProofVerifier 
                 `The proof holds a ${value.length}-byte account for ${address}`
             );
         const reader = new ScaleReader(value, "An account");
-        const nonce = readUnsigned(reader, U32_LENGTH);
+        const nonce = reader.readUnsigned(U32_LENGTH);
         // consumers, providers and sufficients
         reader.take(3 * U32_LENGTH);
-        const free = readUnsigned(reader, U128_LENGTH);
-        const reserved = readUnsigned(reader, U128_LENGTH);
-        const frozen = readUnsigned(reader, U128_LENGTH);
+        const free = reader.readUnsigned(U128_LENGTH);
+        const reserved = reader.readUnsigned(U128_LENGTH);
+        const frozen = reader.readUnsigned(U128_LENGTH);
         // pallet-evm reports what a transfer may take and keep the account
         // alive: a freeze counts against the reserved balance first, and the
         // existential deposit always stays

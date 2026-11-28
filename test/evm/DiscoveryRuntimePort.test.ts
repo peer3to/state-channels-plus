@@ -15,11 +15,11 @@ import {
     setup
 } from "@test/fixtures/DiscoveryRuntimePortStaging";
 import { assertPendingLeaveGuard } from "@test/fixtures/PendingLeaveStaging";
-import { rejectionOf } from "@test/fixtures/ProvenSubmissionFailureStaging";
 import { waitUntilScheduledReductionEntered } from "@test/fixtures/ReductionScheduleStaging";
 import { runtimeIsClosed } from "@test/fixtures/RuntimeRootObservation";
 import { TargetedChannelJoinFixture } from "@test/fixtures/TargetedChannelJoinFixture";
 import { MathTestSession as TestSession } from "@test/harness";
+import { rejectionOf } from "@test/utils/rejectionOf";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";

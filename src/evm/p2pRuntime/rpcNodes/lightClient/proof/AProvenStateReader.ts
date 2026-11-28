@@ -18,6 +18,18 @@ export type ProvenBlock = {
     stateRoot: string;
 };
 
+/** The block values a contract call can read. */
+export type BlockEnvironment = {
+    number: bigint;
+    /** Seconds. */
+    timestamp: bigint;
+    coinbase: string;
+    gasLimit: bigint;
+    difficulty: bigint;
+    prevRandao: string;
+    baseFeePerGas: bigint;
+};
+
 /** What a read asks of one account. */
 export type AccountStateRead = {
     address: ChecksumAddress;
@@ -48,6 +60,13 @@ export default abstract class AProvenStateReader {
      * word; its hash is computed here, not taken from the node.
      */
     abstract head(): Promise<ProvenBlock>;
+
+    /**
+     * The values a contract call reads of `block`, as `block` commits to
+     * them. Throws {@link StorageProofError} when the node does not prove
+     * them.
+     */
+    abstract environment(block: ProvenBlock): Promise<BlockEnvironment>;
 
     /**
      * What `reads` ask, as `block`'s state root commits to it, in the order

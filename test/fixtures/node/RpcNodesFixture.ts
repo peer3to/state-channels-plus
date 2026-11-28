@@ -1248,7 +1248,7 @@ export async function assertTransactionWaitResolvesAfterReconnect(): Promise<voi
 }
 
 /** A logger whose entries the test reads back. */
-function recordingLogger(level: "debug" | "warn"): {
+export function recordingLogger(level: "debug" | "warn" | "error"): {
     logger: Logger;
     entries: () => LogEntry[];
 } {

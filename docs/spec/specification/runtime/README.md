@@ -59,7 +59,7 @@ operational limits. It hosts every other system without changing their observabl
   [`INV-SDK-ARCH-1-KNAX7F` (Coherent participant state)](sdk.md#inv-sdk-arch-1-knax7f), `REQ-SDK-ARCH-*` ([sdk.md](./sdk.md)); `REQ-CONFIG-*`
   ([configuration.md](./configuration.md)); `INV-CHAINOBS-*`, `REQ-CHAINOBS-*`
   ([chain-observation.md](./chain-observation.md)); `INV-LOG-*`, `REQ-LOG-*` ([log-collection.md](./log-collection.md)); `REQ-STPROOF-*`
-  ([storage-proofs.md](./storage-proofs.md)). Durable storage is its own system:
+  ([storage-proofs.md](./storage-proofs.md)); `REQ-LC-*` ([light-client.md](./light-client.md)). Durable storage is its own system:
   [../storage/README.md](../storage/README.md).
 - **Failure and recovery outcomes.** Context failure is contained at its boundary; restart recovers
   from the storage system's durable set and re-enters the block-progression pipeline without

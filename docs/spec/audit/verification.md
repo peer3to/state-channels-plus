@@ -137,6 +137,19 @@ distributed worker, as for the suite above, so CI does not run this suite yet; a
 of another chain. A read at the genesis block is refused like any header without an Ethereum block hash
 (`T2.P2`).
 
+[LightClientProvider.test.ts](../verification/tests/test/lightClient/LightClientProvider.test.ts.md) (15
+declarations, added 2026-11-19) covers the 15 planned cases of [`REQ-LC-1-JT5PKT.T1`](../specification/runtime/light-client.md#req-lc-1-jt5pkt.t1), [`REQ-LC-2-PMY1VG.T1`](../specification/runtime/light-client.md#req-lc-2-pmy1vg.t1), [`REQ-LC-3-W7RRHM.T1`](../specification/runtime/light-client.md#req-lc-3-w7rrhm.t1)
+and [`REQ-LC-4-E29Y46.T1`](../specification/runtime/light-client.md#req-lc-4-e29y46.t1) and the live case of [`REQ-STPROOF-6-CASBQP.T2`](../specification/runtime/storage-proofs.md#req-stproof-6-casbqp.t2), each on a peer3 node of its own behind
+`--lc-tests`. The provider is the SDK's own, built by `createRpcNodesProvider`; the oracles are the node's
+answers to the same reads, the provider's counters, the requests a proxy saw and the logged errors.
+[FrontierEthereumHeader.test.ts](../verification/tests/test/unit/FrontierEthereumHeader.test.ts.md) (8
+declarations) covers [`REQ-STPROOF-6-CASBQP.T1`](../specification/runtime/storage-proofs.md#req-stproof-6-casbqp.t1) on a block entry recorded from a peer3 dev node, with that node's
+Ethereum block hash as the oracle for every header field. Each of 22 single-line faults put into the provider, the light client, its state,
+the parser, the reader's block values, the chain's constants and the factory failed its declaration, and
+all passed with the source restored. Not covered: the same suite in CI, because no
+distributed worker has the node binary; more than one endpoint; a read while the provider's endpoint is
+down; the pass limit; the full SDK suite with the light client on, which is the farm rollout.
+
 ## WebAssembly diagnostics and browser worker failure tests — 2026-10-29
 
 PR #579 review cards TO4, TO5, TY2 and TY3.

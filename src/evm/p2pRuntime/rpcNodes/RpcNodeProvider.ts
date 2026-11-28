@@ -177,6 +177,11 @@ function getSocketConnectionError(event: unknown): Error {
     return new Error("WebSocket connection failed");
 }
 
+/** The params of a JSON-RPC `request` as a list. */
+export function paramsOf(request: JsonRpcPayload): unknown[] {
+    return Array.isArray(request.params) ? request.params : [request.params];
+}
+
 /**
  * Resolves with the reason once the socket errors or closes. ethers never
  * reconnects its socket.
@@ -374,9 +379,7 @@ export default class RpcNodeProvider extends JsonRpcApiProvider {
     private async forward(request: JsonRpcPayload): Promise<JsonRpcResult> {
         for (;;) {
             const connection = await this.awaitConnection(request.method);
-            const params = Array.isArray(request.params)
-                ? request.params
-                : [request.params];
+            const params = paramsOf(request);
             const outcome = await this.sendOn(
                 connection,
                 request.method,
