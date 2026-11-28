@@ -2944,20 +2944,25 @@ restarted node from signing before it restores its own head.
 ### FIND-DISPUTE-12-V556W3
 
 **Limit:** the chain's `BlockDoubleSign` proof slashes any signer whose two signatures cover two
-different blocks at one `(forkId, height)`, author or co-signer. The node detects a double sign only
-when both blocks have the same author (`ValidationService.checkConflictingBlock`), and
-`FraudProofService.createDoubleSignProof` builds the proof against the block's signer. A co-signer of
-two different blocks at one height (card case 2, a tail-block conflict) is therefore never
-reported, although the chain would slash it.
+different blocks at one `(forkId, height)`, author or co-signer. The node detected a double sign only
+when both blocks had the same author, so a co-signer of two different blocks at one height (card
+case 2, a tail-block conflict) was never reported, although the chain would slash it.
 
-**Status:** Open; medium. Decided (Ljuba, 2026-11-26): widen detection and submission to every
-co-signer, off-chain only, after the stop-signing mechanism lands, so that an honest node that
-restarts without persistence or switches branches is not slashed.
+**Status:** Resolved (decided by Ljuba, 2026-11-26 and 2026-11-28; off-chain only). The block
+pipeline proves every signer of both blocks at one coordinate except the node itself
+([`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)), and a sync proof kept out does the same against the node's own blocks
+([`REQ-SYNC-5-M7W6JX` (Install only from where the requester stands)](../specification/peer-communication/synchronization.md#req-sync-5-m7w6jx)): live and forward sync dispute at once, dispute replay's proofs ride
+with the auditor's own upload, only-reverse sync only keeps them. Residual: only the node's own
+stored blocks are compared, so a pruned or never-held height shows no double sign, and a
+non-participant only keeps the proofs.
 
 **Evidence:**
 [FraudProofFacet.t.sol](../verification/tests/test/V1/StateChannelDiamondProxy/FraudProofFacet.t.sol.md)
 (`test_applyFraudProofs_blockDoubleSignByACoSignerSlashesTheCoSignerNotTheAuthor`) shows the chain
-side; the node side has no test yet.
+side; [ValidationService.test.ts](../verification/tests/test/unit/ValidationService.test.ts.md),
+[SpectateSyncProofStart.test.ts](../verification/tests/test/unit/SpectateSyncProofStart.test.ts.md) and
+[E2E-FraudProofsBlockConfirmation.test.ts](../verification/tests/test/e2e/E2E-FraudProofsBlockConfirmation.test.ts.md)
+show the node side.
 
 <a id="find-dispute-13-1bw4sw"></a>
 

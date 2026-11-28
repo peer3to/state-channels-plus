@@ -4,6 +4,7 @@
 
 ## Requirements
 
+- [`REQ-BLOCK-PIPE-2-PCXNT6` (Complete pre-execution validation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-2-pcxnt6)
 - [`REQ-BLOCK-PIPE-8-N529VH` (Evidence precedes escalation)](../../../../../specification/block-progression/block-processing.md#req-block-pipe-8-n529vh)
 
 ## UNIT-TEST-FRAUD-PROOF-SERVICE-1-RF6J18

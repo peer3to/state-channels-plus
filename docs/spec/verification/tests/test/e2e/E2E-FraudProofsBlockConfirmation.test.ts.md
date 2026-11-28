@@ -46,8 +46,9 @@ against it and starts no dispute, and the on-chain slash set does not change.
 - `fresh block with a non-participant signature applies after dropping it`: REQ-BLOCK-PIPE-11-DCHAJ2.T1.P2, REQ-BLOCK-PIPE-11-DCHAJ2.T1.P3
 - `canonical block encoding rejects Byzantine relay and calldata posting`: REQ-BLOCK-PIPE-2-PCXNT6.T1.P11
 - `double sign → BlockDoubleSign`: REQ-BLOCK-PIPE-8-N529VH.T1.P1, INV-FIN-2-MK27J6.T1.P4, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P1
-- `wrong genesis → WrongGenesis`: REQ-BLOCK-PIPE-8-N529VH.T1.P5, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P7
-- `wrong genesis after a snapshot moved the fork past genesis → the forger is cut, no fraud proof, no dispute, nobody slashed`: INV-ENFFP-1-BGVZN4.T1.P22
+- `a block at a taken height by another author, confirmed by another signer of the stored block, reaches one honest participant → it proves both signers' double signs and disputes; the chain slashes the two of them and not the honest participant`: REQ-BLOCK-PIPE-2-PCXNT6.T2.P12
+- `wrong genesis → WrongGenesis, then BlockDoubleSign: the forger also signed the stored block 0`: REQ-BLOCK-PIPE-8-N529VH.T1.P5, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P7, REQ-BLOCK-PIPE-2-PCXNT6.T2.P13
+- `wrong genesis after a snapshot moved the fork past genesis → the forger is cut and no wrong-genesis proof is built; it also signed the stored block 0, so the honest peers prove its double sign, dispute, and the chain slashes it alone`: INV-ENFFP-1-BGVZN4.T1.P22
 - `unexpected next leader → BlockInvalidStateTransition`: REQ-FIN-5-DH29VZ.T1.P4
 - `invalid timestamp → InvalidTimestamp`: REQ-BLOCK-PIPE-8-N529VH.T1.P6, UNIT-TEST-FRAUD-PROOF-FACET-1-BWVNPG.P8
 - `broken inbound chain → BlockInvalidStateTransition`: REQ-BLOCK-PIPE-8-N529VH.T1.P8

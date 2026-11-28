@@ -73,7 +73,7 @@ once the chain is past genesis, does not abort and stores no proof.
 - `next block, wrong previousBlockHash → blockIsNotLinkedAndIsNotFirstBlock → DISCONNECT`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P11
 - `height-0 block not linked to genesis → wrongGenesisDetected → DISPUTE + WrongGenesis proof`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P13, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P24
 - `height-0 block not linked to genesis while the chain holds the fork past genesis, no block 0 stored → dropped, no fraud proof, no dispute, nobody disconnected`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P27
-- `conflict at height 0 from another author while the chain holds the fork past genesis → DISCONNECT of sources and author, no fraud proof, no dispute`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P28
+- `conflict at height 0 from another author while the chain holds the fork past genesis → DISCONNECT of sources and author and no wrong-genesis proof; that author also signed the stored block 0, so it gets a double-sign proof and the fork is disputed`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P28, REQ-BLOCK-PIPE-2-PCXNT6.T2.P11
 - `linked next block by the wrong leader → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P12, UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P11, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P25
 - `outsider author relayed by another peer → relayer and author both cut`: UNIT-TEST-BLOCKVALIDATION-STRATEGY-1-TXXZHH.P9, REQ-BLOCK-PIPE-3-WW2SB7.T1.P4
 - `spectating: missing genesis → supplier and author both cut, spectator keeps spectating`: UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P13, REQ-BLOCK-PIPE-3-WW2SB7.T1.P10
@@ -83,9 +83,13 @@ once the chain is past genesis, does not abort and stores no proof.
 - `linked conflict at a taken height by a different author → invalidStateTransitionDetected → DISPUTE`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P15
 - `linked conflict below the executed head by a different author → invalidStateTransitionDetected → DISPUTE + InvalidStateTransition proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P39, REQ-BLOCK-PIPE-2-PCXNT6.T2.P5
 - `the leader's real next block over another author's block a dispute replay persisted above the executed head on the disputed fork → no conflict, the disputed-fork gate discards it: not executed, head unchanged, no fraud proof, no dispute`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P38, REQ-BLOCK-PIPE-2-PCXNT6.T2.P4
-- `conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16
+- `conflict at height 0, not linked, different author → wrongGenesisDetected → DISPUTE + WrongGenesis proof, then a double-sign proof against that author, which signed the stored block 0 too`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P16, REQ-BLOCK-PIPE-2-PCXNT6.T2.P10
 - `the peer's own stored block replayed verbatim → no conflict, never a double-sign of its honest author`: none
 - `conflict at a taken height, not linked, different author → conflictingButNotLinkedBlockDetected → DISCONNECT`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P18
+- `an unlinked block at a taken height by another author, confirmed by another signer of the stored block → each of the two signed both blocks: one BlockDoubleSign proof per signer over the stored and the arriving block, the fork is disputed, and the unlinked block still cuts its senders`: REQ-BLOCK-PIPE-2-PCXNT6.T2.P6
+- `a linked block at a taken height by another author, confirmed by another signer of the stored block → the author's invalid-state-transition proof is stored first, then a BlockDoubleSign proof for each signer of both blocks, and the fork is disputed`: REQ-BLOCK-PIPE-2-PCXNT6.T2.P7
+- `a conflicting block at a taken height that the peer itself also confirmed → the peer builds no proof against its own address`: REQ-BLOCK-PIPE-2-PCXNT6.T2.P8
+- `dispute replay meets a block at a taken height confirmed by another signer of the stored block → both signers' double-sign proofs are stored and the peer's own dispute, which a kill rides with, lists both as slashed`: REQ-BLOCK-PIPE-2-PCXNT6.T2.P9
 - `first block with a timestamp before genesis → objectiveInvalidTimestampDetected → DISPUTE + InvalidTimestamp proof`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P13, UNIT-TEST-SPECTATINGVALIDATION-STRATEGY-1-CTD8AH.P26
 - `non-first block, bad timestamp, previous block not on-chain → DISPUTE + InvalidTimestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P19
 - `previous-block calldata recovered, candidate now valid → recursive pass returns SUCCESS and caches the timestamp`: UNIT-TEST-VALIDATION-SERVICE-1-3EJ7YV.P4
