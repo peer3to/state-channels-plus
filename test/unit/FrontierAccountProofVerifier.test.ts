@@ -1,14 +1,11 @@
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import FrontierAccountProofVerifier from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierAccountProofVerifier";
-import {
-    accountCodeKey,
-    systemAccountKey
-} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
+
 import { encodeCompact } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader";
 import {
     encodedAccountInfo,
-    rootOfSingleNodeTrie,
-    singleLeafNode
+    provenFromSingleAccount,
+    provenFromSingleCode
 } from "@test/fixtures/lightClient/craftedTrieNodes";
 import { peer3AccountProof } from "@test/fixtures/lightClient/peer3AccountProof";
 import { expect } from "chai";
@@ -25,25 +22,6 @@ const {
     sharedProofNodes
 } = peer3AccountProof;
 const verifier = new FrontierAccountProofVerifier(existentialDeposit);
-
-/** The account the verifier proves from a trie that holds only `encodedAccount`. */
-function provenFromSingleAccount(encodedAccount: string) {
-    const node = singleLeafNode(
-        systemAccountKey(funded.address),
-        encodedAccount
-    );
-    return verifier.provenAccount(rootOfSingleNodeTrie(node), funded.address, [
-        node
-    ]);
-}
-
-/** The code the verifier proves from a trie that holds only `encodedCode`. */
-function provenFromSingleCode(encodedCode: string) {
-    const node = singleLeafNode(accountCodeKey(contract.address), encodedCode);
-    return verifier.provenCode(rootOfSingleNodeTrie(node), contract.address, [
-        node
-    ]);
-}
 
 describe("FrontierAccountProofVerifier", function () {
     it("proves a funded account's nonce and balance to the node's own answers", function () {
@@ -84,6 +62,8 @@ describe("FrontierAccountProofVerifier", function () {
     it("keeps back the existential deposit of a balance nothing is frozen of", function () {
         expect(
             provenFromSingleAccount(
+                verifier,
+                funded.address,
                 encodedAccountInfo({
                     nonce: 7n,
                     free: 10n * existentialDeposit,
@@ -97,6 +77,8 @@ describe("FrontierAccountProofVerifier", function () {
     it("keeps back a frozen balance that exceeds the existential deposit", function () {
         expect(
             provenFromSingleAccount(
+                verifier,
+                funded.address,
                 encodedAccountInfo({
                     nonce: 0n,
                     free: 10n * existentialDeposit,
@@ -111,6 +93,8 @@ describe("FrontierAccountProofVerifier", function () {
         // one deposit more is frozen than reserved: the deposit still stays
         expect(
             provenFromSingleAccount(
+                verifier,
+                funded.address,
                 encodedAccountInfo({
                     nonce: 0n,
                     free: 10n * existentialDeposit,
@@ -122,6 +106,8 @@ describe("FrontierAccountProofVerifier", function () {
         // three deposits more are frozen than reserved
         expect(
             provenFromSingleAccount(
+                verifier,
+                funded.address,
                 encodedAccountInfo({
                     nonce: 0n,
                     free: 10n * existentialDeposit,
@@ -133,6 +119,8 @@ describe("FrontierAccountProofVerifier", function () {
         // more is reserved than frozen
         expect(
             provenFromSingleAccount(
+                verifier,
+                funded.address,
                 encodedAccountInfo({
                     nonce: 0n,
                     free: 10n * existentialDeposit,
@@ -146,6 +134,8 @@ describe("FrontierAccountProofVerifier", function () {
     it("proves a free balance of no more than what is kept back as zero", function () {
         const balanceOf = (free: bigint) =>
             provenFromSingleAccount(
+                verifier,
+                funded.address,
                 encodedAccountInfo({
                     nonce: 0n,
                     free,
@@ -173,13 +163,23 @@ describe("FrontierAccountProofVerifier", function () {
         });
         expect(dataLength(account)).to.equal(80);
         expect(() =>
-            provenFromSingleAccount(dataSlice(account, 0, 79))
+            provenFromSingleAccount(
+                verifier,
+                funded.address,
+                dataSlice(account, 0, 79)
+            )
         ).to.throw(StorageProofError, /79-byte account/);
         expect(() =>
-            provenFromSingleAccount(concat([account, "0x00"]))
+            provenFromSingleAccount(
+                verifier,
+                funded.address,
+                concat([account, "0x00"])
+            )
         ).to.throw(StorageProofError, /81-byte account/);
         // the same one-entry trie with the whole entry is accepted
-        expect(provenFromSingleAccount(account)).to.deep.equal({
+        expect(
+            provenFromSingleAccount(verifier, funded.address, account)
+        ).to.deep.equal({
             nonce: 1n,
             balance: existentialDeposit
         });
@@ -265,14 +265,26 @@ describe("FrontierAccountProofVerifier", function () {
 
     it("throws when the proven code is not as long as it announces", function () {
         expect(() =>
-            provenFromSingleCode(concat([encodeCompact(5), "0x600060"]))
+            provenFromSingleCode(
+                verifier,
+                contract.address,
+                concat([encodeCompact(5), "0x600060"])
+            )
         ).to.throw(StorageProofError, /ends early/);
         expect(() =>
-            provenFromSingleCode(concat([encodeCompact(2), "0x600060"]))
+            provenFromSingleCode(
+                verifier,
+                contract.address,
+                concat([encodeCompact(2), "0x600060"])
+            )
         ).to.throw(StorageProofError, /longer than it announces/);
         // the same one-entry trie with the announced length is accepted
         expect(
-            provenFromSingleCode(concat([encodeCompact(3), "0x600060"]))
+            provenFromSingleCode(
+                verifier,
+                contract.address,
+                concat([encodeCompact(3), "0x600060"])
+            )
         ).to.equal("0x600060");
     });
 

@@ -1,6 +1,13 @@
 // @spec-test-coverage-ignore: hand-encoded trie nodes used by the mapped SubstrateTrieProof, FrontierStorageProofVerifier and FrontierAccountProofVerifier declarations
 
+import type FrontierAccountProofVerifier from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierAccountProofVerifier";
+import {
+    accountCodeKey,
+    systemAccountKey
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import { encodeCompact } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader";
+import SubstrateTrieProof from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
+import type { ChecksumAddress } from "@/types/types";
 import { blake2b } from "@noble/hashes/blake2b";
 import { concat, dataLength, getBytes, hexlify, toBeHex } from "ethers";
 
@@ -79,3 +86,49 @@ export const craftedTrieNodes = {
     /** A leaf whose value length is a SCALE big-integer compact. */
     bigIntegerLength: "0x4003"
 };
+
+/** A key any one-node trie of these tests holds its entry under. */
+export const ANY_TRIE_KEY = "0x0a";
+
+export function readCrafted(encodedNode: string, key = ANY_TRIE_KEY) {
+    return new SubstrateTrieProof([encodedNode]).read(
+        rootOfSingleNodeTrie(encodedNode),
+        key
+    );
+}
+
+/** `length` bytes that differ from their neighbours, so a misread length shows. */
+export function patternedValue(length: number): string {
+    return hexlify(Uint8Array.from({ length }, (_, index) => index % 251));
+}
+
+/** What a trie of one leaf that holds `value` under `ANY_TRIE_KEY` reads for it. */
+export function readFromSingleLeaf(value: string) {
+    const node = singleLeafNode(ANY_TRIE_KEY, value);
+    return hexlify(
+        new SubstrateTrieProof([node]).read(
+            rootOfSingleNodeTrie(node),
+            ANY_TRIE_KEY
+        )!
+    );
+}
+
+/** The account `verifier` proves for `address` from a trie that holds only `encodedAccount`. */
+export function provenFromSingleAccount(
+    verifier: FrontierAccountProofVerifier,
+    address: ChecksumAddress,
+    encodedAccount: string
+) {
+    const node = singleLeafNode(systemAccountKey(address), encodedAccount);
+    return verifier.provenAccount(rootOfSingleNodeTrie(node), address, [node]);
+}
+
+/** The code `verifier` proves for `address` from a trie that holds only `encodedCode`. */
+export function provenFromSingleCode(
+    verifier: FrontierAccountProofVerifier,
+    address: ChecksumAddress,
+    encodedCode: string
+) {
+    const node = singleLeafNode(accountCodeKey(address), encodedCode);
+    return verifier.provenCode(rootOfSingleNodeTrie(node), address, [node]);
+}

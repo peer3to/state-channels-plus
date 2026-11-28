@@ -2,9 +2,12 @@ import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/Stora
 import { encodeCompact } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader";
 import SubstrateTrieProof from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateTrieProof";
 import {
+    ANY_TRIE_KEY,
     craftedTrieNodes,
     oneChildBranch,
-    rootOfSingleNodeTrie,
+    patternedValue,
+    readCrafted,
+    readFromSingleLeaf,
     singleLeafNode,
     twoEntryBranch
 } from "@test/fixtures/lightClient/craftedTrieNodes";
@@ -15,30 +18,6 @@ import { dataLength, hexlify } from "ethers";
 const { stateRoot, slots, sharedProofNodes, firstSlotProofNodes, account } =
     moonbeamStorageProof;
 const [firstSlot, , emptySlot] = slots;
-const ANY_KEY = "0x0a";
-
-function readCrafted(encodedNode: string, key = ANY_KEY) {
-    return new SubstrateTrieProof([encodedNode]).read(
-        rootOfSingleNodeTrie(encodedNode),
-        key
-    );
-}
-
-/** `length` bytes that differ from their neighbours, so a misread length shows. */
-function patternedValue(length: number): string {
-    return hexlify(Uint8Array.from({ length }, (_, index) => index % 251));
-}
-
-/** What a trie of one leaf that holds `value` under `ANY_KEY` reads for it. */
-function readFromSingleLeaf(value: string) {
-    const node = singleLeafNode(ANY_KEY, value);
-    return hexlify(
-        new SubstrateTrieProof([node]).read(
-            rootOfSingleNodeTrie(node),
-            ANY_KEY
-        )!
-    );
-}
 
 describe("SubstrateTrieProof", function () {
     it("reads a value the trie holds inside its leaf", function () {
@@ -62,9 +41,9 @@ describe("SubstrateTrieProof", function () {
         const value = patternedValue(100);
         // version 0 never hashes a value: the leaf holds all 100 bytes
         expect(encodeCompact(100)).to.have.length(2);
-        expect(dataLength(singleLeafNode(ANY_KEY, value))).to.be.greaterThan(
-            100
-        );
+        expect(
+            dataLength(singleLeafNode(ANY_TRIE_KEY, value))
+        ).to.be.greaterThan(100);
         expect(readFromSingleLeaf(value)).to.equal(value);
     });
 

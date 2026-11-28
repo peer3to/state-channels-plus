@@ -1,7 +1,10 @@
 import StorageProofError from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/StorageProofError";
 import { encodeCompact } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/ScaleReader";
 import SubstrateHeader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader";
-import { peer3PushedBlocks } from "@test/fixtures/lightClient/peer3PushedBlocks";
+import {
+    peer3PushedBlocks,
+    withLogs
+} from "@test/fixtures/lightClient/peer3PushedBlocks";
 import { expect } from "chai";
 import { hexlify } from "ethers";
 
@@ -12,10 +15,6 @@ const frontierLog = header.digest.logs.find((log) =>
     log.startsWith("0x0466726f6e")
 )!;
 const otherLogs = header.digest.logs.filter((log) => log !== frontierLog);
-
-function withLogs(logs: string[]) {
-    return new SubstrateHeader({ ...header, digest: { logs } });
-}
 
 describe("SubstrateHeader", function () {
     it("hashes each recorded header to the block hash its node reports", function () {
@@ -49,7 +48,7 @@ describe("SubstrateHeader", function () {
 
     it("throws when the digest holds no Frontier log", function () {
         expect(otherLogs.length).to.equal(header.digest.logs.length - 1);
-        expect(() => withLogs(otherLogs).ethereumBlockHash()).to.throw(
+        expect(() => withLogs(header, otherLogs).ethereumBlockHash()).to.throw(
             StorageProofError,
             /holds 0 Frontier logs/
         );
@@ -57,7 +56,10 @@ describe("SubstrateHeader", function () {
 
     it("throws when the digest holds two Frontier logs", function () {
         expect(() =>
-            withLogs([...header.digest.logs, frontierLog]).ethereumBlockHash()
+            withLogs(header, [
+                ...header.digest.logs,
+                frontierLog
+            ]).ethereumBlockHash()
         ).to.throw(StorageProofError, /holds 2 Frontier logs/);
     });
 
@@ -65,7 +67,7 @@ describe("SubstrateHeader", function () {
         // a consensus log of engine "fron" whose one data byte is post-log variant 2
         const blockLog = "0x0466726f6e0402";
         expect(() =>
-            withLogs([...otherLogs, blockLog]).ethereumBlockHash()
+            withLogs(header, [...otherLogs, blockLog]).ethereumBlockHash()
         ).to.throw(StorageProofError, /holds no block hash/);
     });
 
@@ -73,7 +75,7 @@ describe("SubstrateHeader", function () {
         // variant 1 followed by one byte where 32 are due
         const shortLog = "0x0466726f6e080100";
         expect(() =>
-            withLogs([...otherLogs, shortLog]).ethereumBlockHash()
+            withLogs(header, [...otherLogs, shortLog]).ethereumBlockHash()
         ).to.throw(StorageProofError, /header digest log ends early/);
     });
 
