@@ -10,7 +10,9 @@ The suite builds a real `Storage` and stores one or two fork histories through t
 own snapshot, state and change point; some cases let two heights, a height and the genesis, or a
 second fork's genesis share one state. It then calls each store's new delete and the three
 `Storage` prune operations, and asserts the returned counts or hashes and, per height, which blocks,
-snapshots, states and change points stay.
+snapshots, states and change points stay. Two cases read `getPreviousRelevantTimestamp` after
+`pruneSkippedHistory`: at the final point (its block below deleted) and right above it (the
+final-point block held).
 
 ## Tests
 
@@ -26,6 +28,8 @@ snapshots, states and change points stay.
 - `an anchor at the fork genesis (-1) → block 0 is skipped history too`: UNIT-TEST-STORAGE-FACADE-3-5EA2ND.P2
 - `a skipped block whose state is also the final point's → that shared state stays, the other skipped state is gone`: UNIT-TEST-STORAGE-FACADE-3-5EA2ND.P3
 - `a final point right above the anchor → nothing is skipped, nothing is deleted`: UNIT-TEST-STORAGE-FACADE-3-5EA2ND.P4
+- `the block below a final point pruned as skipped history → undefined`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P22
+- `the final-point block kept below the next height → that block's timestamp`: UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P23
 - `anchor 2 over blocks 0..4 → blocks, snapshots, states and change points 0 and 1 are gone; the anchor block, its snapshot and state, the blocks above and the fork genesis with its state stay`: UNIT-TEST-STORAGE-FACADE-3-5EA2ND.P5
 - `a pruned block whose state is also the fork genesis state → the genesis state stays`: UNIT-TEST-STORAGE-FACADE-3-5EA2ND.P6
 - `an anchor at height 0 → nothing is below it, nothing is deleted`: UNIT-TEST-STORAGE-FACADE-3-5EA2ND.P7

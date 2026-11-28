@@ -256,7 +256,9 @@ as calldata on-chain
   against the commitment and slashable against the poster.
 - **Race-condition guard.** The post carries `maxTimestamp` = previous relevant timestamp +
   `p2pTime + agreementTime + chainFallbackTime` (+ grace); the chain rejects later posts, which
-  bounds how late a block can be forced into the record.
+  bounds how late a block can be forced into the record. With history pruning on, a block whose
+  block below is deleted has no previous relevant timestamp and is not posted
+  ([`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../storage/proof-store.md#req-proofstore-8-r38ky5)).
 - **Extra time granted.** A posted commitment changes the timing rules: the acceptable
   block-timestamp window extends by `evidenceTime` for calldata-committed blocks
   (`block-validation service`,

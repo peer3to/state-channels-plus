@@ -43,6 +43,8 @@ Derived reads join explicitly and fail explicitly
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P19` — accepts an absent previous snapshot
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P20` — accepts an absent resulting snapshot
 - [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P21` — returns an empty union for absent or empty snapshots
+- [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P22` — previous relevant timestamp with the block below pruned: undefined
+- [x] `UNIT-TEST-STORAGE-FACADE-1-TF3MZ1.P23` — previous relevant timestamp right above a pruned final point: the kept final-point block's timestamp
 
 ## UNIT-TEST-STORAGE-FACADE-2-KRDP9Q
 

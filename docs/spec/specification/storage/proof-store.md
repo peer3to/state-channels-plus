@@ -214,6 +214,11 @@ delete history in two phases, each in one step that no write can interleave:
   anchor and below its final point. It keeps the final-point block, the tail and every snapshot;
   those snapshots go with phase 1.
 
+A block whose block below is deleted (the final-point or the anchor block) has no previous relevant
+timestamp to bound a calldata post by, so its author MUST NOT post that block's calldata: it posts
+nothing and fails no operation, whether every participant signed the block or not. A block every
+participant signed is never posted in any case.
+
 A state is keyed by its hash and can back several snapshots, so a state is deleted only when no
 other held snapshot references it. Pruning never deletes message blocks, block calldata, queue
 entries, fraud proofs, proof evidence or the stored proof. Pruned data is absent, never evidence
@@ -296,7 +301,10 @@ trust boundary is proof intake: a received proof is untrusted until it verifies.
   detection and exact-height checks at pruned heights, an audit replay from a pruned final point (that
   proof is not judged: only the not-latest-state and the state-free timeout checks still run,
   [`REQ-SP-9-RNXP56`](../disputes/state-proofs.md#req-sp-9-rnxp56)), and the participant union of the anchor block
-  and of the final-point block for a late signature, which reads the block below. A dispute above the
+  and of the final-point block for a late signature, which reads the block below. The author does not
+  post the calldata of the final-point or anchor block, whose block below is deleted; no timeout
+  follows from that, since a timeout claim at the final point is killed by the stored proof and the
+  anchor is on chain. A dispute above the
   upload cap is not cut to a height whose proof needs a pruned block: no dispute is built then
   ([`REQ-DIS-2-PKVZ7E`](../disputes/disputes.md#req-dis-2-pkvz7e)). Fraud proofs, proof
   evidence and the stored proof are kept apart and are never pruned. Residual: a fork the chain
@@ -553,13 +561,15 @@ while the node is still on it, and loses them at the next anchor event after the
 Run a channel with pruning on and with it off: finalize several blocks, let the chain adopt a
 snapshot, re-root with and without a dispute mirrored on the fork, move the anchor to a reduced
 fork and later adopt snapshots of it, then synchronize a new peer, audit an honest dispute, a
-side-chain dispute and a dispute whose final point the auditor pruned.
+side-chain dispute and a dispute whose final point the auditor pruned; let the author decide
+whether to post its final-point block, fully signed or one signature short.
 
 **Expected result:**
 
 Off deletes nothing. On deletes exactly the phase 1 and phase 2 sets and keeps the listed points;
 synchronization, audits, kills and reductions still work, and an auditor without the pruned base
-does not judge that proof but still lands its own dispute.
+does not judge that proof but still lands its own dispute. An author posts no calldata for a
+final-point block whose block below is deleted and fails no operation.
 
 **Required permutations:**
 
@@ -584,6 +594,10 @@ does not judge that proof but still lands its own dispute.
 <a id="req-proofstore-8-r38ky5.t1.p10"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P10` — Pruning on, an auditor that pruned the state at the disputer's final point (its own final point and latest state are later) does not judge that proof, stores no counter and sends no kill, and its own dispute lands on chain.
 
 <a id="req-proofstore-8-r38ky5.t1.p11"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P11` — Pruning on, the chain anchor left a fork that was still disputed in the mirror, and the node has followed the reduced fork: at the first later anchor event at which the mirror holds no dispute on the left fork, every honest peer deletes that fork's whole history.
+
+<a id="req-proofstore-8-r38ky5.t1.p12"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P12` — Pruning on, the author's fully signed final-point block, the block below it deleted: the posting decision completes without a failure and posts nothing on chain.
+
+<a id="req-proofstore-8-r38ky5.t1.p13"></a>`REQ-PROOFSTORE-8-R38KY5.T1.P13` — Pruning on, the author's final-point block one participant signature short, the block below it deleted: the posting decision completes without a failure and posts nothing on chain.
 
 ## Future Work
 

@@ -777,7 +777,7 @@ Specification cases tested: 1/1.
 Specification cases tested: 11/11.
 
 [`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../specification/storage/proof-store.md#req-proofstore-8-r38ky5)
-Specification cases tested: 10/11. Untested: T1.P11.
+Specification cases tested: 12/13. Untested: T1.P11.
 
 [`REQ-PSCSTORE-1-7BDTEV` (Complete ordered change points)](../specification/storage/participant-changes.md#req-pscstore-1-7bdtev)
 Specification cases tested: 7/7.

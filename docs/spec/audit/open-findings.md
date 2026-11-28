@@ -1828,14 +1828,17 @@ its non-null assertions are compile-time only, so an absent predecessor comes ba
 `block` nor `stateSnapshot` set, and its timeout and dispute-audit callers check for that
 ([`ParticipantTimeoutService`](../implementation/source/src/stateManager/chainFallback/ParticipantTimeoutService.ts.md),
 [`DisputeValidationService`](../implementation/source/src/stateManager/dispute/DisputeValidationService.ts.md)).
-`getPreviousRelevantTimestamp` and
-[`BlockProductionService.createBlock`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
-presume the predecessor exists, as
-[`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
-allows for a read whose join links the pipeline maintains: the timestamp read's one caller,
+`getPreviousRelevantTimestamp` returns undefined when the block below is not held (history
+pruning deletes it below the final-point and anchor blocks,
+[`REQ-PROOFSTORE-8-R38KY5` (History pruning)](../specification/storage/proof-store.md#req-proofstore-8-r38ky5)),
+and its one caller,
 [`CalldataPostingService`](../implementation/source/src/stateManager/chainFallback/CalldataPostingService.ts.md),
-reads it for a stored block, the producer builds on its own stored head, and participants commit
-history contiguously. Was: both reads were
+then posts nothing (2026-11-28; before, that read threw on a pruned block below).
+[`BlockProductionService.createBlock`](../implementation/source/src/stateManager/block/BlockProductionService.ts.md)
+presumes the predecessor exists, as
+[`REQ-SNAPSTORE-2-Q7E6TQ` (Derived reads fail explicitly)](../specification/storage/snapshots-and-states.md#req-snapstore-2-q7e6tq)
+allows for a read whose join links the pipeline maintains: the producer builds on its own stored
+head, which pruning keeps. Was: both reads were
 taken to throw an unclassified error on an absent predecessor
 ([Storage.ts.md](../implementation/source/src/storage/Storage.ts.md)).
 
