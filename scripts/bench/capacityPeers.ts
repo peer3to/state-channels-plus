@@ -31,7 +31,7 @@ import { LIGHT_CLIENT_METHODS } from "@/evm/p2pRuntime/rpcNodes/lightClient/ligh
 import { PEER3_CHAIN_CONSTANTS } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierChainConstants";
 import FrontierPushedPartition from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/FrontierPushedPartition";
 import { contractStorageKey } from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
-import { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
+import { JsonRpcSocket } from "@test/fixtures/lightClient/node/JsonRpcSocket";
 import { getAddress, toBeHex } from "ethers";
 import { contractStoragePrefix, contractValueCount } from "./benchUtils";
 

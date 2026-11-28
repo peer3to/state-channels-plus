@@ -5,7 +5,7 @@
  * and with it and every read it answers compared with the node's at the same
  * block. The harness gives every peer a proxy of its own to the node and
  * writes, per peer, the requests by method, how its light client answered and
- * the trace of its proofs and pushes (test/fixtures/lightClient/flowBench.ts).
+ * the trace of its proofs and pushes (test/fixtures/lightClient/node/flowBench.ts).
  * Results go to logs/bench/light-client-flows-<time>/: one file per flow, mode
  * and repeat, and results.json with the summary.
  *
@@ -32,7 +32,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import type { FlowBenchPeer } from "../../test/fixtures/lightClient/flowBench";
+import type { FlowBenchPeer } from "../../test/fixtures/lightClient/node/flowBench";
 import {
     startDiscoveryRegistry,
     startHardhatNode,

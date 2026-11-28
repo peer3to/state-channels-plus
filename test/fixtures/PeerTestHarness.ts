@@ -18,7 +18,7 @@ import {
     flowBenchProxies,
     provenAddresses,
     writeFlowBench
-} from "./lightClient/flowBench";
+} from "./lightClient/node/flowBench";
 import { RpcNodeProxy } from "./node/RpcNodeProxy";
 import { RootCreationControl } from "./runtimeRpc/RootCreationControl";
 import { DEFAULT_MAX_CHANNEL_PARTICIPANTS } from "../../scripts/V1/deploy";

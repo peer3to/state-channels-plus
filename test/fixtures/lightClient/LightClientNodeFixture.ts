@@ -1,5 +1,5 @@
 // @spec-test-coverage-ignore: test-owned peer3 node with light client endpoints; executable evidence belongs to its calling test declarations
-import { JsonRpcSocket } from "./JsonRpcSocket";
+import { JsonRpcSocket } from "./node/JsonRpcSocket";
 import {
     LIGHT_CLIENT_METHODS,
     type LightClientStorageBlock,

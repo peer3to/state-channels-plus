@@ -39,6 +39,12 @@ import {
     LOCAL_READ_METHODS,
     parseLocalRead
 } from "../../src/evm/p2pRuntime/rpcNodes/lightClient/LocalReadParser";
+import {
+    ACCOUNT_CODES_PREFIX,
+    ACCOUNT_STORAGES_PREFIX,
+    CURRENT_ETHEREUM_BLOCK_KEY,
+    SYSTEM_ACCOUNT_PREFIX
+} from "../../src/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import { keccak_256 } from "@noble/hashes/sha3";
 import { Interface, type InterfaceAbi } from "ethers";
 import { execFileSync } from "node:child_process";
@@ -48,18 +54,8 @@ import type {
     FlowBenchLabels,
     FlowBenchPeer,
     FlowBenchTrace
-} from "../../test/fixtures/lightClient/flowBench";
+} from "../../test/fixtures/lightClient/node/flowBench";
 
-/** `twox128` map prefixes of Frontier's state, as frontierStateKeys.ts. */
-const STORAGE_PREFIX =
-    "0x1da53b775b270400e7e61ed5cbc5a146ab1160471b1418779239ba8e2b847e42";
-const CODE_PREFIX =
-    "0x1da53b775b270400e7e61ed5cbc5a146ea70f53d5a3306ce02aaf97049cf181a";
-const ACCOUNT_PREFIX =
-    "0x26aa394eea5630e07c48ae0c9558cef7b99d880ec681799c0cf30e8886371da9";
-/** `Ethereum.CurrentBlock`: a read's block environment when no push carries it. */
-const ENVIRONMENT_KEY =
-    "0x2013754dd003840aea66b349f8241e25c8c156f8164e0465c74b8972ea68b4b3";
 /** Hex characters of a prefix, of `Blake2_128` and of an address. */
 const PREFIX_HEX = 64;
 const BLAKE_HEX = 32;
@@ -209,17 +205,17 @@ type SlotName = { variable: string; path: string; firstKey?: Word };
 type FlowFile = { labels: FlowBenchLabels | null; peers: FlowBenchPeer[] };
 
 function parseKey(key: TrieKey): ParsedKey {
-    if (key === ENVIRONMENT_KEY) return { kind: "environment" };
+    if (key === CURRENT_ETHEREUM_BLOCK_KEY) return { kind: "environment" };
     const addressAt = 2 + PREFIX_HEX + BLAKE_HEX;
     const address = `0x${key.slice(addressAt, addressAt + ADDRESS_HEX)}`;
-    if (key.startsWith(STORAGE_PREFIX)) {
+    if (key.startsWith(ACCOUNT_STORAGES_PREFIX)) {
         const slotAt = addressAt + ADDRESS_HEX + BLAKE_HEX;
         if (key.length !== slotAt + SLOT_HEX) return { kind: "other" };
         return { kind: "storage", address, slot: `0x${key.slice(slotAt)}` };
     }
     for (const [prefix, kind] of [
-        [CODE_PREFIX, "code"],
-        [ACCOUNT_PREFIX, "account"]
+        [ACCOUNT_CODES_PREFIX, "code"],
+        [SYSTEM_ACCOUNT_PREFIX, "account"]
     ] as const)
         if (key.startsWith(prefix))
             return key.length === addressAt + ADDRESS_HEX
@@ -1653,8 +1649,8 @@ function watchLines(runs: RunMetrics[]): string[] {
 function selfTest(layout: Layout): void {
     const block = `0x${"11".repeat(32)}`;
     const manager = `0x${"aa".repeat(20)}`;
-    const held = `${STORAGE_PREFIX}${"00".repeat(16)}${manager.slice(2)}${"00".repeat(16)}${"00".repeat(31)}10`;
-    const outside = `${ACCOUNT_PREFIX}${"00".repeat(16)}${"bb".repeat(20)}`;
+    const held = `${ACCOUNT_STORAGES_PREFIX}${"00".repeat(16)}${manager.slice(2)}${"00".repeat(16)}${"00".repeat(31)}10`;
+    const outside = `${SYSTEM_ACCOUNT_PREFIX}${"00".repeat(16)}${"bb".repeat(20)}`;
     const peer: FlowBenchPeer = {
         peer: 0,
         address: `0x${"bb".repeat(20)}`,

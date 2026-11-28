@@ -1,11 +1,11 @@
 // @distributed-requires: lightClient
 // @spec-test-coverage-ignore: checks of the test-owned light client node fixture; no specification or implementation IDs apply
-import { JsonRpcSocket } from "@test/fixtures/lightClient/JsonRpcSocket";
 import {
     assertLightClientEndpoints,
     LIGHT_CLIENT_UNSUPPORTED,
     LightClientNodeFixture
 } from "@test/fixtures/lightClient/LightClientNodeFixture";
+import { JsonRpcSocket } from "@test/fixtures/lightClient/node/JsonRpcSocket";
 import { rejectionOf } from "@test/utils/rejectionOf";
 import { expect } from "chai";
 

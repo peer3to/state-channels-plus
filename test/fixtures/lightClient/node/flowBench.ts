@@ -9,8 +9,13 @@
  * requests by method, how its light client answered and the trace of its
  * proofs and pushes, to that file.
  */
-import type { RecordedMessage, RpcNodeProxy } from "../node/RpcNodeProxy";
+import type { RecordedMessage, RpcNodeProxy } from "../../node/RpcNodeProxy";
 import type { LightClientStorageBlock } from "@/evm/p2pRuntime/rpcNodes/lightClient/lightClientWire";
+import {
+    ACCOUNT_CODES_PREFIX,
+    ACCOUNT_STORAGES_PREFIX,
+    SYSTEM_ACCOUNT_PREFIX
+} from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/frontierStateKeys";
 import SubstrateHeader from "@/evm/p2pRuntime/rpcNodes/lightClient/proof/substrate/SubstrateHeader";
 import type { Config } from "@/utils/config";
 import type { LightClientCounts } from "@test/fixtures/customRpc/harnessControl/services/lightClient/LightClientControlService";
@@ -122,18 +127,9 @@ export type FlowBenchLabels = {
 
 /** `twox128` prefixes of the state maps a Frontier key lives in, and what each holds. */
 const KEY_PREFIXES: readonly [prefix: string, kind: string][] = [
-    [
-        "0x1da53b775b270400e7e61ed5cbc5a146ab1160471b1418779239ba8e2b847e42",
-        "storage"
-    ],
-    [
-        "0x1da53b775b270400e7e61ed5cbc5a146ea70f53d5a3306ce02aaf97049cf181a",
-        "code"
-    ],
-    [
-        "0x26aa394eea5630e07c48ae0c9558cef7b99d880ec681799c0cf30e8886371da9",
-        "account"
-    ]
+    [ACCOUNT_STORAGES_PREFIX, "storage"],
+    [ACCOUNT_CODES_PREFIX, "code"],
+    [SYSTEM_ACCOUNT_PREFIX, "account"]
 ];
 
 /**
