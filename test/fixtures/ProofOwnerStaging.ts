@@ -1113,6 +1113,30 @@ export async function dropStoredBlock(
     expect(dropped, `a stored block at height ${height}`).to.equal(true);
 }
 
+/**
+ * The disputer signs no block of a blacklisted author: it blacklists
+ * `writer`, which then commits the next block, and the third peer's relay
+ * of it is stored at the disputer unsigned. Returns that block's height.
+ */
+export async function commitBlockUnsignedByDisputer(
+    h: MathPeerTestHarness,
+    writer: { index: number; address: string },
+    disputerIndex: number
+): Promise<BlockHeight> {
+    await h.execOnHost(
+        h.getPeer(disputerIndex),
+        (sm, args) =>
+            sm.p2pManager.disconnectAndBlacklistPeerByEvmAddress(args.writer),
+        { writer: writer.address }
+    );
+    // add() resolves after the writer's own commit
+    await h.getPeer(writer.index).p2pInstance.p2pContractInstance.add(1);
+    await h.assert.sync.peersInSyncWait({
+        peerIndices: [writer.index, disputerIndex]
+    });
+    return latestStoredHeight(h, disputerIndex);
+}
+
 /** The height of the peer's latest stored block on the active fork. */
 export async function latestStoredHeight(
     h: MathPeerTestHarness,

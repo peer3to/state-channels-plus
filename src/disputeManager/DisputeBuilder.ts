@@ -249,7 +249,8 @@ export default class DisputeBuilder {
      * the largest valid dispute under the cap: the dispute at the highest
      * lower height that fits. A dispute below the highest block this peer
      * signed is killable (`DisputeNotLatestState`), so no height below that
-     * block is tried. Undefined when none fits.
+     * block is tried, nor any height at or below a block this peer does not
+     * hold. Undefined when none fits.
      */
     private async fitUploadCap(
         forkId: ForkId,
@@ -270,6 +271,9 @@ export default class DisputeBuilder {
             height >= lowestHeight;
             height--
         ) {
+            // the block is not held (pruned, or below a compact sync): the
+            // search stops, as no proof of this height can be built
+            if (!this.storage.blocks.getBlock(forkId, height)) break;
             const builtStateProof =
                 await this.agreementManager.tryBuildStateProof(forkId, height);
             // below the anchor: no lower height proves anything

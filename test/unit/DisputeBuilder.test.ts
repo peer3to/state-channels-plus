@@ -4,7 +4,11 @@ import { chainAcceptsDisputeProof } from "@test/fixtures/ChainProofVerdict";
 import { storedStateHashAt } from "@test/fixtures/DisputeWindowWorkflowStaging";
 import { stageMissingParticipantSignature } from "@test/fixtures/LateSignatureStaging";
 import { stageMirrorMissingJoin } from "@test/fixtures/MirrorDivergenceStaging";
-import { stageFinalThenUnfinalizedTail } from "@test/fixtures/ProofOwnerStaging";
+import {
+    commitBlockUnsignedByDisputer,
+    dropStoredBlock,
+    stageFinalThenUnfinalizedTail
+} from "@test/fixtures/ProofOwnerStaging";
 import { storedProofView } from "@test/fixtures/StoredProofStaging";
 import {
     compareEvidence,
@@ -440,6 +444,59 @@ describe("Unit: DisputeBuilder", function () {
             expect(r.isBuilt).to.equal(false);
         });
 
+        it("a dispute above the upload cap whose cut search reaches a height this peer holds no block at → no dispute is built", async function () {
+            const h = TestSession.getHarness();
+            await h.lifecycle.start(3, 2, {
+                maxDisputeUploadBytes: BELOW_ANY_DISPUTE_UPLOAD_CAP
+            }); // blocks 0..1
+            const forkId = h.activeForkId!;
+            for (const peer of h.peers)
+                await h.rpcStub.suppressTimeoutCheck(peer.index);
+            const writer = await h.query.getNextPeerToWrite();
+            const disputer = h.peers.find(
+                (peer) => peer.index !== writer.index
+            )!;
+            const latestHeight = await commitBlockUnsignedByDisputer(
+                h,
+                writer,
+                disputer.index
+            );
+            // a gap below the latest block, as pruning or a compact sync
+            // leaves: the disputer then holds no block it signed
+            for (let height = 0; height < latestHeight; height++)
+                await dropStoredBlock(h, disputer.index, height);
+
+            const r = await h.execOnHost(
+                disputer,
+                async (sm, args) => {
+                    const stored = sm.storage.storedProofs.get(args.forkId)!;
+                    const lastHop = stored.hops.at(-1)!.milestone;
+                    const result = await sm.disputeManager.constructDispute(
+                        args.forkId
+                    );
+                    return {
+                        isBuilt: result !== undefined,
+                        lastHopEndHeight:
+                            sm.agreementManager.getLastBlockFromMilestone(
+                                lastHop
+                            )!.height,
+                        signedHeight:
+                            sm.agreementManager.getLatestSignedBlockByParticipant(
+                                args.forkId,
+                                sm.signerAddress
+                            )?.block.height ?? null
+                    };
+                },
+                { forkId }
+            );
+
+            // premise: the latest dispute builds from the stored proof's
+            // hops, and no block this peer signed bounds the cut search
+            expect(r.lastHopEndHeight).to.be.at.least(latestHeight - 1);
+            expect(r.signedHeight).to.equal(null);
+            expect(r.isBuilt).to.equal(false);
+        });
+
         it("the latest dispute above the upload cap while the height this peer last signed fits → the dispute is cut to that height and the chain walks its proof", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(3, 2, {
@@ -460,28 +517,8 @@ describe("Unit: DisputeBuilder", function () {
                 signedHeightDispute.disputeConfirmation.signedDispute
                     .encodedDispute
             );
-            // the disputer signs no block of a blacklisted author: the third
-            // peer's relay of the writer's next block is stored unsigned
-            await h.execOnHost(
-                disputer,
-                (sm, args) =>
-                    sm.p2pManager.disconnectAndBlacklistPeerByEvmAddress(
-                        args.writer
-                    ),
-                { writer: writer.address }
-            );
-            // add() resolves after the writer's own commit
-            await h
-                .getPeer(writer.index)
-                .p2pInstance.p2pContractInstance.add(1); // block 2
-            await h.assert.sync.peersInSyncWait({
-                peerIndices: [writer.index, disputer.index]
-            });
             expect(
-                await h
-                    .control(disputer)
-                    .query.getLatestBlockHeight(forkId)
-                    .request()
+                await commitBlockUnsignedByDisputer(h, writer, disputer.index)
             ).to.equal(2);
 
             const cut = await h.dispute.fetchConstructedDispute(
