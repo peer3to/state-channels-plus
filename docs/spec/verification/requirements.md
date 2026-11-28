@@ -348,7 +348,7 @@ Specification cases tested: 0/9.
 Specification cases tested: 4/15. Untested: T1.P2, T1.P4, T1.P6, T1.P7, T1.P8, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15.
 
 [`REQ-DIS-2-PKVZ7E` (Upload is limited to eligible disputers)](../specification/disputes/disputes.md#req-dis-2-pkvz7e)
-Specification cases tested: 18/33. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16.
+Specification cases tested: 20/35. Untested: T1.P1, T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P16.
 
 [`REQ-DIS-3-C4KYSF` (An uploaded dispute records its commitment immediately)](../specification/disputes/disputes.md#req-dis-3-c4kysf)
 Specification cases tested: 5/22. Untested: T1.P2, T1.P3, T1.P4, T1.P5, T1.P7, T1.P8, T1.P9, T1.P10, T1.P11, T1.P12, T1.P13, T1.P14, T1.P15, T1.P17, T1.P18, T1.P20, T1.P21.
@@ -614,8 +614,8 @@ Specification cases tested: 0/6.
 [`REQ-LIF-7-0XZBDM` (A committed dispute suspends off-chain execution on the disputed fork)](../specification/settlement/lifecycle.md#req-lif-7-0xzbdm)
 Specification cases tested: 6/6.
 
-[`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
-Specification cases tested: 9/9.
+[`REQ-LIF-8-2HDG3A` (Open-channel set from lifecycle events)](../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+Specification cases tested: 1/1.
 
 [`REQ-LIF-10-QR8NQ9` (Terminal runtime departure)](../specification/settlement/lifecycle.md#req-lif-10-qr8nq9)
 Specification cases tested: 41/41.
@@ -625,6 +625,9 @@ Specification cases tested: 7/7.
 
 [`REQ-LIF-12-TSXRBG` (Observers install the agreed genesis)](../specification/settlement/lifecycle.md#req-lif-12-tsxrbg)
 Specification cases tested: 13/13.
+
+[`REQ-LIF-13-0MH9JW` (A clean close leaves no channel state)](../specification/settlement/lifecycle.md#req-lif-13-0mh9jw)
+Specification cases tested: 6/6.
 
 [`REQ-LOBBY-1-PZTPKD` (Caller-owned rendezvous)](../specification/peer-communication/lobby-matching.md#req-lobby-1-pztpkd)
 Specification cases tested: 4/4.

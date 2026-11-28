@@ -612,7 +612,8 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
 
         assertEq(keccak256(abi.encode(diamond.getStateSnapshot(CHANNEL))), snapshotBefore, "snapshot unchanged");
-        assertEq(diamond.getOpenChannelCount(), 1, "registry unchanged");
+        (bool open,) = diamond.isChannelOpen(CHANNEL);
+        assertTrue(open, "channel still open");
     }
 
     function test_sameFork_refusedAfterKillPeriodExpiry() public {
@@ -768,7 +769,9 @@ contract SameForkSnapshotKillPeriodTest is DiamondHarness {
         diamond.updateStateSnapshotSameFork(CHANNEL, proofs, snapshots, new MessageBlock[](0));
         (bool open,) = diamond.isChannelOpen(CHANNEL);
         assertFalse(open, "the close advance landed");
-        assertEq(diamond.getOpenChannelCount(), 0);
+        assertEq(
+            diamond.getChannelBalance(CHANNEL).latestInboundMessageBlockHash, bytes32(0), "balance tracker cleared"
+        );
     }
 
     function _join(StateSnapshot memory current) internal {

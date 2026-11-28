@@ -157,12 +157,6 @@
       "peakRssGb": 0.14,
       "measurementReason": null
     },
-    "forge|test/V1/StateChannelDiamondProxy/StateSnapshotFacetOpenChannelRegistry.t.sol|StateSnapshotFacetOpenChannelRegistryTest": {
-      "durationMs": 1694,
-      "avgCores": 0.815,
-      "peakRssGb": 0.232,
-      "measurementReason": null
-    },
     "forge|test/V1/StateChannelDiamondProxy/StateSnapshotFacetSameFork.t.sol|StateSnapshotFacetSameForkTest": {
       "durationMs": 1389,
       "avgCores": 0.554,
@@ -685,22 +679,10 @@
       "peakRssGb": 0.53,
       "measurementReason": null
     },
-    "hardhat|test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts|StateChannelManagerProxy Open Channel - MathStateChannel enumerates successful opens in append order with safe page boundaries": {
-      "durationMs": 2961,
-      "avgCores": 0.952,
-      "peakRssGb": 0.521,
-      "measurementReason": null
-    },
     "hardhat|test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts|StateChannelManagerProxy Open Channel - MathStateChannel forces inbound join message and updates math state machine": {
       "durationMs": 2721,
       "avgCores": 1.018,
       "peakRssGb": 0.536,
-      "measurementReason": null
-    },
-    "hardhat|test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts|StateChannelManagerProxy Open Channel - MathStateChannel keeps the open-channel registry unchanged after a duplicate open reverts": {
-      "durationMs": 2317,
-      "avgCores": 0.691,
-      "peakRssGb": 0.224,
       "measurementReason": null
     },
     "hardhat|test/V1/DiamondProxy/StateChannelManager/OpenChannel.test.ts|StateChannelManagerProxy Open Channel - MathStateChannel requires the encoded participant to submit the join": {
@@ -781,12 +763,6 @@
       "peakRssGb": 0.247,
       "measurementReason": null
     },
-    "hardhat|test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts|StateChannelManagerProxy selector routing routes both open-channel enumeration selectors through the utility facet": {
-      "durationMs": 3113,
-      "avgCores": 0.871,
-      "peakRssGb": 0.333,
-      "measurementReason": null
-    },
     "hardhat|test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts|StateChannelManagerProxy selector routing routes every dispute fraud proof selector to the dispute fraud proof facet": {
       "durationMs": 2967,
       "avgCores": 0.944,
@@ -833,6 +809,12 @@
       "durationMs": 2184,
       "avgCores": 0.888,
       "peakRssGb": 0.278,
+      "measurementReason": null
+    },
+    "hardhat|test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts|StateChannelManagerProxy selector routing routes the genesis hook through the fallback to the consumer facet": {
+      "durationMs": 2096,
+      "avgCores": 1.202,
+      "peakRssGb": 0.406,
       "measurementReason": null
     },
     "hardhat|test/V1/DiamondProxy/StateChannelManager/SelectorRouting.test.ts|StateChannelManagerProxy selector routing uses the canonical routed-facet inventory for every deployed facet": {
@@ -3049,6 +3031,12 @@
       "peakRssGb": 0.579,
       "measurementReason": null
     },
+    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a normally closed channel keeps no balance tracker": {
+      "durationMs": 9395,
+      "avgCores": 0.767,
+      "peakRssGb": 0.525,
+      "measurementReason": null
+    },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path a participant slashed by a dispute, with no leave call, gets onLeftChannel and does not abort": {
       "durationMs": 26967,
       "avgCores": 1.022,
@@ -3089,12 +3077,6 @@
       "durationMs": 19212,
       "avgCores": 0.918,
       "peakRssGb": 0.802,
-      "measurementReason": null
-    },
-    "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path removes a normally closed channel from registry pages and the event-derived live set": {
-      "durationMs": 14099,
-      "avgCores": 0.723,
-      "peakRssGb": 0.613,
       "measurementReason": null
     },
     "hardhat|test/e2e/E2E-ParticipantLifecycle.test.ts|E2E: Participant Lifecycle Exit path should demote exiting participant to SYNCED when state snapshot is updated on-chain": {
@@ -10111,12 +10093,6 @@
       "peakRssGb": 0.207,
       "measurementReason": null
     },
-    "hardhat|test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts|getOpenChannelProposalMismatch rejects non-atomic opens": {
-      "durationMs": 2577,
-      "avgCores": 1.071,
-      "peakRssGb": 0.19,
-      "measurementReason": null
-    },
     "hardhat|test/rpc/openChannelNegotiation/OpenChannelProposal.test.ts|getOpenChannelProposalMismatch rejects opening data that differs from the locally derived data": {
       "durationMs": 2133,
       "avgCores": 0.811,
@@ -10133,12 +10109,6 @@
       "durationMs": 11395,
       "avgCores": 0.914,
       "peakRssGb": 0.591,
-      "measurementReason": null
-    },
-    "hardhat|test/rpc/openChannelNegotiation/OpeningData.test.ts|OpenChannelNegotiationService opening data higher address derivation failure clears the attempt without co-signing or penalty": {
-      "durationMs": 6928,
-      "avgCores": 1.039,
-      "peakRssGb": 0.585,
       "measurementReason": null
     },
     "hardhat|test/rpc/openChannelNegotiation/OpeningData.test.ts|OpenChannelNegotiationService opening data higher address derives opening data from the exact agreed terms": {
@@ -14591,12 +14561,6 @@
       "durationMs": 16637,
       "avgCores": 0.84,
       "peakRssGb": 0.955,
-      "measurementReason": null
-    },
-    "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedInboundRun logs recovered into an empty inbound store set its tip to the recovered head": {
-      "durationMs": 10376,
-      "avgCores": 0.746,
-      "peakRssGb": 0.756,
       "measurementReason": null
     },
     "hardhat|test/stateManager/EventSyncService.test.ts|EventSyncService loadSynchronizedInboundRun missed inbound log → recovered by query, the run becomes walkable": {
@@ -20507,12 +20471,6 @@
       "durationMs": 15125,
       "avgCores": 0.955,
       "peakRssGb": 0.982,
-      "measurementReason": null
-    },
-    "hardhat|test/unit/OpenChannelRegistryEvents.test.ts|open-channel registry events reconstructs the opened set from ChannelOpened events and matches the paged registry": {
-      "durationMs": 3817,
-      "avgCores": 1.017,
-      "peakRssGb": 0.519,
       "measurementReason": null
     },
     "hardhat|test/unit/ParticipantTimeoutService.test.ts|Unit: ParticipantTimeoutService a block arriving during timeout construction prevents the late timeout store": {

@@ -1,7 +1,7 @@
 import { Block, StateSnapshot } from "@/models";
 import { Status } from "@/types";
-import type { Address, Bytes } from "@/types/types";
-import { Codec, SignatureUtils, Type } from "@/utils";
+import type { Address } from "@/types/types";
+import { Codec, Type } from "@/utils";
 import { recordSnapshotPostWaitResults } from "@test/fixtures/BotConnectionFixesStaging";
 import {
     stageExitPostInFlightAcrossClose,
@@ -15,7 +15,6 @@ import { readTrackedJoin } from "@test/fixtures/ForceJoinCountingStaging";
 import { assertLeaverCanBeForceJoinedBackAfterExit } from "@test/fixtures/LeaverRelayFixture";
 import { stageLoneLeaverSelfRemoval } from "@test/fixtures/LoneLeaverStaging";
 import { MathTestSession as TestSession } from "@test/harness";
-import { createOpenChannelTestObject } from "@test/test_utils/testHelpers";
 import { waitFor } from "@test/utils/waitFor";
 import { expect } from "chai";
 import { ethers } from "ethers";
@@ -149,35 +148,10 @@ describe("E2E: Participant Lifecycle", function () {
             await h.event.waitUntilPeerStatus(leaver.index, Status.SYNCED);
         });
 
-        it("removes a normally closed channel from registry pages and the event-derived live set", async function () {
+        it("a normally closed channel keeps no balance tracker", async function () {
             const h = TestSession.getHarness();
             await h.lifecycle.start(2);
             const primaryChannelId = String(h.channelId);
-            const extraParticipants = h.peers.map((peer) => peer.address);
-            const extraChannels = [
-                await createOpenChannelTestObject(
-                    h.channelManager,
-                    extraParticipants,
-                    { channelId: "participant-registry-extra-first" }
-                ),
-                await createOpenChannelTestObject(
-                    h.channelManager,
-                    extraParticipants,
-                    { channelId: "participant-registry-extra-second" }
-                )
-            ];
-            for (const channel of extraChannels) {
-                const signed = await Promise.all(
-                    h.peers.map((peer) =>
-                        SignatureUtils.signOpenChannel(channel, peer.signer)
-                    )
-                );
-                await h.channelManager.open({
-                    encodedOpenChannel: signed[0].encoded,
-                    signatures: signed.map((entry) => entry.signature as Bytes)
-                });
-            }
-
             await h.transition.participantLeaveStateTransition();
             await h.transition.participantLeaveStateTransition();
             await waitFor(
@@ -192,35 +166,15 @@ describe("E2E: Participant Lifecycle", function () {
                 50
             );
 
-            const liveFromEvents = new Set(
-                (
-                    await h.channelManager.queryFilter(
-                        h.channelManager.filters.ChannelOpened()
-                    )
-                ).map((event) => String(event.args.channelId))
+            const closedBalance =
+                await h.channelManager.getChannelBalance(primaryChannelId);
+            expect(closedBalance.latestInboundMessageBlockHash).to.equal(
+                ethers.ZeroHash
             );
-            const snapshots = await h.channelManager.queryFilter(
-                h.channelManager.filters.StateSnapshotUpdated()
-            );
-            for (const event of snapshots) {
-                if (
-                    event.args.stateSnapshot.snapshotData.participants
-                        .length === 0
-                ) {
-                    liveFromEvents.delete(String(event.args.channelId));
-                }
-            }
-            const registry = await h
-                .control(h.peers[0])
-                .query.getOpenChannelIds()
-                .request();
-            expect([...liveFromEvents].sort()).to.deep.equal(
-                [...registry].sort()
-            );
-            expect(registry).not.to.include(primaryChannelId);
-            expect(registry).to.include.members(
-                extraChannels.map((channel) => String(channel.channelId))
-            );
+            expect(closedBalance.latestInboundMessageBlockHeight).to.equal(0n);
+            expect(closedBalance.latestOutboundMessageBlockHeight).to.equal(0n);
+            expect(closedBalance.totalDeposits.amount).to.equal(0n);
+            expect(closedBalance.totalWithdrawals.amount).to.equal(0n);
         });
 
         it("should demote exiting participant to SYNCED when state snapshot is updated on-chain", async function () {

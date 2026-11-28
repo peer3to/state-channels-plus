@@ -5,7 +5,7 @@
 ## Requirements
 
 - [`INV-CONTRACT-ARCH-1-TWQHTM` (Single logical state)](../../../../../specification/enforcement/contracts.md#inv-contract-arch-1-twqhtm)
-- [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+- [`REQ-LIF-13-0MH9JW` (A clean close leaves no channel state)](../../../../../specification/settlement/lifecycle.md#req-lif-13-0mh9jw)
 
 ## UNIT-TEST-MANAGER-STORAGE-1-ET3GPF
 

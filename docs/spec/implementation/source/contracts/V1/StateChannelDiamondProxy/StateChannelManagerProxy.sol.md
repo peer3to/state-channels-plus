@@ -14,7 +14,7 @@
 - [`REQ-ENFADM-1-V926CA` (Self-submission with pinned state)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-1-v926ca)
 - [`REQ-ENFADM-3-6A3BEB` (Custody through the adapter only)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-3-6a3beb)
 - [`REQ-ENFADM-4-2NN96F` (Opening terms expire at their deadline)](../../../../../specification/enforcement/admission-and-funds.md#req-enfadm-4-2nn96f)
-- [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+- [`REQ-LIF-8-2HDG3A` (Open-channel set from lifecycle events)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
 - [`REQ-LIF-11-KEEN0N` (Open records the agreed commitment)](../../../../../specification/settlement/lifecycle.md#req-lif-11-keen0n)
 - [`REQ-ENFSM-1-DKJCY2` (Injected context, bounded gas)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-1-dkjcy2)
 - [`REQ-ENFSM-2-G4HBKG` (Adapter confinement)](../../../../../specification/enforcement/execution-and-consumer.md#req-enfsm-2-g4hbkg)
@@ -62,6 +62,8 @@ Opening and calldata posting
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P28` — open succeeds with a consumer whose genesis hook reverts, so it never calls the hook
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P29` — `ChannelOpened` carries the stored snapshot and the opening data
 - [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P30` — the already-open check passes after a full close, so the ID opens again
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P31` — a two-seat open writes exactly 17 fresh manager slots: the snapshot, the balance tracker and the genesis inbound record
+- [x] `UNIT-TEST-MANAGER-PROXY-1-NTYR71.P32` — an open reads none of the configuration words its own code uses (participant maximum, state machine, consumer and utility facets) from manager storage
 
 ## UNIT-TEST-MANAGER-PROXY-2-KJRMB8
 
@@ -100,9 +102,8 @@ Selector routing, interface agreement and confinement
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P30` — deployed facet inventory equals the canonical routed-facet owner
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P32` — constructor rejects a codeless routed target with the exact selector and address
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P33` — a registered selector executes on a deployed facet
-- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34` — routed open-channel count and page selectors resolve through the utility facet
-- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P36` — a deposit batch whose deposits all succeed appends one JOIN message per deposit and advances the inbound head and totals
 - [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P35` — an atomic deposit failure reached through `joinChannel` names the failing batch index and that join’s participant
+- [x] `UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P36` — a deposit batch whose deposits all succeed appends one JOIN message per deposit and advances the inbound head and totals
 
 ## UNIT-TEST-MANAGER-PROXY-3-C3NY4X
 

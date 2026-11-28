@@ -1,5 +1,6 @@
 pragma solidity ^0.8.8;
 
+import {Vm} from "forge-std/Vm.sol";
 import {DiamondHarness} from "../harness/DiamondHarness.sol";
 import {StateChannelManagerInterface} from "../../../contracts/V1/StateChannelManagerInterface.sol";
 import {StateChannelManagerEvents} from "../../../contracts/V1/StateChannelManagerEvents.sol";
@@ -272,6 +273,42 @@ contract StateChannelManagerProxyOpenTest is DiamondHarness {
         assertFalse(
             diamond.isUncommittedInboundMessageBlock(DEADLINE_CHANNEL_ID, genesis), "genesis block reads uncommitted"
         );
+    }
+
+    // the snapshot, the balance tracker and the genesis inbound record
+    function test_open_twoSeats_writesSeventeenFreshSlots() public {
+        vm.startStateDiffRecording();
+        diamond.open(_deadlineOpenConfirmation());
+        assertEq(_freshSlotsOf(address(diamond), vm.stopAndReturnStateDiff()), 17, "fresh slots");
+    }
+
+    // the proxy's own code reads its configuration from code: no access to the storage words
+    // maxChannelParticipants (5), stateMachineImplementation (6), consumerFacetAddress (14), utilityFacetAddress (15)
+    function test_open_readsNoConfigurationWordFromStorage() public {
+        // a layout change fails here, not by checking unrelated slots
+        assertEq(uint256(vm.load(address(diamond), bytes32(uint256(5)))), MAX_CHANNEL_PARTICIPANTS, "slot 5");
+        assertEq(vm.load(address(diamond), bytes32(uint256(6))), _word(address(stateMachine)), "slot 6");
+        assertEq(vm.load(address(diamond), bytes32(uint256(14))), _word(address(consumerFacet)), "slot 14");
+        assertEq(vm.load(address(diamond), bytes32(uint256(15))), _word(address(utilityFacet)), "slot 15");
+        vm.startStateDiffRecording();
+        diamond.open(_deadlineOpenConfirmation());
+        Vm.AccountAccess[] memory accesses = vm.stopAndReturnStateDiff();
+        uint256 storageAccesses;
+        for (uint256 i = 0; i < accesses.length; i++) {
+            for (uint256 j = 0; j < accesses[i].storageAccesses.length; j++) {
+                Vm.StorageAccess memory access = accesses[i].storageAccesses[j];
+                if (access.account != address(diamond)) continue;
+                storageAccesses += 1;
+                uint256 slot = uint256(access.slot);
+                assertTrue(slot != 5 && slot != 6 && slot != 14 && slot != 15, "configuration word read from storage");
+            }
+        }
+        assertGt(storageAccesses, 0, "the open touched channel storage");
+        _assertOpenedWithDeposits();
+    }
+
+    function _word(address account) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(account)));
     }
 
     function _deadlineOpenConfirmation() internal view returns (OpenChannelConfirmation memory) {

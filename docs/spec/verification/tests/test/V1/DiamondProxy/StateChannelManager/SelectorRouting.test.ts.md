@@ -62,7 +62,6 @@ diamond, and the result equals the Math consumer facet's own answer for the same
 - `routes every join channel selector to the join channel facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P8
 - `routes every state proof selector to the state proof facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P9
 - `routes every utility view selector to the utility facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P17
-- `routes both open-channel enumeration selectors through the utility facet`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P34
 - `leaves the utility facet's stateless helpers off the routing table`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P18
 - `leaves the dispute verification facet's internal steps off the routing table`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P19
 - `leaves the fraud proof facet's internal step off the routing table`: UNIT-TEST-MANAGER-PROXY-2-KJRMB8.P20

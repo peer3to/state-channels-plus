@@ -26,9 +26,9 @@ and the honest challenger's proof slashes the disputer; an unlinked target rever
 routed `uploadDispute` anchored at the chain's inbound head whose last milestone both members signed, and sends same-fork snapshots built by
 `DiamondHarness._makeSameForkSnapshot` through the routed `updateStateSnapshotSameFork`. The final close is refused
 with `RaceConditionSnapshotUpdateDisputedFork(channelId, forkId)` one second before the kill period ends, with no
-snapshot or registry change, and is still refused once `isKillPeriodExpired` reports the period over, leaving the
+snapshot change and the channel still open, and is still refused once `isKillPeriodExpired` reports the period over, leaving the
 channel open. Every refusal asserts the exact arguments. It lands
-with a window only on another fork (the no-window close is covered by the open-channel registry suite); an empty
+with a window only on another fork and clears the channel's balance tracker (the no-window close is covered by the clean-close suite); an empty
 proof on the disputed fork still reverts `ErrorInvalidStateProof`. The widening case leaves a routed `joinChannel`
 pending above the snapshot's consumed inbound, then uploads a dispute anchored at the snapshot's inbound instead of
 the chain head: it reverts `RaceConditionDisputeInboundNotLatest(head hash, snapshot inbound hash)`, no window opens,

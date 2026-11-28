@@ -9,7 +9,8 @@
 - [`REQ-ENFSNAP-2-MGRCY8` (Batch-split invariance)](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-2-mgrcy8)
 - [`REQ-ENFSNAP-3-VD9T8A` (Inbound-consumption gate)](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-3-vd9t8a)
 - [`REQ-ENFSNAP-4-ESP98F` (Disputed-fork advance rule)](../../../../../specification/enforcement/snapshot-adoption.md#req-enfsnap-4-esp98f)
-- [`REQ-LIF-8-2HDG3A` (Enumerable open-channel lifecycle)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+- [`REQ-LIF-8-2HDG3A` (Open-channel set from lifecycle events)](../../../../../specification/settlement/lifecycle.md#req-lif-8-2hdg3a)
+- [`REQ-LIF-13-0MH9JW` (A clean close leaves no channel state)](../../../../../specification/settlement/lifecycle.md#req-lif-13-0mh9jw)
 - [`INV-MSG-4-6E5G7V` (totalWithdrawals ≤ totalDeposits at every outbound processing step)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-4-6e5g7v)
 - [`INV-MSG-5-YC48R5` (Processed tips advance only to strictly newer descendants)](../../../../../specification/settlement/cross-layer-messages.md#inv-msg-5-yc48r5)
 - [`REQ-MSG-4-SC1FEX` (Outbound processing MUST verify the linked range and skip the processed prefix…)](../../../../../specification/settlement/cross-layer-messages.md#req-msg-4-sc1fex)
@@ -43,7 +44,7 @@ Advance paths
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P12` — same-fork advance with a snapshot behind the one already on chain reverts naming the on-chain block height and the submitted block height
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P13` — same-fork advance whose milestone proof count differs from its snapshot count reverts naming the fork under advance and both counts
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P14` — outbound apply whose message processing fails reverts naming the failing message's block index, message index and participant
-- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P15` — same-fork advance refused on a disputed fork inside its kill period, snapshot and registry unchanged
+- [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P15` — same-fork advance refused on a disputed fork inside its kill period, snapshot unchanged and the channel still open
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P16` — same-fork advance still refused on a disputed fork after its kill period expired
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P17` — same-fork advance accepted with no window
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P18` — a window on another fork does not block the advance
@@ -75,12 +76,3 @@ Advance paths
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P52` — storage clearing on an open channel with no inbound block deletes nothing and names the zero hash
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P53` — a routed same-fork final close (zero participants) deletes the snapshot's inbound head and the blocks below it and emits exactly one `ChannelStorageCleared`, naming the head
 - [x] `UNIT-TEST-STATE-SNAPSHOT-FACET-1-VJARBB.P54` — a second open-channel storage clearing at the same snapshot head names the block the first one deleted, deletes nothing and keeps the head with its height
-
-## INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP
-
-Normal lifecycle registry removal
-
-- Setup: Open several channels through the SDK, close one through the ordinary participant lifecycle, and scan lifecycle events.
-- Oracle: The closed ID leaves registry pages, live IDs remain, and the event-derived set equals the paged manager set.
-
-- [x] `INTEGRATION-TEST-OPEN-CHANNEL-REGISTRY-1-A8M2KP.P1` — participant-lifecycle close and event/registry equality

@@ -41,7 +41,7 @@ The local deployment serves two roles:
 
 The mirror is intentionally scoped to the selected channel. It runs stateful and stateless manager
 logic on the participant's own hardware and observes events indexed by that channel. It does not
-replicate or answer global manager state such as the enumerable set of all open channels. Unobserved
+replicate or answer global manager state such as the set of all open channels (rebuilt from lifecycle events). Unobserved
 global state is neither needed for channel-local checks nor inferable from the selected channel's
 event stream.
 

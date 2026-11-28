@@ -111,8 +111,8 @@ describe("E2E: Bot connection fixes", function () {
 
         for (const peer of h.peers)
             await h.event.waitUntilLeftChannel(peer.index);
-        expect(await h.channelManager.getOpenChannelIds(0, 100)).to.not.include(
-            channelId
+        expect((await h.channelManager.isChannelOpen(channelId))[0]).to.equal(
+            false
         );
         expect(await h.channelManager.getParticipants(channelId)).to.deep.equal(
             []

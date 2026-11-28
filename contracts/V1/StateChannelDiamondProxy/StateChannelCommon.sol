@@ -184,28 +184,6 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         return stateSnapshots[channelId];
     }
 
-    function _appendOpenChannel(bytes32 channelId) internal {
-        if (openChannelIndexPlusOne[channelId] != 0) return;
-        openChannelIds.push(channelId);
-        openChannelIndexPlusOne[channelId] = openChannelIds.length;
-    }
-
-    function _removeOpenChannel(bytes32 channelId) internal {
-        uint256 indexPlusOne = openChannelIndexPlusOne[channelId];
-        if (indexPlusOne == 0) return;
-
-        uint256 index = indexPlusOne - 1;
-        uint256 lastIndex = openChannelIds.length - 1;
-        if (index != lastIndex) {
-            bytes32 lastChannelId = openChannelIds[lastIndex];
-            openChannelIds[index] = lastChannelId;
-            openChannelIndexPlusOne[lastChannelId] = index + 1;
-        }
-
-        openChannelIds.pop();
-        delete openChannelIndexPlusOne[channelId];
-    }
-
     function _getChannelBalance(bytes32 channelId) internal view virtual returns (ChannelBalance memory) {
         return channelBalances[channelId];
     }
@@ -238,6 +216,10 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
     function _getMaxChannelParticipants() internal view virtual returns (uint256) {
         return maxChannelParticipants;
+    }
+
+    function _getStateMachine() internal view virtual returns (AStateMachine) {
+        return stateMachineImplementation;
     }
 
     function _getGasLimit() internal view virtual returns (uint256) {
@@ -279,7 +261,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
 
         newTotalDeposits = channelBalance.totalDeposits;
         for (uint256 i = 0; i < messages.length; i++) {
-            newTotalDeposits = stateMachineImplementation.addBalance(newTotalDeposits, messages[i].balance);
+            newTotalDeposits = _getStateMachine().addBalance(newTotalDeposits, messages[i].balance);
         }
 
         messageBlock.totalBalance = newTotalDeposits;
@@ -295,7 +277,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
     }
 
     function _resolveTotalDeposits(bytes32 channelId, bytes32 blockHash) internal view returns (Balance memory) {
-        Balance memory zeroBalance = stateMachineImplementation.getZeroBalance();
+        Balance memory zeroBalance = _getStateMachine().getZeroBalance();
         if (blockHash == bytes32(0)) {
             return zeroBalance;
         }
@@ -329,6 +311,11 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         delete disputeData.onChainSlashes; //TODO! Check should we clear this since things happen in 'parallel' now
         mapping(bytes32 => DisputeWindow) storage disputeWindowMap = disputeData.disputeWindowMap;
         for (uint256 i = 0; i < disputeData.disputedForks.length; i++) {
+            // every throttled uploader is in some window's hasPosted -> its throttle ends with the windows
+            address[] storage hasPosted = disputeWindowMap[disputeData.disputedForks[i]].evidence.hasPosted;
+            for (uint256 j = 0; j < hasPosted.length; j++) {
+                delete disputerThrottle[channelId][hasPosted[j]];
+            }
             delete disputeWindowMap[disputeData.disputedForks[i]];
         }
         delete disputeData.disputedForks;
@@ -435,9 +422,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         for (uint256 i = 0; i < outboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < outboundMessageBlocks[i].messages.length; j++) {
                 uint256 gasBefore = gasleft();
-                try stateMachineImplementation.addBalance(
-                    totalOutbound, outboundMessageBlocks[i].messages[j].balance
-                ) returns (
+                try _getStateMachine().addBalance(totalOutbound, outboundMessageBlocks[i].messages[j].balance) returns (
                     Balance memory sum
                 ) {
                     totalOutbound = sum;
@@ -580,7 +565,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         newTotalDeposits = currentInboundTotalDeposits;
         for (uint256 i = 0; i < inboundMessageBlocks.length; i++) {
             for (uint256 j = 0; j < inboundMessageBlocks[i].messages.length; j++) {
-                bool success = stateMachineImplementation.processInboundMessage(inboundMessageBlocks[i].messages[j]);
+                bool success = _getStateMachine().processInboundMessage(inboundMessageBlocks[i].messages[j]);
                 // `if (!success) revert` so the seed-state hash is only hashed
                 // on the failure path - `require` would compute it every message.
                 if (!success) {
@@ -592,9 +577,8 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
                         keccak256(encodedStateMachineState)
                     );
                 }
-                newTotalDeposits = stateMachineImplementation.addBalance(
-                    newTotalDeposits, inboundMessageBlocks[i].messages[j].balance
-                );
+                newTotalDeposits =
+                    _getStateMachine().addBalance(newTotalDeposits, inboundMessageBlocks[i].messages[j].balance);
             }
         }
     }
@@ -603,7 +587,7 @@ contract StateChannelCommon is StateChannelManagerStorage, StateChannelManagerEv
         if (message.messageType == MESSAGE_TYPE_EXIT) {
             ExitChannel memory exitChannel = abi.decode(message.data, (ExitChannel));
             require(
-                stateMachineImplementation.areBalancesEqual(message.balance, exitChannel.balance),
+                _getStateMachine().areBalancesEqual(message.balance, exitChannel.balance),
                 ErrorOutboundMessageBalanceMismatch(
                     message.participant, exitChannel.balance.amount, message.balance.amount
                 )
